@@ -118,3 +118,13 @@ export async function deleteProject(id: string) {
   revalidatePath('/projects');
   redirect('/projects');
 }
+
+export async function updateProjectStatus(id: string, status: Status) {
+  await requireProjectEditor(id);
+  if (!STATUSES.includes(status)) return { ok: false, error: 'Μη έγκυρη κατάσταση.' };
+  await prisma.project.update({ where: { id }, data: { status } });
+  revalidatePath('/projects');
+  revalidatePath(`/projects/${id}`);
+  revalidatePath('/dashboard');
+  return { ok: true };
+}

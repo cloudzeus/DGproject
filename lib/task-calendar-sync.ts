@@ -6,6 +6,7 @@ import {
   deleteCalendarEvent,
   type TaskCalendarEvent,
 } from '@/lib/microsoft-graph';
+import { hasTimeComponent } from '@/lib/business-hours';
 
 const APP_URL = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '';
 
@@ -40,15 +41,32 @@ type TaskForSync = {
   outlookEventId: string | null;
   project: { name: string; color: string };
   creator: { email: string; name: string | null; azureAdId: string | null };
-  assignees: Array<{ user: { email: string; name: string | null } }>;
+  assignees: Array<{ user: { email: string; name: string | null; azureAdId: string | null } }>;
 };
 
 function buildEventFromTask(task: TaskForSync): TaskCalendarEvent | null {
   if (!task.dueDate) return null;
 
-  const hasStart = Boolean(task.startDate);
-  const start = hasStart ? atMidnight(task.startDate!) : atMidnight(task.dueDate);
-  const endExclusive = addDays(atMidnight(task.dueDate), 1);
+  const startCandidate = task.startDate ?? task.dueDate;
+  const dueCandidate = task.dueDate;
+  const isTimed = hasTimeComponent(startCandidate) || hasTimeComponent(dueCandidate);
+
+  let startDate: Date;
+  let endDate: Date;
+  let isAllDay: boolean;
+
+  if (isTimed) {
+    startDate = new Date(startCandidate);
+    endDate = new Date(dueCandidate);
+    if (endDate.getTime() <= startDate.getTime()) {
+      endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+    }
+    isAllDay = false;
+  } else {
+    startDate = atMidnight(task.startDate ?? task.dueDate);
+    endDate = addDays(atMidnight(task.dueDate), 1);
+    isAllDay = true;
+  }
 
   const link = APP_URL ? `${APP_URL.replace(/\/$/, '')}/board` : '';
   const desc = task.description?.trim() ? `<p>${escapeHtml(task.description)}</p>` : '';
@@ -58,9 +76,9 @@ function buildEventFromTask(task: TaskForSync): TaskCalendarEvent | null {
   return {
     subject: `[Task] ${task.title}`,
     bodyHtml: `${projectLine}${desc}${linkLine}`,
-    startDate: start,
-    endDate: endExclusive,
-    isAllDay: true,
+    startDate,
+    endDate,
+    isAllDay,
     attendees: task.assignees.map((a) => ({
       email: a.user.email,
       name: a.user.name ?? a.user.email,
@@ -83,7 +101,7 @@ async function loadTask(taskId: string): Promise<TaskForSync | null> {
       project: { select: { name: true, color: true } },
       creator: { select: { email: true, name: true, azureAdId: true } },
       assignees: {
-        include: { user: { select: { email: true, name: true } } },
+        include: { user: { select: { email: true, name: true, azureAdId: true } } },
       },
     },
   });
@@ -91,8 +109,9 @@ async function loadTask(taskId: string): Promise<TaskForSync | null> {
 }
 
 function resolveOrganizer(task: TaskForSync): string | null {
-  if (task.creator.email) return task.creator.email;
-  return null;
+  if (task.creator.azureAdId) return task.creator.azureAdId;
+  const m365Assignee = task.assignees.find((a) => a.user.azureAdId);
+  return m365Assignee?.user.azureAdId ?? null;
 }
 
 async function clearEventIdOnTask(taskId: string) {

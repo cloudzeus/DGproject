@@ -5,6 +5,8 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { uploadFileToCDN, deleteFileFromCDN } from '@/lib/bunnycdn';
 import { syncTaskCalendar, removeTaskCalendar } from '@/lib/task-calendar-sync';
+import { normalizeToBusinessHours } from '@/lib/business-hours';
+import { sendEmail } from '@/lib/mailgun';
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
@@ -30,6 +32,90 @@ async function requireProjectEditor(projectId: string) {
   return session.user.id;
 }
 
+const APP_URL = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '';
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
+function formatDueHtml(d: Date | null): string {
+  if (!d) return '—';
+  return d.toLocaleString('el-GR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function notifyAssignees(
+  taskId: string,
+  recipientUserIds: string[],
+  actorId: string,
+  reason: 'assigned' | 'added',
+) {
+  if (recipientUserIds.length === 0) return;
+  try {
+    const [task, recipients, actor] = await Promise.all([
+      prisma.task.findUnique({
+        where: { id: taskId },
+        select: {
+          title: true,
+          description: true,
+          priority: true,
+          startDate: true,
+          dueDate: true,
+          project: { select: { name: true, color: true } },
+        },
+      }),
+      prisma.user.findMany({
+        where: { id: { in: recipientUserIds } },
+        select: { email: true, name: true },
+      }),
+      actorId
+        ? prisma.user.findUnique({ where: { id: actorId }, select: { name: true, email: true } })
+        : Promise.resolve(null),
+    ]);
+    if (!task) return;
+    const emails = recipients.map((r) => r.email).filter((e): e is string => Boolean(e));
+    if (emails.length === 0) return;
+
+    const senderName = actor?.name ?? actor?.email ?? 'A-Sisyphus';
+    const link = APP_URL ? `${APP_URL.replace(/\/$/, '')}/board` : '';
+    const subject =
+      reason === 'assigned'
+        ? `Νέα ανάθεση: ${task.title}`
+        : `Προστέθηκες στην εργασία: ${task.title}`;
+    const verb = reason === 'assigned' ? 'σου ανέθεσε' : 'σε πρόσθεσε στην εργασία';
+
+    const html = `
+      <div style="font-family:-apple-system,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f1f1f;">
+        <div style="border-left:4px solid ${task.project.color};padding-left:16px;margin-bottom:20px;">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#616161;">${escapeHtml(task.project.name)}</div>
+          <h1 style="margin:4px 0 0;font-size:20px;font-weight:600;color:#242424;">${escapeHtml(task.title)}</h1>
+        </div>
+        <p style="font-size:14px;line-height:1.5;color:#424242;">
+          Ο/Η <strong>${escapeHtml(senderName)}</strong> ${verb}.
+        </p>
+        ${task.description?.trim() ? `<p style="font-size:13px;color:#555;white-space:pre-wrap;">${escapeHtml(task.description)}</p>` : ''}
+        <table style="border-collapse:collapse;margin:16px 0;font-size:13px;">
+          <tr><td style="padding:4px 12px 4px 0;color:#616161;">Έναρξη</td><td style="padding:4px 0;color:#242424;font-weight:500;">${escapeHtml(formatDueHtml(task.startDate))}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#616161;">Λήξη</td><td style="padding:4px 0;color:#242424;font-weight:500;">${escapeHtml(formatDueHtml(task.dueDate))}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#616161;">Προτεραιότητα</td><td style="padding:4px 0;color:#242424;font-weight:500;">${escapeHtml(task.priority)}</td></tr>
+        </table>
+        ${link ? `<a href="${link}" style="display:inline-block;background:#0078D4;color:white;text-decoration:none;padding:10px 18px;border-radius:6px;font-size:14px;font-weight:600;">Άνοιγμα στο A-Sisyphus</a>` : ''}
+      </div>
+    `;
+
+    await sendEmail({ to: emails, subject, html });
+  } catch (e) {
+    console.warn('[task notify] failed', e);
+  }
+}
+
+function parseDateTime(raw: string): Date | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const d = new Date(trimmed);
+  if (Number.isNaN(d.getTime())) return null;
+  return normalizeToBusinessHours(d);
+}
+
 function parseTask(formData: FormData) {
   const title = String(formData.get('title') ?? '').trim();
   const description = String(formData.get('description') ?? '').trim() || null;
@@ -37,12 +123,15 @@ function parseTask(formData: FormData) {
   const status: TaskStatus = STATUSES.includes(statusRaw) ? statusRaw : 'todo';
   const priorityRaw = String(formData.get('priority') ?? 'medium') as TaskPriority;
   const priority: TaskPriority = PRIORITIES.includes(priorityRaw) ? priorityRaw : 'medium';
-  const dueRaw = String(formData.get('dueDate') ?? '').trim();
-  const dueDate = dueRaw ? new Date(dueRaw) : null;
+  const startDate = parseDateTime(String(formData.get('startDate') ?? ''));
+  let dueDate = parseDateTime(String(formData.get('dueDate') ?? ''));
+  if (startDate && dueDate && dueDate.getTime() < startDate.getTime()) {
+    dueDate = startDate;
+  }
   const hoursRaw = String(formData.get('estimatedHours') ?? '').trim();
   const estimatedHours = hoursRaw ? Number.parseFloat(hoursRaw) : null;
   const assigneeIds = formData.getAll('assigneeIds').map((v) => String(v)).filter(Boolean);
-  return { title, description, status, priority, dueDate, estimatedHours, assigneeIds };
+  return { title, description, status, priority, startDate, dueDate, estimatedHours, assigneeIds };
 }
 
 export async function createTask(projectId: string, formData: FormData) {
@@ -63,6 +152,7 @@ export async function createTask(projectId: string, formData: FormData) {
       description: input.description,
       status: input.status,
       priority: input.priority,
+      startDate: input.startDate,
       dueDate: input.dueDate,
       estimatedHours: input.estimatedHours ?? undefined,
       order: nextOrder,
@@ -76,6 +166,9 @@ export async function createTask(projectId: string, formData: FormData) {
   });
 
   await syncTaskCalendar(created.id);
+  if (input.assigneeIds.length > 0) {
+    await notifyAssignees(created.id, input.assigneeIds, actorId, 'assigned');
+  }
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/board');
@@ -91,7 +184,11 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
     return { ok: false, error: 'Μη έγκυρες ώρες.' };
   }
 
-  const previous = await prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
+  const previous = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { status: true, assignees: { select: { userId: true } } },
+  });
+  const previousAssigneeIds = new Set(previous?.assignees.map((a) => a.userId) ?? []);
 
   await prisma.$transaction([
     prisma.task.update({
@@ -101,6 +198,7 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
         description: input.description,
         status: input.status,
         priority: input.priority,
+        startDate: input.startDate,
         dueDate: input.dueDate,
         estimatedHours: input.estimatedHours,
         completedAt:
@@ -122,6 +220,13 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
   ]);
 
   await syncTaskCalendar(taskId);
+
+  const session = await auth();
+  const actorId = session?.user?.id ?? '';
+  const addedAssigneeIds = input.assigneeIds.filter((id) => !previousAssigneeIds.has(id));
+  if (addedAssigneeIds.length > 0) {
+    await notifyAssignees(taskId, addedAssigneeIds, actorId, 'added');
+  }
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/board');

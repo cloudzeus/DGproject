@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { formatDate, statusLabel } from '@/lib/utils';
 import { NewProjectButton } from './new-project-button';
 import { ProjectForm, ProjectModal, type UserOption } from './project-form';
-import { updateProject, deleteProject } from './actions';
+import { updateProject, deleteProject, updateProjectStatus } from './actions';
 
 type Status = 'active' | 'planning' | 'on_hold' | 'completed' | 'archived';
 
@@ -224,6 +224,16 @@ function ProjectCardMenu({
     });
   }
 
+  function handleSetStatus(e: React.MouseEvent, status: Status) {
+    stop(e);
+    setOpen(false);
+    if (status === project.status) return;
+    startTransition(async () => {
+      await updateProjectStatus(project.id, status);
+      router.refresh();
+    });
+  }
+
   return (
     <div ref={menuRef} className="absolute top-3 right-3 z-10">
       <button
@@ -253,6 +263,40 @@ function ProjectCardMenu({
                 <MenuItem onClick={handleEdit} icon={<Edit20Regular />}>
                   Επεξεργασία
                 </MenuItem>
+                <div className="my-1 h-px bg-black/5" />
+                <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-fluent-neutral-50">
+                  Κατάσταση
+                </div>
+                {(['planning', 'active', 'on_hold', 'completed', 'archived'] as const).map((s) => {
+                  const isCurrent = project.status === s;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      role="menuitem"
+                      onClick={(e) => handleSetStatus(e, s)}
+                      disabled={pending}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors disabled:opacity-50 text-fluent-neutral-90 hover:bg-fluent-neutral-6 ${isCurrent ? 'bg-fluent-blue-50' : ''}`}
+                    >
+                      <span
+                        className="inline-block h-2 w-2 rounded-full shrink-0"
+                        style={{
+                          background: {
+                            planning: '#0078D4',
+                            active: '#107C10',
+                            on_hold: '#D83B01',
+                            completed: '#8A8A8A',
+                            archived: '#5C5C5C',
+                          }[s],
+                        }}
+                      />
+                      <span className={`flex-1 truncate ${isCurrent ? 'font-semibold text-fluent-blue-700' : ''}`}>
+                        {statusLabel(s)}
+                      </span>
+                      {isCurrent && <span className="text-fluent-blue-600 text-xs">✓</span>}
+                    </button>
+                  );
+                })}
                 <div className="my-1 h-px bg-black/5" />
                 <MenuItem onClick={handleDelete} icon={<Delete20Regular />} danger disabled={pending}>
                   Διαγραφή

@@ -44,9 +44,18 @@ export default async function DashboardPage() {
       },
     }),
     prisma.project.findMany({
-      where: { status: 'active' },
+      where: {
+        status: 'active',
+        ...(session?.user?.role === 'admin' || session?.user?.role === 'manager'
+          ? {}
+          : {
+              OR: [
+                { ownerId: userId },
+                { members: { some: { userId } } },
+              ],
+            }),
+      },
       orderBy: { updatedAt: 'desc' },
-      take: 3,
       include: {
         members: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
         tasks: { select: { status: true } },

@@ -43,15 +43,16 @@ export type TaskFormInitial = {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  startDate?: Date | null;
   dueDate: Date | null;
   estimatedHours: number | null;
   assigneeIds: string[];
 };
 
-function toDateInput(d: Date | null): string {
+function toDateTimeInput(d: Date | null | undefined): string {
   if (!d) return '';
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 type Props = {
@@ -132,15 +133,25 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Ημ/νία λήξης</label>
+          <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Έναρξη</label>
           <input
-            type="date"
-            name="dueDate"
-            defaultValue={toDateInput(initial?.dueDate ?? null)}
+            type="datetime-local"
+            name="startDate"
+            min="2020-01-01T09:00"
+            defaultValue={toDateTimeInput(initial?.startDate ?? null)}
             className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
           />
         </div>
         <div>
+          <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Λήξη</label>
+          <input
+            type="datetime-local"
+            name="dueDate"
+            defaultValue={toDateTimeInput(initial?.dueDate ?? null)}
+            className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+          />
+        </div>
+        <div className="col-span-2">
           <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Εκτιμώμενες ώρες</label>
           <input
             type="number"
@@ -153,6 +164,10 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
           />
         </div>
       </div>
+
+      <p className="text-[11px] text-fluent-neutral-60">
+        Τα tasks περιορίζονται σε ώρες εργασίας 09:00–18:30. Ώρες εκτός ωραρίου μετατίθενται στο επόμενο 09:00.
+      </p>
 
       <div>
         <label className="block text-xs font-medium text-fluent-neutral-70 mb-1.5">Ανάθεση σε</label>

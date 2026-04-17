@@ -255,6 +255,7 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
               description: editing.description ?? null,
               status: editing.status,
               priority: editing.priority,
+              startDate: editing.startDate ?? null,
               dueDate: editing.dueDate ?? null,
               estimatedHours: editing.estimatedHours ?? null,
               assigneeIds: editing.assigneeIds,

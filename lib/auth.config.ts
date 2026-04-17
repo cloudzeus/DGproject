@@ -77,7 +77,7 @@ export const authConfig: NextAuthConfig = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, profile }) {
       // Add user data to token on login
       if (user) {
         token.id = user.id;
@@ -88,9 +88,12 @@ export const authConfig: NextAuthConfig = {
         token.azureAdId = dbUser?.azureAdId;
       }
 
-      // Handle Azure AD login
+      // Handle Azure AD login — prefer `oid` (Object ID) over `sub`
+      // because `sub` is a pairwise per-app identifier that Graph does not
+      // resolve as a user.
       if (account?.provider === "azure-ad") {
-        token.azureAdId = account.providerAccountId;
+        const oid = (profile as { oid?: string } | undefined)?.oid;
+        token.azureAdId = oid ?? account.providerAccountId;
       }
 
       return token;
@@ -102,7 +105,7 @@ export const authConfig: NextAuthConfig = {
       }
       return session;
     },
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       // Always allow credentials login
       if (account?.provider === "credentials") {
         return true;
@@ -110,12 +113,13 @@ export const authConfig: NextAuthConfig = {
 
       // Handle Azure AD sign-in
       if (account?.provider === "azure-ad") {
-        // Update or create user with Azure AD info
+        const oid = (profile as { oid?: string } | undefined)?.oid;
+        const azureAdId = oid ?? account.providerAccountId;
         if (user.email) {
           await prisma.user.upsert({
             where: { email: user.email },
             update: {
-              azureAdId: account.providerAccountId,
+              azureAdId,
               name: user.name || user.email,
               image: user.image,
             },
@@ -124,7 +128,7 @@ export const authConfig: NextAuthConfig = {
               name: user.name || user.email,
               image: user.image,
               role: "member",
-              azureAdId: account.providerAccountId,
+              azureAdId,
             },
           });
         }
