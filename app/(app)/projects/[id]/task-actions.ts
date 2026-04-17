@@ -32,6 +32,37 @@ async function requireProjectEditor(projectId: string) {
   return session.user.id;
 }
 
+type ActivityAction = 'created' | 'updated' | 'completed' | 'commented' | 'assigned' | 'moved';
+
+async function logTaskActivity(
+  taskId: string,
+  projectId: string,
+  actorId: string,
+  action: ActivityAction,
+  metadata?: Record<string, unknown>,
+) {
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { workspaceId: true },
+    });
+    if (!project) return;
+    await prisma.activity.create({
+      data: {
+        workspaceId: project.workspaceId,
+        projectId,
+        taskId,
+        actorId,
+        action,
+        targetType: 'task',
+        metadata: metadata ? (metadata as object) : undefined,
+      },
+    });
+  } catch (e) {
+    console.warn('[activity] failed to log', e);
+  }
+}
+
 const APP_URL = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '';
 
 function escapeHtml(s: string): string {
@@ -166,6 +197,7 @@ export async function createTask(projectId: string, formData: FormData) {
   });
 
   await syncTaskCalendar(created.id);
+  await logTaskActivity(created.id, projectId, actorId, 'created');
   if (input.assigneeIds.length > 0) {
     await notifyAssignees(created.id, input.assigneeIds, actorId, 'assigned');
   }
@@ -223,9 +255,24 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
 
   const session = await auth();
   const actorId = session?.user?.id ?? '';
+
+  const statusChanged = previous && previous.status !== input.status;
+  if (statusChanged) {
+    const action: ActivityAction = input.status === 'done' ? 'completed' : 'moved';
+    await logTaskActivity(taskId, projectId, actorId, action, {
+      from: previous!.status,
+      to: input.status,
+    });
+  } else {
+    await logTaskActivity(taskId, projectId, actorId, 'updated');
+  }
+
   const addedAssigneeIds = input.assigneeIds.filter((id) => !previousAssigneeIds.has(id));
   if (addedAssigneeIds.length > 0) {
     await notifyAssignees(taskId, addedAssigneeIds, actorId, 'added');
+    await logTaskActivity(taskId, projectId, actorId, 'assigned', {
+      userIds: addedAssigneeIds,
+    });
   }
 
   revalidatePath(`/projects/${projectId}`);
@@ -235,7 +282,7 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
 }
 
 export async function updateTaskStatus(projectId: string, taskId: string, status: TaskStatus) {
-  await requireProjectEditor(projectId);
+  const actorId = await requireProjectEditor(projectId);
   if (!STATUSES.includes(status)) return { ok: false, error: 'Μη έγκυρη κατάσταση.' };
 
   const previous = await prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
@@ -252,7 +299,17 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
     },
   });
 
+  if (previous && previous.status !== status) {
+    const action: ActivityAction = status === 'done' ? 'completed' : 'moved';
+    await logTaskActivity(taskId, projectId, actorId, action, {
+      from: previous.status,
+      to: status,
+    });
+  }
+
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/board');
+  revalidatePath('/dashboard');
   return { ok: true };
 }
 
@@ -286,6 +343,7 @@ export async function updateTaskDates(
 export async function uploadTaskAttachment(projectId: string, taskId: string, formData: FormData) {
   const actorId = await requireProjectEditor(projectId);
   const file = formData.get('file');
+  const title = String(formData.get('title') ?? '').trim() || null;
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: 'Δεν επιλέχθηκε αρχείο.' };
   }
@@ -313,6 +371,7 @@ export async function uploadTaskAttachment(projectId: string, taskId: string, fo
         taskId,
         projectId,
         name: file.name,
+        title,
         size: file.size,
         mimeType: file.type || 'application/octet-stream',
         url: uploaded.url,
@@ -322,6 +381,7 @@ export async function uploadTaskAttachment(projectId: string, taskId: string, fo
     });
 
     revalidatePath(`/projects/${projectId}`);
+    revalidatePath('/files');
     return { ok: true };
   } catch {
     return { ok: false, error: 'Αποτυχία μεταφόρτωσης στο CDN.' };
@@ -348,6 +408,70 @@ export async function deleteTaskAttachment(projectId: string, attachmentId: stri
 
   await prisma.attachment.delete({ where: { id: attachmentId } });
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/files');
+  return { ok: true };
+}
+
+export async function uploadProjectAttachment(projectId: string, formData: FormData) {
+  const actorId = await requireProjectEditor(projectId);
+  const file = formData.get('file');
+  const title = String(formData.get('title') ?? '').trim() || null;
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: 'Δεν επιλέχθηκε αρχείο.' };
+  }
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return { ok: false, error: 'Το αρχείο υπερβαίνει τα 25MB.' };
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+  const storedName = `${Date.now()}-${safeName}`;
+
+  try {
+    const uploaded = await uploadFileToCDN({
+      file: buffer,
+      filename: storedName,
+      folder: `projects/${projectId}`,
+      contentType: file.type || 'application/octet-stream',
+    });
+    await prisma.attachment.create({
+      data: {
+        projectId,
+        name: file.name,
+        title,
+        size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        url: uploaded.url,
+        source: 'local',
+        uploadedById: actorId,
+      },
+    });
+
+    revalidatePath(`/projects/${projectId}`);
+    revalidatePath('/files');
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Αποτυχία μεταφόρτωσης στο CDN.' };
+  }
+}
+
+export async function deleteProjectAttachment(projectId: string, attachmentId: string) {
+  await requireProjectEditor(projectId);
+  const attachment = await prisma.attachment.findUnique({ where: { id: attachmentId } });
+  if (!attachment) return { ok: false, error: 'Το συνημμένο δεν βρέθηκε.' };
+  if (attachment.projectId !== projectId) return { ok: false, error: 'Forbidden.' };
+
+  try {
+    const url = new URL(attachment.url);
+    const storagePath = url.pathname.replace(/^\/+/, '');
+    if (storagePath) await deleteFileFromCDN(storagePath);
+  } catch {
+    // best-effort
+  }
+
+  await prisma.attachment.delete({ where: { id: attachmentId } });
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/files');
   return { ok: true };
 }
 

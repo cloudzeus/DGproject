@@ -7,6 +7,7 @@ import {
   Search20Regular, Alert20Regular, Apps20Regular,
   QuestionCircle20Regular, Add16Filled,
   Person20Regular, Settings20Regular, SignOut20Regular,
+  Navigation20Regular,
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -15,21 +16,34 @@ import { formatRelative, cn } from '@/lib/utils';
 
 type TopBarUser = { name: string; email: string; image: string | null };
 
-export function TopBar({ user }: { user: TopBarUser }) {
+export function TopBar({ user, onMenuClick }: { user: TopBarUser; onMenuClick?: () => void }) {
   const [appsOpen, setAppsOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const unread = mockNotifications.filter(n => !n.read).length;
   const avatarUser = { name: user.name, avatarUrl: user.image ?? undefined };
 
   return (
-    <header className="acrylic h-14 sticky top-0 z-40 flex items-center px-4 gap-3 border-b border-black/5">
-      {/* search */}
-      <div className="flex-1 max-w-2xl mx-auto relative">
+    <header className="acrylic h-14 sticky top-0 z-40 flex items-center px-3 sm:px-4 gap-2 sm:gap-3 border-b border-black/5">
+      {/* Mobile hamburger */}
+      {onMenuClick && (
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="lg:hidden h-9 w-9 rounded-md flex items-center justify-center text-fluent-neutral-70 hover:bg-black/5 transition-colors"
+          aria-label="Άνοιγμα μενού"
+        >
+          <Navigation20Regular />
+        </button>
+      )}
+
+      {/* Search (hidden on mobile, toggleable) */}
+      <div className="hidden md:flex flex-1 max-w-2xl mx-auto relative">
         <Search20Regular className="absolute left-3 top-1/2 -translate-y-1/2 text-fluent-neutral-50 pointer-events-none" />
         <input
           type="text"
-          placeholder="Search tasks, projects, files, or people..."
+          placeholder="Αναζήτηση σε εργασίες, έργα, αρχεία ή άτομα..."
           className="w-full h-9 pl-10 pr-16 rounded-md bg-white/70 border border-fluent-neutral-20 text-sm placeholder:text-fluent-neutral-50 focus:bg-white focus:border-fluent-blue-500 focus:outline-none transition-all"
         />
         <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-fluent-neutral-50 bg-fluent-neutral-8 border border-fluent-neutral-20 px-1.5 py-0.5 rounded">
@@ -37,12 +51,25 @@ export function TopBar({ user }: { user: TopBarUser }) {
         </kbd>
       </div>
 
-      <Button variant="primary" size="sm" icon={<Add16Filled />}>
-        Create
+      {/* Mobile: search icon expands a row */}
+      <button
+        type="button"
+        onClick={() => setSearchOpen((v) => !v)}
+        className="md:hidden h-9 w-9 rounded-md flex items-center justify-center text-fluent-neutral-70 hover:bg-black/5"
+        aria-label="Αναζήτηση"
+      >
+        <Search20Regular />
+      </button>
+
+      {/* Spacer on mobile so right cluster pushes right */}
+      <div className="md:hidden flex-1" />
+
+      <Button variant="primary" size="sm" icon={<Add16Filled />} className="hidden sm:inline-flex">
+        Δημιουργία
       </Button>
 
-      {/* O365 apps launcher */}
-      <div className="relative">
+      {/* O365 apps launcher — hidden on small */}
+      <div className="relative hidden sm:block">
         <button
           onClick={() => { setAppsOpen(!appsOpen); setNotifOpen(false); }}
           className="h-9 w-9 rounded-md flex items-center justify-center text-fluent-neutral-70 hover:bg-black/5 transition-colors relative"
@@ -60,7 +87,7 @@ export function TopBar({ user }: { user: TopBarUser }) {
         <button
           onClick={() => { setNotifOpen(!notifOpen); setAppsOpen(false); }}
           className="h-9 w-9 rounded-md flex items-center justify-center text-fluent-neutral-70 hover:bg-black/5 transition-colors relative"
-          aria-label="Notifications"
+          aria-label="Ειδοποιήσεις"
         >
           <Alert20Regular />
           {unread > 0 && (
@@ -72,15 +99,15 @@ export function TopBar({ user }: { user: TopBarUser }) {
         </AnimatePresence>
       </div>
 
-      <button className="h-9 w-9 rounded-md flex items-center justify-center text-fluent-neutral-70 hover:bg-black/5">
+      <button className="hidden md:flex h-9 w-9 rounded-md items-center justify-center text-fluent-neutral-70 hover:bg-black/5">
         <QuestionCircle20Regular />
       </button>
 
-      <div className="pl-2 border-l border-fluent-neutral-20 flex items-center gap-2 relative">
+      <div className="pl-1 sm:pl-2 sm:border-l border-fluent-neutral-20 flex items-center gap-2 relative">
         <button
           onClick={() => { setProfileOpen(!profileOpen); setAppsOpen(false); setNotifOpen(false); }}
           className="rounded-full focus:outline-none focus:ring-2 focus:ring-fluent-blue-500"
-          aria-label="Account menu"
+          aria-label="Μενού λογαριασμού"
         >
           <Avatar user={avatarUser} size="sm" showPresence />
         </button>
@@ -88,6 +115,29 @@ export function TopBar({ user }: { user: TopBarUser }) {
           {profileOpen && <ProfileFlyout user={user} onClose={() => setProfileOpen(false)} />}
         </AnimatePresence>
       </div>
+
+      {/* Mobile search bar row */}
+      <AnimatePresence>
+        {searchOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 52 }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden absolute left-0 right-0 top-full bg-white border-b border-black/5 shadow-fluent-8 overflow-hidden z-40"
+          >
+            <div className="relative px-3 py-2.5">
+              <Search20Regular className="absolute left-6 top-1/2 -translate-y-1/2 text-fluent-neutral-50 pointer-events-none" />
+              <input
+                autoFocus
+                type="text"
+                placeholder="Αναζήτηση..."
+                className="w-full h-9 pl-10 pr-3 rounded-md bg-fluent-neutral-4 border border-fluent-neutral-20 text-sm placeholder:text-fluent-neutral-50 focus:bg-white focus:border-fluent-blue-500 focus:outline-none"
+                onBlur={() => setSearchOpen(false)}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 }
@@ -165,7 +215,7 @@ function AppsFlyout({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-fluent-neutral-90">Microsoft 365</h3>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-fluent-accent-green">Connected</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-fluent-accent-green">Συνδεδεμένο</span>
         </div>
         <div className="grid grid-cols-3 gap-2">
           {apps.map((app) => (
@@ -200,8 +250,8 @@ function NotificationsFlyout({ onClose }: { onClose: () => void }) {
         className="absolute right-0 top-full mt-2 w-96 acrylic rounded-lg shadow-fluent-16 z-50 border border-black/5 overflow-hidden"
       >
         <div className="p-4 border-b border-black/5 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Notifications</h3>
-          <button className="text-xs text-fluent-blue-600 hover:underline">Mark all read</button>
+          <h3 className="text-sm font-semibold">Ειδοποιήσεις</h3>
+          <button className="text-xs text-fluent-blue-600 hover:underline">Όλα ως αναγνωσμένα</button>
         </div>
         <div className="max-h-96 overflow-y-auto">
           {mockNotifications.map((n) => (

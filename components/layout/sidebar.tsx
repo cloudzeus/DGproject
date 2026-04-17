@@ -7,24 +7,27 @@ import {
   Board24Regular, Board24Filled,
   Folder24Regular, Folder24Filled,
   Calendar24Regular, Calendar24Filled,
+  CalendarLtr24Regular, CalendarLtr24Filled,
   People24Regular, People24Filled,
   DocumentMultiple24Regular, DocumentMultiple24Filled,
   Settings24Regular, Settings24Filled,
   PeopleTeam24Regular, PeopleTeam24Filled,
   BuildingMultiple24Regular, BuildingMultiple24Filled,
+  DataBarVertical24Regular, DataBarVertical24Filled,
   ChevronRight16Regular,
   Add16Regular,
 } from '@fluentui/react-icons';
 import { cn } from '@/lib/utils';
 
 const nav = [
-  { href: '/dashboard', label: 'Home', Regular: Home24Regular, Filled: Home24Filled },
-  { href: '/board', label: 'My Tasks', Regular: Board24Regular, Filled: Board24Filled },
-  { href: '/projects', label: 'Projects', Regular: Folder24Regular, Filled: Folder24Filled },
-  { href: '/timeline', label: 'Χρονοδιάγραμμα', Regular: Calendar24Regular, Filled: Calendar24Filled },
-  { href: '/calendar', label: 'Calendar', Regular: Calendar24Regular, Filled: Calendar24Filled },
-  { href: '/files', label: 'Files', Regular: DocumentMultiple24Regular, Filled: DocumentMultiple24Filled },
-  { href: '/team', label: 'Team', Regular: People24Regular, Filled: People24Filled },
+  { href: '/dashboard', label: 'Αρχική', Regular: Home24Regular, Filled: Home24Filled },
+  { href: '/board', label: 'Οι εργασίες μου', Regular: Board24Regular, Filled: Board24Filled },
+  { href: '/projects', label: 'Έργα', Regular: Folder24Regular, Filled: Folder24Filled },
+  { href: '/timeline', label: 'Χρονοδιάγραμμα', Regular: CalendarLtr24Regular, Filled: CalendarLtr24Filled },
+  { href: '/calendar', label: 'Ημερολόγιο', Regular: Calendar24Regular, Filled: Calendar24Filled },
+  { href: '/files', label: 'Αρχεία', Regular: DocumentMultiple24Regular, Filled: DocumentMultiple24Filled },
+  { href: '/team', label: 'Ομάδα', Regular: People24Regular, Filled: People24Filled },
+  { href: '/reports', label: 'Αναφορές', Regular: DataBarVertical24Regular, Filled: DataBarVertical24Filled },
 ];
 
 type UserRole = 'admin' | 'manager' | 'member' | 'viewer' | undefined;
@@ -87,7 +90,7 @@ export function Sidebar({ userRole, projects = [] }: { userRole?: UserRole; proj
         <div className="mt-6">
           <div className="flex items-center justify-between px-3 mb-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-fluent-neutral-50">
-              Projects
+              Έργα
             </span>
             <button className="p-0.5 rounded hover:bg-black/5 text-fluent-neutral-60">
               <Add16Regular />
@@ -166,7 +169,7 @@ export function Sidebar({ userRole, projects = [] }: { userRole?: UserRole; proj
           className="flex items-center gap-3 px-3 h-9 rounded-md text-sm font-medium text-fluent-neutral-80 hover:bg-black/5"
         >
           {pathname.startsWith('/settings') ? <Settings24Filled className="h-5 w-5 text-fluent-blue-600" /> : <Settings24Regular className="h-5 w-5 text-fluent-neutral-60" />}
-          Settings
+          Ρυθμίσεις
         </Link>
       </div>
     </aside>

@@ -306,6 +306,7 @@ model Attachment {
   taskId           String?
   projectId        String?
   name             String
+  title            String?     @db.Text
   size             Int
   mimeType         String
   url              String      @db.Text

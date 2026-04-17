@@ -13,7 +13,6 @@ import {
 } from '@fluentui/react-icons';
 import { Avatar, AvatarStack } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { cn, formatRelative, statusLabel } from '@/lib/utils';
 
 type UserLite = { id: string; name: string; avatarUrl?: string };
@@ -80,32 +79,36 @@ export function DashboardClient({
 }: Props) {
   const statCards = [
     {
-      label: 'My Tasks',
+      label: 'Οι εργασίες μου',
       value: stats.myTasks,
       Icon: TaskListLtr20Regular,
       tint: 'bg-fluent-blue-50 text-fluent-blue-600',
-      trend: 'Open',
+      trend: 'Ανοιχτές',
+      href: '/board',
     },
     {
-      label: 'Completed',
+      label: 'Ολοκληρωμένες',
       value: stats.completed,
       Icon: CheckmarkCircle20Regular,
       tint: 'bg-green-50 text-fluent-accent-green',
-      trend: 'All time',
+      trend: 'Όλες',
+      href: '/board',
     },
     {
-      label: 'Due Soon',
+      label: 'Λήγουν σύντομα',
       value: stats.dueSoon,
       Icon: Clock20Regular,
       tint: 'bg-orange-50 text-fluent-accent-orange',
-      trend: 'Next 7 days',
+      trend: 'Επόμενες 7 μέρες',
+      href: '/board',
     },
     {
-      label: 'Team',
+      label: 'Ομάδα',
       value: stats.team,
       Icon: People20Regular,
       tint: 'bg-purple-50 text-fluent-accent-purple',
-      trend: 'Total members',
+      trend: 'Σύνολο μελών',
+      href: '/team',
     },
   ];
 
@@ -122,11 +125,11 @@ export function DashboardClient({
           {greeting}, {firstName} <span className="inline-block animate-pulse">👋</span>
         </h1>
         <p className="text-fluent-neutral-60 mt-1.5">
-          You have{' '}
-          <span className="font-semibold text-fluent-neutral-90">{stats.myTasks} open tasks</span>{' '}
-          and{' '}
+          Έχεις{' '}
+          <span className="font-semibold text-fluent-neutral-90">{stats.myTasks} ανοιχτές εργασίες</span>{' '}
+          και{' '}
           <span className="font-semibold text-fluent-neutral-90">
-            {stats.dueSoon} due this week
+            {stats.dueSoon} με προθεσμία αυτή την εβδομάδα
           </span>
           .
         </p>
@@ -140,20 +143,24 @@ export function DashboardClient({
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, delay: i * 0.06 }}
-            className="bg-white rounded-xl border border-black/5 p-5 shadow-fluent-2 hover:shadow-fluent-8 transition-all duration-300 reveal"
           >
-            <div className="flex items-start justify-between mb-3">
-              <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center', s.tint)}>
-                <s.Icon />
+            <Link
+              href={s.href}
+              className="block bg-white rounded-xl border border-black/5 p-5 shadow-fluent-2 hover:shadow-fluent-8 hover:border-fluent-blue-200 transition-all duration-300 reveal h-full"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center', s.tint)}>
+                  <s.Icon />
+                </div>
               </div>
-            </div>
-            <div className="text-3xl font-semibold font-display tracking-tight text-fluent-neutral-95">
-              {s.value}
-            </div>
-            <div className="flex items-center justify-between mt-1">
-              <span className="text-sm text-fluent-neutral-60">{s.label}</span>
-              <span className="text-[11px] text-fluent-neutral-50">{s.trend}</span>
-            </div>
+              <div className="text-3xl font-semibold font-display tracking-tight text-fluent-neutral-95">
+                {s.value}
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-sm text-fluent-neutral-60">{s.label}</span>
+                <span className="text-[11px] text-fluent-neutral-50">{s.trend}</span>
+              </div>
+            </Link>
           </motion.div>
         ))}
       </div>
@@ -169,20 +176,22 @@ export function DashboardClient({
           <div className="flex items-center justify-between p-5 border-b border-black/5">
             <div>
               <h2 className="font-display text-lg font-semibold text-fluent-neutral-95">
-                Due this week
+                Προθεσμίες εβδομάδας
               </h2>
-              <p className="text-xs text-fluent-neutral-60 mt-0.5">Your upcoming deadlines</p>
+              <p className="text-xs text-fluent-neutral-60 mt-0.5">Οι επερχόμενες λήξεις σου</p>
             </div>
-            <Link href="/board">
-              <Button variant="ghost" size="sm" icon={<ArrowRight16Regular />}>
-                View all
-              </Button>
+            <Link
+              href="/board"
+              className="inline-flex items-center gap-1 h-8 px-3 rounded-md text-sm font-semibold text-fluent-neutral-80 hover:bg-fluent-neutral-8 transition-colors"
+            >
+              Προβολή όλων
+              <ArrowRight16Regular />
             </Link>
           </div>
           <div className="divide-y divide-black/5">
             {dueSoon.length === 0 && (
               <div className="p-10 text-center text-sm text-fluent-neutral-60">
-                Nothing due this week. Nice.
+                Καμία προθεσμία αυτή την εβδομάδα.
               </div>
             )}
             {dueSoon.map((t) => (
@@ -233,13 +242,15 @@ export function DashboardClient({
           className="bg-white rounded-xl border border-black/5 shadow-fluent-2 overflow-hidden"
         >
           <div className="p-5 border-b border-black/5">
-            <h2 className="font-display text-lg font-semibold text-fluent-neutral-95">Activity</h2>
-            <p className="text-xs text-fluent-neutral-60 mt-0.5">Recent team updates</p>
+            <h2 className="font-display text-lg font-semibold text-fluent-neutral-95">
+              Δραστηριότητα
+            </h2>
+            <p className="text-xs text-fluent-neutral-60 mt-0.5">Πρόσφατες ενέργειες ομάδας</p>
           </div>
           <div className="p-4 space-y-1 max-h-96 overflow-y-auto">
             {activities.length === 0 && (
               <div className="p-6 text-center text-sm text-fluent-neutral-60">
-                No activity yet.
+                Δεν υπάρχουν ακόμη ενέργειες.
               </div>
             )}
             {activities.map((a) => (
@@ -278,19 +289,21 @@ export function DashboardClient({
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-display text-lg font-semibold text-fluent-neutral-95">
-              Active projects
+              Ενεργά έργα
             </h2>
-            <p className="text-xs text-fluent-neutral-60 mt-0.5">Projects you're working on</p>
+            <p className="text-xs text-fluent-neutral-60 mt-0.5">Έργα στα οποία εργάζεσαι</p>
           </div>
-          <Link href="/projects">
-            <Button variant="ghost" size="sm" icon={<ArrowRight16Regular />}>
-              View all
-            </Button>
+          <Link
+            href="/projects"
+            className="inline-flex items-center gap-1 h-8 px-3 rounded-md text-sm font-semibold text-fluent-neutral-80 hover:bg-fluent-neutral-8 transition-colors"
+          >
+            Προβολή όλων
+            <ArrowRight16Regular />
           </Link>
         </div>
         {activeProjects.length === 0 ? (
           <div className="bg-white rounded-xl border border-black/5 p-10 text-center text-sm text-fluent-neutral-60">
-            No active projects.
+            Δεν υπάρχουν ενεργά έργα.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -315,7 +328,7 @@ export function DashboardClient({
 
                   <div className="mb-4">
                     <div className="flex justify-between text-[11px] mb-1.5">
-                      <span className="text-fluent-neutral-60">Progress</span>
+                      <span className="text-fluent-neutral-60">Πρόοδος</span>
                       <span className="font-semibold text-fluent-neutral-90">{p.progress}%</span>
                     </div>
                     <div className="h-1.5 bg-fluent-neutral-8 rounded-full overflow-hidden">
@@ -332,7 +345,7 @@ export function DashboardClient({
                   <div className="flex items-center justify-between">
                     <AvatarStack users={p.members} max={3} size="xs" />
                     <span className="text-[11px] text-fluent-neutral-60">
-                      {p.completedTaskCount}/{p.taskCount} tasks
+                      {p.completedTaskCount}/{p.taskCount} εργασίες
                     </span>
                   </div>
                 </div>

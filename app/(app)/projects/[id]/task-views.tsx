@@ -33,6 +33,7 @@ import { Gantt, type GanttTask } from '@/components/gantt/gantt';
 export type TaskAttachment = {
   id: string;
   name: string;
+  title: string | null;
   size: number;
   mimeType: string;
   url: string;

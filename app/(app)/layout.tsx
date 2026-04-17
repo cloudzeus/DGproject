@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
-import { Sidebar } from '@/components/layout/sidebar';
-import { TopBar } from '@/components/layout/topbar';
+import { AppShell } from '@/components/layout/app-shell';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 
@@ -29,18 +28,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex min-h-screen bg-mesh">
-      <Sidebar userRole={user.role} projects={sidebarProjects} />
-      <div className="flex-1 flex flex-col min-w-0">
-        <TopBar
-          user={{
-            name: user.name ?? user.email,
-            email: user.email,
-            image: user.image,
-          }}
-        />
-        <main className="flex-1 min-w-0">{children}</main>
-      </div>
-    </div>
+    <AppShell
+      userRole={user.role}
+      projects={sidebarProjects}
+      user={{
+        name: user.name ?? user.email,
+        email: user.email,
+        image: user.image,
+      }}
+    >
+      {children}
+    </AppShell>
   );
 }

@@ -154,7 +154,10 @@ export const authConfig: NextAuthConfig = {
         pathname.startsWith("/board") ||
         pathname.startsWith("/calendar") ||
         pathname.startsWith("/files") ||
-        pathname.startsWith("/team")
+        pathname.startsWith("/team") ||
+        pathname.startsWith("/reports") ||
+        pathname.startsWith("/timeline") ||
+        pathname.startsWith("/profile")
       ) {
         return !!auth?.user;
       }

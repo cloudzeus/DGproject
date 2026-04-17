@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { ProjectDetail } from './project-detail';
 import { MembersManager } from './members-manager';
 import { ProjectActionsBar } from './project-actions-bar';
+import { ProjectAttachments } from './project-attachments';
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,9 +21,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           include: {
             assignees: { include: { user: true } },
             attachments: {
-              select: { id: true, name: true, size: true, mimeType: true, url: true, createdAt: true },
+              select: { id: true, name: true, title: true, size: true, mimeType: true, url: true, createdAt: true },
               orderBy: { createdAt: 'desc' },
             },
+          },
+        },
+        attachments: {
+          where: { taskId: null },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            uploadedBy: { select: { name: true, email: true } },
           },
         },
       },
@@ -74,6 +82,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       attachments: t.attachments.map((a) => ({
         id: a.id,
         name: a.name,
+        title: a.title,
         size: a.size,
         mimeType: a.mimeType,
         url: a.url,
@@ -81,6 +90,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       })),
     })),
   };
+
+  const projectAttachments = project.attachments.map((a) => ({
+    id: a.id,
+    name: a.name,
+    title: a.title,
+    size: a.size,
+    mimeType: a.mimeType,
+    url: a.url,
+    uploadedByName: a.uploadedBy.name ?? a.uploadedBy.email,
+  }));
 
   const memberUsers = project.members.map((m) => ({
     id: m.user.id,
@@ -124,6 +143,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             image: u.image,
             role: u.role,
           }))}
+        />
+        <ProjectAttachments
+          projectId={project.id}
+          attachments={projectAttachments}
+          canEdit={canEdit}
         />
       </div>
     </>
