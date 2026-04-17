@@ -11,9 +11,11 @@ interface Props {
   tasks: TaskWithRelations[];
   accent: string;
   onTaskClick?: (t: TaskWithRelations) => void;
+  onAddTask?: (status: TaskStatus) => void;
+  canCreate?: boolean;
 }
 
-export function BoardColumn({ id, tasks, accent, onTaskClick }: Props) {
+export function BoardColumn({ id, tasks, accent, onTaskClick, onAddTask, canCreate }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: 'column', status: id } });
 
   return (
@@ -28,10 +30,20 @@ export function BoardColumn({ id, tasks, accent, onTaskClick }: Props) {
           </span>
         </div>
         <div className="flex items-center gap-0.5">
-          <button className="h-7 w-7 rounded-md flex items-center justify-center text-fluent-neutral-60 hover:bg-black/5 transition-colors">
-            <Add16Regular />
-          </button>
-          <button className="h-7 w-7 rounded-md flex items-center justify-center text-fluent-neutral-60 hover:bg-black/5 transition-colors">
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => onAddTask?.(id)}
+              aria-label="Προσθήκη εργασίας"
+              className="h-7 w-7 rounded-md flex items-center justify-center text-fluent-neutral-60 hover:bg-black/5 transition-colors"
+            >
+              <Add16Regular />
+            </button>
+          )}
+          <button
+            type="button"
+            className="h-7 w-7 rounded-md flex items-center justify-center text-fluent-neutral-60 hover:bg-black/5 transition-colors"
+          >
             <MoreHorizontal20Regular />
           </button>
         </div>
@@ -53,13 +65,19 @@ export function BoardColumn({ id, tasks, accent, onTaskClick }: Props) {
 
         {tasks.length === 0 && (
           <div className="flex items-center justify-center h-32 text-xs text-fluent-neutral-50 border-2 border-dashed border-fluent-neutral-20 rounded-lg">
-            Drop tasks here
+            Σύρε μια εργασία εδώ
           </div>
         )}
 
-        <button className="w-full flex items-center gap-2 px-3 h-9 rounded-lg text-sm text-fluent-neutral-60 hover:bg-white hover:text-fluent-blue-600 hover:border hover:border-fluent-blue-300 transition-all">
-          <Add16Regular /> Add task
-        </button>
+        {canCreate && (
+          <button
+            type="button"
+            onClick={() => onAddTask?.(id)}
+            className="w-full flex items-center gap-2 px-3 h-9 rounded-lg text-sm text-fluent-neutral-60 hover:bg-white hover:text-fluent-blue-600 hover:border hover:border-fluent-blue-300 transition-all"
+          >
+            <Add16Regular /> Προσθήκη εργασίας
+          </button>
+        )}
       </div>
     </div>
   );

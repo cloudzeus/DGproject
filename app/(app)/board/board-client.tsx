@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useTransition } from 'react';
+import { useState, useMemo, useTransition, useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
   DndContext,
@@ -22,16 +22,25 @@ import {
   Flag20Regular,
   Add16Filled,
   ChevronDown16Regular,
+  Dismiss12Regular,
 } from '@fluentui/react-icons';
 import { BoardColumn } from '@/components/board/board-column';
 import { TaskCard } from '@/components/board/task-card';
 import { TaskDrawer } from '@/components/board/task-drawer';
+import { Avatar, AvatarStack } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { AvatarStack } from '@/components/ui/avatar';
-import type { TaskStatus, TaskWithRelations } from '@/types';
+import { cn } from '@/lib/utils';
+import type { TaskStatus, Priority as TaskPriority, TaskWithRelations } from '@/types';
 import { updateTaskStatus, sendTaskReminder } from './actions';
 import { deleteTask } from '@/app/(app)/projects/[id]/task-actions';
 import { BoardTaskModal, type BoardProjectOption } from './board-task-modal';
+
+const PRIORITY_OPTIONS: { value: TaskPriority; label: string; color: string }[] = [
+  { value: 'urgent', label: 'Επείγουσα', color: '#C50F1F' },
+  { value: 'high', label: 'Υψηλή', color: '#D83B01' },
+  { value: 'medium', label: 'Μεσαία', color: '#0078D4' },
+  { value: 'low', label: 'Χαμηλή', color: '#8A8A8A' },
+];
 
 const COLUMNS: { id: TaskStatus; accent: string }[] = [
   { id: 'backlog', accent: '#8A8A8A' },
@@ -55,9 +64,45 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
   const [tasks, setTasks] = useState<TaskWithRelations[]>(initialTasks);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskWithRelations | null>(null);
+  const [createStatus, setCreateStatus] = useState<TaskStatus | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<TaskWithRelations | null>(null);
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    setTasks(initialTasks);
+  }, [initialTasks]);
+
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
+  const [priorityFilter, setPriorityFilter] = useState<TaskPriority[]>([]);
+  const [projectFilter, setProjectFilter] = useState<string[]>([]);
+  const [onlyMine, setOnlyMine] = useState(false);
+  const [openFilter, setOpenFilter] = useState<'assignees' | 'priority' | 'more' | null>(null);
+
+  const currentUserId = useMemo(() => headerUsers[0]?.id ?? null, [headerUsers]);
+
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if (assigneeFilter.length > 0 && !t.assigneeIds.some((id) => assigneeFilter.includes(id))) return false;
+      if (priorityFilter.length > 0 && !priorityFilter.includes(t.priority as TaskPriority)) return false;
+      if (projectFilter.length > 0 && !projectFilter.includes(t.projectId)) return false;
+      if (onlyMine && currentUserId && !t.assigneeIds.includes(currentUserId)) return false;
+      return true;
+    });
+  }, [tasks, assigneeFilter, priorityFilter, projectFilter, onlyMine, currentUserId]);
+
+  const activeFilterCount =
+    (assigneeFilter.length > 0 ? 1 : 0) +
+    (priorityFilter.length > 0 ? 1 : 0) +
+    (projectFilter.length > 0 ? 1 : 0) +
+    (onlyMine ? 1 : 0);
+
+  function clearAllFilters() {
+    setAssigneeFilter([]);
+    setPriorityFilter([]);
+    setProjectFilter([]);
+    setOnlyMine(false);
+  }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -69,11 +114,21 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
       review: [],
       done: [],
     };
-    for (const t of tasks) map[t.status].push(t);
+    for (const t of filteredTasks) map[t.status].push(t);
     for (const k of Object.keys(map) as TaskStatus[]) {
       map[k].sort((a, b) => a.order - b.order);
     }
     return map;
+  }, [filteredTasks]);
+
+  const allAssignees = useMemo(() => {
+    const byId = new Map<string, { id: string; name: string; avatarUrl?: string }>();
+    for (const t of tasks) {
+      for (const a of t.assignees) {
+        if (!byId.has(a.id)) byId.set(a.id, a);
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [tasks]);
 
   const activeTask = activeId ? tasks.find((t) => t.id === activeId) ?? null : null;
@@ -171,17 +226,165 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
     <div className="flex flex-col h-[calc(100vh-56px)]">
       <div className="flex items-center justify-between px-6 lg:px-8 py-4 bg-white/60 backdrop-blur border-b border-black/5">
         <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-fluent-neutral-95">Board</h1>
-          <p className="text-xs text-fluent-neutral-60 mt-0.5">All tasks across your projects</p>
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-fluent-neutral-95">Πίνακας εργασιών</h1>
+          <p className="text-xs text-fluent-neutral-60 mt-0.5">
+            {filteredTasks.length} από {tasks.length} εργασίες
+            {activeFilterCount > 0 && (
+              <>
+                {' · '}
+                <button onClick={clearAllFilters} className="text-fluent-blue-600 hover:underline">
+                  Καθαρισμός φίλτρων
+                </button>
+              </>
+            )}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 h-9 px-3 rounded-md bg-white border border-fluent-neutral-20 text-sm text-fluent-neutral-80 hover:bg-fluent-neutral-6">
-            <Person20Regular className="h-4 w-4" /> Assignees <ChevronDown16Regular />
-          </button>
-          <button className="flex items-center gap-1.5 h-9 px-3 rounded-md bg-white border border-fluent-neutral-20 text-sm text-fluent-neutral-80 hover:bg-fluent-neutral-6">
-            <Flag20Regular className="h-4 w-4" /> Priority <ChevronDown16Regular />
-          </button>
-          <Button variant="secondary" size="md" icon={<Filter20Regular />}>More filters</Button>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <FilterButton
+            icon={<Person20Regular className="h-4 w-4" />}
+            label="Ανάθεση"
+            count={assigneeFilter.length}
+            open={openFilter === 'assignees'}
+            onToggle={() => setOpenFilter((v) => (v === 'assignees' ? null : 'assignees'))}
+            onClose={() => setOpenFilter(null)}
+          >
+            {allAssignees.length === 0 ? (
+              <div className="p-3 text-xs text-fluent-neutral-60">Καμία ανάθεση.</div>
+            ) : (
+              <div className="max-h-72 overflow-y-auto py-1">
+                {allAssignees.map((u) => {
+                  const active = assigneeFilter.includes(u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() =>
+                        setAssigneeFilter((prev) =>
+                          active ? prev.filter((id) => id !== u.id) : [...prev, u.id],
+                        )
+                      }
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-fluent-neutral-6',
+                        active && 'bg-fluent-blue-50',
+                      )}
+                    >
+                      <Avatar user={{ name: u.name, avatarUrl: u.avatarUrl }} size="xs" />
+                      <span className="flex-1 truncate">{u.name}</span>
+                      {active && <span className="text-fluent-blue-600 text-xs">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {assigneeFilter.length > 0 && (
+              <div className="border-t border-black/5 p-2">
+                <button
+                  onClick={() => setAssigneeFilter([])}
+                  className="w-full text-xs text-fluent-blue-600 hover:underline py-1"
+                >
+                  Αφαίρεση όλων
+                </button>
+              </div>
+            )}
+          </FilterButton>
+
+          <FilterButton
+            icon={<Flag20Regular className="h-4 w-4" />}
+            label="Προτεραιότητα"
+            count={priorityFilter.length}
+            open={openFilter === 'priority'}
+            onToggle={() => setOpenFilter((v) => (v === 'priority' ? null : 'priority'))}
+            onClose={() => setOpenFilter(null)}
+          >
+            <div className="py-1">
+              {PRIORITY_OPTIONS.map((p) => {
+                const active = priorityFilter.includes(p.value);
+                return (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() =>
+                      setPriorityFilter((prev) =>
+                        active ? prev.filter((v) => v !== p.value) : [...prev, p.value],
+                      )
+                    }
+                    className={cn(
+                      'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-fluent-neutral-6',
+                      active && 'bg-fluent-blue-50',
+                    )}
+                  >
+                    <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
+                    <span className="flex-1">{p.label}</span>
+                    {active && <span className="text-fluent-blue-600 text-xs">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </FilterButton>
+
+          <FilterButton
+            icon={<Filter20Regular className="h-4 w-4" />}
+            label="Περισσότερα"
+            count={projectFilter.length + (onlyMine ? 1 : 0)}
+            open={openFilter === 'more'}
+            onToggle={() => setOpenFilter((v) => (v === 'more' ? null : 'more'))}
+            onClose={() => setOpenFilter(null)}
+          >
+            <div className="p-2 border-b border-black/5">
+              <label className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded hover:bg-fluent-neutral-6">
+                <input
+                  type="checkbox"
+                  checked={onlyMine}
+                  onChange={(e) => setOnlyMine(e.target.checked)}
+                  className="h-4 w-4 accent-fluent-blue-500"
+                />
+                Μόνο οι δικές μου
+              </label>
+            </div>
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-fluent-neutral-50">
+              Έργα
+            </div>
+            <div className="max-h-60 overflow-y-auto pb-1">
+              {projects.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-fluent-neutral-60">Κανένα έργο.</div>
+              ) : (
+                projects.map((p) => {
+                  const active = projectFilter.includes(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() =>
+                        setProjectFilter((prev) =>
+                          active ? prev.filter((id) => id !== p.id) : [...prev, p.id],
+                        )
+                      }
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-fluent-neutral-6',
+                        active && 'bg-fluent-blue-50',
+                      )}
+                    >
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ background: p.color }} />
+                      <span className="flex-1 truncate">{p.name}</span>
+                      {active && <span className="text-fluent-blue-600 text-xs">✓</span>}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </FilterButton>
+
+          {activeFilterCount > 0 && (
+            <button
+              onClick={clearAllFilters}
+              aria-label="Καθαρισμός φίλτρων"
+              className="h-9 w-9 rounded-md text-fluent-neutral-60 hover:bg-fluent-neutral-8 flex items-center justify-center"
+              title="Καθαρισμός φίλτρων"
+            >
+              <Dismiss12Regular />
+            </button>
+          )}
+
           <div className="h-6 w-px bg-fluent-neutral-20 mx-1" />
           {headerUsers.length > 0 && <AvatarStack users={headerUsers} max={4} size="sm" />}
           {canCreate && (
@@ -212,7 +415,9 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
                 id={col.id}
                 tasks={tasksByColumn[col.id]}
                 accent={col.accent}
+                canCreate={canCreate}
                 onTaskClick={(t) => setSelectedTask(t)}
+                onAddTask={(status) => setCreateStatus(status)}
               />
             ))}
           </div>
@@ -234,12 +439,14 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
       />
 
       <AnimatePresence>
-        {creating && (
+        {(creating || createStatus) && (
           <BoardTaskModal
             mode="create"
             projects={projects}
+            defaultStatus={createStatus ?? undefined}
             onClose={() => {
               setCreating(false);
+              setCreateStatus(null);
               router.refresh();
             }}
           />
@@ -265,6 +472,82 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
               router.refresh();
             }}
           />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function FilterButton({
+  icon,
+  label,
+  count,
+  open,
+  onToggle,
+  onClose,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={cn(
+          'flex items-center gap-1.5 h-9 px-3 rounded-md bg-white border text-sm transition-colors',
+          count > 0
+            ? 'border-fluent-blue-500 text-fluent-blue-700'
+            : 'border-fluent-neutral-20 text-fluent-neutral-80 hover:bg-fluent-neutral-6',
+        )}
+      >
+        {icon}
+        {label}
+        {count > 0 && (
+          <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-fluent-blue-600 text-white text-[10px] font-semibold">
+            {count}
+          </span>
+        )}
+        <ChevronDown16Regular />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            role="menu"
+            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.12 }}
+            className="absolute right-0 mt-1 w-64 rounded-lg bg-white shadow-fluent-16 border border-black/5 z-50 overflow-hidden"
+          >
+            {children}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

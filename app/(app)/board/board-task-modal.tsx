@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { TaskForm, TaskModal, type TaskAssigneeOption, type TaskFormInitial } from '@/app/(app)/projects/[id]/task-form';
+import { TaskForm, TaskModal, type TaskAssigneeOption, type TaskFormInitial, type TaskStatus } from '@/app/(app)/projects/[id]/task-form';
 import { createTask, updateTask } from '@/app/(app)/projects/[id]/task-actions';
 
 export type BoardProjectOption = {
@@ -15,6 +15,7 @@ type CreateProps = {
   mode: 'create';
   projects: BoardProjectOption[];
   defaultProjectId?: string;
+  defaultStatus?: TaskStatus;
   onClose: () => void;
 };
 
@@ -34,13 +35,26 @@ export function BoardTaskModal(props: Props) {
   return <CreateModal {...props} />;
 }
 
-function CreateModal({ projects, defaultProjectId, onClose }: CreateProps) {
+function CreateModal({ projects, defaultProjectId, defaultStatus, onClose }: CreateProps) {
   const [projectId, setProjectId] = useState<string>(defaultProjectId ?? projects[0]?.id ?? '');
 
   const members = useMemo(
     () => projects.find((p) => p.id === projectId)?.members ?? [],
     [projects, projectId],
   );
+
+  const initial: TaskFormInitial | undefined = defaultStatus
+    ? {
+        title: '',
+        description: null,
+        status: defaultStatus,
+        priority: 'medium',
+        startDate: null,
+        dueDate: null,
+        estimatedHours: null,
+        assigneeIds: [],
+      }
+    : undefined;
 
   if (projects.length === 0) {
     return (
@@ -70,6 +84,7 @@ function CreateModal({ projects, defaultProjectId, onClose }: CreateProps) {
       <TaskForm
         key={projectId}
         members={members}
+        initial={initial}
         submitLabel="Δημιουργία"
         onCancel={onClose}
         onSubmit={async (fd) => {
