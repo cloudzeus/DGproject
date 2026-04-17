@@ -1,12 +1,20 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
 
 export default function SignInPage() {
+    return (
+        <Suspense fallback={null}>
+            <SignInInner />
+        </Suspense>
+    );
+}
+
+function SignInInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { t } = useTranslation();
