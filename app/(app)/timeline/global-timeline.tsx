@@ -3,8 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Dismiss20Regular, PersonSwap20Regular } from '@fluentui/react-icons';
-import { Gantt, type GanttTask, type GanttRow } from '@/components/gantt/gantt';
+import {
+  Dismiss20Regular,
+  PersonSwap20Regular,
+  ChevronLeft20Regular,
+  ChevronRight20Regular,
+} from '@fluentui/react-icons';
+import { Gantt, type GanttTask, type GanttRow, type GanttZoom } from '@/components/gantt/gantt';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { rescheduleTask, reassignTask } from './actions';
@@ -25,10 +30,44 @@ type Props = {
   canEdit: boolean;
 };
 
+const ZOOM_LABEL: Record<GanttZoom, string> = {
+  day: 'Ημέρα',
+  week: 'Εβδομάδα',
+  month: 'Μήνας',
+};
+
+function shiftAnchor(d: Date, zoom: GanttZoom, dir: -1 | 1): Date {
+  const r = new Date(d);
+  if (zoom === 'day') r.setDate(r.getDate() + dir);
+  else if (zoom === 'week') r.setDate(r.getDate() + dir * 7);
+  else r.setMonth(r.getMonth() + dir);
+  return r;
+}
+
+function anchorLabel(d: Date, zoom: GanttZoom): string {
+  if (zoom === 'day') {
+    return d.toLocaleDateString('el-GR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  if (zoom === 'week') {
+    const dow = d.getDay();
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const sameMonth = monday.getMonth() === sunday.getMonth();
+    const mStr = monday.toLocaleDateString('el-GR', { day: 'numeric', month: sameMonth ? undefined : 'short' });
+    const sStr = sunday.toLocaleDateString('el-GR', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `${mStr} – ${sStr}`;
+  }
+  return d.toLocaleDateString('el-GR', { month: 'long', year: 'numeric' });
+}
+
 export function GlobalTimeline({ rows, users, canEdit }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState<GanttTask | null>(null);
   const [filterUser, setFilterUser] = useState<string>('all');
+  const [zoom, setZoom] = useState<GanttZoom>('month');
+  const [anchor, setAnchor] = useState<Date>(() => new Date());
 
   const filtered = rows.map((p) => ({
     id: p.id,
@@ -56,23 +95,63 @@ export function GlobalTimeline({ rows, users, canEdit }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 flex-wrap bg-white rounded-xl border border-black/5 shadow-fluent-2 p-3">
-        <span className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60">Φιλτράρισμα κατά χρήστη:</span>
-        <button
-          onClick={() => setFilterUser('all')}
-          className={`text-xs h-8 px-3 rounded ${filterUser === 'all' ? 'bg-fluent-blue-50 text-fluent-blue-700' : 'text-fluent-neutral-70 hover:bg-fluent-neutral-4'}`}
-        >
-          Όλοι
-        </button>
-        {users.map((u) => (
+        <div className="flex items-center gap-1 bg-fluent-neutral-4 rounded-md p-1">
+          {(['day', 'week', 'month'] as const).map((z) => (
+            <button
+              key={z}
+              onClick={() => setZoom(z)}
+              className={`text-xs h-7 px-3 rounded font-medium transition-colors ${
+                zoom === z ? 'bg-white text-fluent-blue-700 shadow-fluent-2' : 'text-fluent-neutral-70 hover:bg-white/60'
+              }`}
+            >
+              {ZOOM_LABEL[z]}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
           <button
-            key={u.id}
-            onClick={() => setFilterUser(u.id)}
-            className={`inline-flex items-center gap-1.5 text-xs h-8 px-2 rounded ${filterUser === u.id ? 'bg-fluent-blue-50 text-fluent-blue-700' : 'text-fluent-neutral-70 hover:bg-fluent-neutral-4'}`}
+            onClick={() => setAnchor((a) => shiftAnchor(a, zoom, -1))}
+            className="h-8 w-8 rounded-md text-fluent-neutral-70 hover:bg-fluent-neutral-4 flex items-center justify-center"
+            aria-label="Προηγούμενο"
           >
-            <Avatar user={{ name: u.name || u.email, avatarUrl: u.image ?? undefined }} size="xs" />
-            <span className="truncate max-w-[120px]">{u.name || u.email}</span>
+            <ChevronLeft20Regular />
           </button>
-        ))}
+          <button
+            onClick={() => setAnchor(new Date())}
+            className="h-8 px-3 rounded-md text-xs font-medium text-fluent-neutral-70 hover:bg-fluent-neutral-4"
+          >
+            Σήμερα
+          </button>
+          <button
+            onClick={() => setAnchor((a) => shiftAnchor(a, zoom, 1))}
+            className="h-8 w-8 rounded-md text-fluent-neutral-70 hover:bg-fluent-neutral-4 flex items-center justify-center"
+            aria-label="Επόμενο"
+          >
+            <ChevronRight20Regular />
+          </button>
+        </div>
+        <span className="text-sm font-semibold text-fluent-neutral-90 min-w-0 truncate">
+          {anchorLabel(anchor, zoom)}
+        </span>
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60">Χρήστης:</span>
+          <button
+            onClick={() => setFilterUser('all')}
+            className={`text-xs h-8 px-3 rounded ${filterUser === 'all' ? 'bg-fluent-blue-50 text-fluent-blue-700' : 'text-fluent-neutral-70 hover:bg-fluent-neutral-4'}`}
+          >
+            Όλοι
+          </button>
+          {users.map((u) => (
+            <button
+              key={u.id}
+              onClick={() => setFilterUser(u.id)}
+              className={`inline-flex items-center gap-1.5 text-xs h-8 px-2 rounded ${filterUser === u.id ? 'bg-fluent-blue-50 text-fluent-blue-700' : 'text-fluent-neutral-70 hover:bg-fluent-neutral-4'}`}
+            >
+              <Avatar user={{ name: u.name || u.email, avatarUrl: u.image ?? undefined }} size="xs" />
+              <span className="truncate max-w-[120px]">{u.name || u.email}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {visible.length === 0 ? (
@@ -83,6 +162,8 @@ export function GlobalTimeline({ rows, users, canEdit }: Props) {
         <Gantt
           rows={visible}
           canEdit={canEdit}
+          zoom={zoom}
+          anchorDate={anchor}
           onReschedule={handleReschedule}
           onClickTask={(t) => setEditing(t)}
         />

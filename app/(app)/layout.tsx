@@ -13,7 +13,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const [user, sidebarProjects] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { name: true, email: true, image: true, role: true },
+      select: { name: true, email: true, image: true, role: true, azureAdId: true },
     }),
     prisma.project.findMany({
       where: { status: { not: 'archived' } },
@@ -35,6 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         name: user.name ?? user.email,
         email: user.email,
         image: user.image,
+        microsoftConnected: Boolean(user.azureAdId),
       }}
     >
       {children}

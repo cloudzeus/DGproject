@@ -28,7 +28,8 @@ import {
   type TaskAssigneeOption,
 } from './task-form';
 import { createTask, updateTask, deleteTask, updateTaskStatus, updateTaskDates } from './task-actions';
-import { Gantt, type GanttTask } from '@/components/gantt/gantt';
+import { Gantt, type GanttTask, type GanttZoom } from '@/components/gantt/gantt';
+import { ChevronLeft20Regular, ChevronRight20Regular } from '@fluentui/react-icons';
 
 export type TaskAttachment = {
   id: string;
@@ -341,6 +342,37 @@ export function BoardView({ projectId, tasks, members, canEdit }: ViewProps) {
   );
 }
 
+const TIMELINE_ZOOM_LABEL: Record<GanttZoom, string> = {
+  day: 'Ημέρα',
+  week: 'Εβδομάδα',
+  month: 'Μήνας',
+};
+
+function shiftTimelineAnchor(d: Date, zoom: GanttZoom, dir: -1 | 1): Date {
+  const r = new Date(d);
+  if (zoom === 'day') r.setDate(r.getDate() + dir);
+  else if (zoom === 'week') r.setDate(r.getDate() + dir * 7);
+  else r.setMonth(r.getMonth() + dir);
+  return r;
+}
+
+function timelineAnchorLabel(d: Date, zoom: GanttZoom): string {
+  if (zoom === 'day') {
+    return d.toLocaleDateString('el-GR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  if (zoom === 'week') {
+    const dow = d.getDay();
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const mStr = monday.toLocaleDateString('el-GR', { day: 'numeric', month: 'short' });
+    const sStr = sunday.toLocaleDateString('el-GR', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `${mStr} – ${sStr}`;
+  }
+  return d.toLocaleDateString('el-GR', { month: 'long', year: 'numeric' });
+}
+
 export function TimelineView({
   projectId,
   projectName,
@@ -351,6 +383,8 @@ export function TimelineView({
 }: ViewProps & { projectName: string; projectColor: string }) {
   const mutations = useTaskMutations(projectId);
   const [editing, setEditing] = useState<TaskRow | null>(null);
+  const [zoom, setZoom] = useState<GanttZoom>('month');
+  const [anchor, setAnchor] = useState<Date>(() => new Date());
   const router = useRouter();
 
   const ganttTasks: GanttTask[] = tasks.map((t) => ({
@@ -371,9 +405,50 @@ export function TimelineView({
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap bg-white rounded-xl border border-black/5 shadow-fluent-2 p-3">
+        <div className="flex items-center gap-1 bg-fluent-neutral-4 rounded-md p-1">
+          {(['day', 'week', 'month'] as const).map((z) => (
+            <button
+              key={z}
+              onClick={() => setZoom(z)}
+              className={`text-xs h-7 px-3 rounded font-medium transition-colors ${
+                zoom === z ? 'bg-white text-fluent-blue-700 shadow-fluent-2' : 'text-fluent-neutral-70 hover:bg-white/60'
+              }`}
+            >
+              {TIMELINE_ZOOM_LABEL[z]}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setAnchor((a) => shiftTimelineAnchor(a, zoom, -1))}
+            className="h-8 w-8 rounded-md text-fluent-neutral-70 hover:bg-fluent-neutral-4 flex items-center justify-center"
+            aria-label="Προηγούμενο"
+          >
+            <ChevronLeft20Regular />
+          </button>
+          <button
+            onClick={() => setAnchor(new Date())}
+            className="h-8 px-3 rounded-md text-xs font-medium text-fluent-neutral-70 hover:bg-fluent-neutral-4"
+          >
+            Σήμερα
+          </button>
+          <button
+            onClick={() => setAnchor((a) => shiftTimelineAnchor(a, zoom, 1))}
+            className="h-8 w-8 rounded-md text-fluent-neutral-70 hover:bg-fluent-neutral-4 flex items-center justify-center"
+            aria-label="Επόμενο"
+          >
+            <ChevronRight20Regular />
+          </button>
+        </div>
+        <span className="text-sm font-semibold text-fluent-neutral-90 truncate">{timelineAnchorLabel(anchor, zoom)}</span>
+      </div>
+
       <Gantt
         rows={[{ id: projectId, label: 'Εργασίες', color: projectColor, tasks: ganttTasks.filter((t) => t.startDate || t.dueDate) }]}
         canEdit={canEdit}
+        zoom={zoom}
+        anchorDate={anchor}
         onReschedule={async (taskId, startDate, dueDate) => {
           await updateTaskDates(projectId, taskId, { startDate, dueDate });
           router.refresh();

@@ -8,7 +8,12 @@ import { TopBar } from './topbar';
 
 type UserRole = 'admin' | 'manager' | 'member' | 'viewer' | undefined;
 type ProjectLink = { id: string; name: string; color: string };
-type TopBarUser = { name: string; email: string; image: string | null };
+type TopBarUser = {
+  name: string;
+  email: string;
+  image: string | null;
+  microsoftConnected: boolean;
+};
 
 interface Props {
   userRole: UserRole;

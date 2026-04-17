@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { addDays, differenceInCalendarDays, startOfDay, format, isSameMonth, isWeekend } from 'date-fns';
 import { Avatar } from '@/components/ui/avatar';
+import { BUSINESS_START_HOUR, BUSINESS_END_HOUR } from '@/lib/business-hours';
 
 export type GanttAssignee = { id: string; name: string; avatarUrl?: string };
 
@@ -28,13 +29,42 @@ export type GanttRow = {
   tasks: GanttTask[];
 };
 
-const DAY_WIDTH = 44;
+export type GanttZoom = 'day' | 'week' | 'month';
+
 const ROW_HEIGHT = 52;
 const LABEL_WIDTH = 220;
+const DAY_WIDTH_BY_ZOOM: Record<GanttZoom, number> = {
+  day: 520,
+  week: 140,
+  month: 44,
+};
+const HOURS_PER_WORKDAY = 8;
+
+function startOfISOWeek(d: Date): Date {
+  const r = startOfDay(d);
+  const dow = r.getDay(); // 0=Sun..6=Sat
+  const diff = dow === 0 ? -6 : 1 - dow; // back to Monday
+  r.setDate(r.getDate() + diff);
+  return r;
+}
+
+function countWorkingDays(start: Date, end: Date): number {
+  let count = 0;
+  const cursor = startOfDay(new Date(start));
+  const last = startOfDay(end);
+  while (cursor <= last) {
+    const dow = cursor.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
 
 type Props = {
   rows: GanttRow[];
   canEdit: boolean;
+  zoom?: GanttZoom;
+  anchorDate?: Date;
   onReschedule?: (taskId: string, startDate: Date, dueDate: Date) => void;
   onClickTask?: (task: GanttTask) => void;
   onReassign?: (task: GanttTask) => void;
@@ -49,36 +79,56 @@ function resolveDates(task: GanttTask): { start: Date; end: Date } | null {
   return { start, end };
 }
 
-export function Gantt({ rows, canEdit, onReschedule, onClickTask, onReassign }: Props) {
+export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule, onClickTask, onReassign }: Props) {
+  const DAY_WIDTH = DAY_WIDTH_BY_ZOOM[zoom];
   const allTasks = rows.flatMap((r) => r.tasks);
   const computed = allTasks
     .map((t) => ({ task: t, dates: resolveDates(t) }))
     .filter((x): x is { task: GanttTask; dates: { start: Date; end: Date } } => x.dates !== null);
 
+  const anchor = useMemo(() => startOfDay(anchorDate ?? new Date()), [anchorDate]);
+
   const range = useMemo(() => {
+    if (zoom === 'day') {
+      return { start: addDays(anchor, -1), end: addDays(anchor, 1) };
+    }
+    if (zoom === 'week') {
+      const monday = startOfISOWeek(anchor);
+      return { start: monday, end: addDays(monday, 6) };
+    }
+    // month: auto-fit to tasks if any, else anchor ±30 days
     if (computed.length === 0) {
-      const today = startOfDay(new Date());
-      return { start: addDays(today, -7), end: addDays(today, 30) };
+      return { start: addDays(anchor, -7), end: addDays(anchor, 30) };
     }
     const mins = computed.map((c) => c.dates.start.getTime());
     const maxs = computed.map((c) => c.dates.end.getTime());
-    const start = startOfDay(addDays(new Date(Math.min(...mins)), -7));
-    const end = startOfDay(addDays(new Date(Math.max(...maxs)), 14));
-    return { start, end };
-  }, [computed]);
+    const rawStart = startOfDay(addDays(new Date(Math.min(...mins)), -7));
+    const rawEnd = startOfDay(addDays(new Date(Math.max(...maxs)), 14));
+    const anchorEarly = addDays(anchor, -14);
+    const anchorLate = addDays(anchor, 45);
+    return {
+      start: rawStart < anchorEarly ? rawStart : anchorEarly,
+      end: rawEnd > anchorLate ? rawEnd : anchorLate,
+    };
+  }, [zoom, anchor, computed]);
 
   const totalDays = differenceInCalendarDays(range.end, range.start) + 1;
   const totalWidth = totalDays * DAY_WIDTH;
   const today = startOfDay(new Date());
   const todayOffset = differenceInCalendarDays(today, range.start);
+  const anchorOffset = differenceInCalendarDays(anchor, range.start);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // Scroll to today on mount
-    if (scrollRef.current && todayOffset >= 0) {
+    if (!scrollRef.current) return;
+    if (zoom === 'month' && todayOffset >= 0) {
       scrollRef.current.scrollLeft = Math.max(0, todayOffset * DAY_WIDTH - 200);
+    } else if (zoom === 'day' && anchorOffset >= 0) {
+      scrollRef.current.scrollLeft = Math.max(0, anchorOffset * DAY_WIDTH - 40);
+    } else {
+      scrollRef.current.scrollLeft = 0;
     }
-  }, [todayOffset]);
+  }, [zoom, todayOffset, anchorOffset, DAY_WIDTH]);
 
   const months = useMemo(() => {
     const result: { label: string; days: number; startOffset: number }[] = [];
@@ -154,6 +204,33 @@ export function Gantt({ rows, canEdit, onReschedule, onClickTask, onReassign }: 
               })}
             </div>
 
+            {zoom === 'day' && (
+              <div className="flex h-5 border-b border-black/5 bg-fluent-neutral-4/30" style={{ width: totalWidth }}>
+                {Array.from({ length: totalDays }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="flex border-r border-black/5"
+                    style={{ width: DAY_WIDTH }}
+                  >
+                    {Array.from({ length: 24 }).map((__, h) => {
+                      const isBusiness = h >= BUSINESS_START_HOUR && h < BUSINESS_END_HOUR;
+                      return (
+                        <div
+                          key={h}
+                          className={`flex items-center justify-center text-[9px] border-r border-black/5 last:border-r-0 ${
+                            isBusiness ? 'text-fluent-neutral-70 bg-white/60' : 'text-fluent-neutral-40'
+                          }`}
+                          style={{ width: DAY_WIDTH / 24 }}
+                        >
+                          {h % 2 === 0 ? String(h).padStart(2, '0') : ''}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {todayOffset >= 0 && todayOffset < totalDays && (
               <div
                 className="absolute top-0 bottom-0 w-px bg-fluent-blue-500 z-10 pointer-events-none"
@@ -168,6 +245,8 @@ export function Gantt({ rows, canEdit, onReschedule, onClickTask, onReassign }: 
                   row={r}
                   rangeStart={range.start}
                   totalDays={totalDays}
+                  dayWidth={DAY_WIDTH}
+                  zoom={zoom}
                   canEdit={canEdit}
                   onReschedule={onReschedule}
                   onClickTask={onClickTask}
@@ -186,6 +265,8 @@ function GanttRowGrid({
   row,
   rangeStart,
   totalDays,
+  dayWidth,
+  zoom,
   canEdit,
   onReschedule,
   onClickTask,
@@ -194,6 +275,8 @@ function GanttRowGrid({
   row: GanttRow;
   rangeStart: Date;
   totalDays: number;
+  dayWidth: number;
+  zoom: GanttZoom;
   canEdit: boolean;
   onReschedule?: (taskId: string, startDate: Date, dueDate: Date) => void;
   onClickTask?: (task: GanttTask) => void;
@@ -204,14 +287,14 @@ function GanttRowGrid({
 
   return (
     <div className="relative border-b border-black/5" style={{ height }}>
-      <div className="absolute inset-0 flex" style={{ width: totalDays * DAY_WIDTH }}>
+      <div className="absolute inset-0 flex" style={{ width: totalDays * dayWidth }}>
         {Array.from({ length: totalDays }).map((_, i) => {
           const d = addDays(rangeStart, i);
           return (
             <div
               key={i}
               className={`border-r border-black/5 ${isWeekend(d) ? 'bg-fluent-neutral-4/40' : ''}`}
-              style={{ width: DAY_WIDTH }}
+              style={{ width: dayWidth }}
             />
           );
         })}
@@ -222,6 +305,8 @@ function GanttRowGrid({
             key={task.id}
             task={task}
             rangeStart={rangeStart}
+            dayWidth={dayWidth}
+            zoom={zoom}
             lane={idx}
             canEdit={canEdit}
             onReschedule={onReschedule}
@@ -242,6 +327,8 @@ type Drag =
 function GanttBar({
   task,
   rangeStart,
+  dayWidth,
+  zoom,
   lane,
   canEdit,
   onReschedule,
@@ -250,6 +337,8 @@ function GanttBar({
 }: {
   task: GanttTask;
   rangeStart: Date;
+  dayWidth: number;
+  zoom: GanttZoom;
   lane: number;
   canEdit: boolean;
   onReschedule?: (taskId: string, startDate: Date, dueDate: Date) => void;
@@ -268,9 +357,29 @@ function GanttBar({
   const effective = override ?? dates;
   const startOffset = differenceInCalendarDays(effective.start, rangeStart);
   const durationDays = Math.max(1, differenceInCalendarDays(effective.end, effective.start) + 1);
+  const workingDays = Math.max(1, countWorkingDays(effective.start, effective.end));
+  const workingHours = workingDays * HOURS_PER_WORKDAY;
 
-  const left = startOffset * DAY_WIDTH;
-  const width = durationDays * DAY_WIDTH - 4;
+  // In day zoom with a real time component, render with hour precision.
+  const rawStart = task.startDate;
+  const rawDue = task.dueDate;
+  const hasTime =
+    !override &&
+    zoom === 'day' &&
+    ((rawStart && (rawStart.getHours() !== 0 || rawStart.getMinutes() !== 0)) ||
+      (rawDue && (rawDue.getHours() !== 0 || rawDue.getMinutes() !== 0)));
+
+  let left = startOffset * dayWidth;
+  let width = durationDays * dayWidth - 4;
+  if (hasTime && rawStart && rawDue) {
+    const startMin = rawStart.getHours() * 60 + rawStart.getMinutes();
+    const endMin = rawDue.getHours() * 60 + rawDue.getMinutes();
+    const startDayOffset = differenceInCalendarDays(rawStart, rangeStart);
+    const endDayOffset = differenceInCalendarDays(rawDue, rangeStart);
+    left = startDayOffset * dayWidth + (startMin / (24 * 60)) * dayWidth;
+    const endPx = endDayOffset * dayWidth + (endMin / (24 * 60)) * dayWidth;
+    width = Math.max(24, endPx - left - 2);
+  }
   const top = lane * ROW_HEIGHT + 6;
 
   const color = statusColor(task.status);
@@ -290,7 +399,7 @@ function GanttBar({
     (e: React.PointerEvent) => {
       if (!drag) return;
       const deltaPx = e.clientX - drag.startX;
-      const deltaDays = Math.round(deltaPx / DAY_WIDTH);
+      const deltaDays = Math.round(deltaPx / dayWidth);
       if (deltaDays === 0 && !dragMovedRef.current) return;
       dragMovedRef.current = Math.abs(deltaPx) > 2 || dragMovedRef.current;
       if (drag.mode === 'move') {
@@ -306,7 +415,7 @@ function GanttBar({
         setOverride({ start: newStart <= drag.origEnd ? newStart : drag.origEnd, end: drag.origEnd });
       }
     },
-    [drag],
+    [drag, dayWidth],
   );
 
   const onPointerUp = useCallback(
@@ -393,7 +502,10 @@ function GanttBar({
           <div className="text-sm font-semibold text-fluent-neutral-95 mb-1.5">{task.title}</div>
           <div className="text-xs text-fluent-neutral-70 space-y-0.5">
             <div>📅 {format(effective.start, 'PP')} → {format(effective.end, 'PP')}</div>
-            <div>⏱ {durationDays} ημέρα/ες {task.estimatedHours !== null ? `· ${task.estimatedHours}h εκτίμηση` : ''}</div>
+            <div>
+              ⏱ {durationDays} ημ. ημερολογίου · {workingDays} εργ. = {workingHours}h
+              {task.estimatedHours !== null ? ` · εκτίμηση ${task.estimatedHours}h` : ''}
+            </div>
             <div>🏷 {task.status} · {task.priority}</div>
             {task.assignees.length > 0 && (
               <div className="flex items-center gap-1 mt-1 flex-wrap">

@@ -7,6 +7,7 @@ import { uploadFileToCDN, deleteFileFromCDN } from '@/lib/bunnycdn';
 import { syncTaskCalendar, removeTaskCalendar } from '@/lib/task-calendar-sync';
 import { normalizeToBusinessHours } from '@/lib/business-hours';
 import { sendEmail } from '@/lib/mailgun';
+import { notifyTaskAssignment, notifyTaskCompleted } from '@/lib/notifications';
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
@@ -200,6 +201,7 @@ export async function createTask(projectId: string, formData: FormData) {
   await logTaskActivity(created.id, projectId, actorId, 'created');
   if (input.assigneeIds.length > 0) {
     await notifyAssignees(created.id, input.assigneeIds, actorId, 'assigned');
+    await notifyTaskAssignment(created.id, input.assigneeIds, actorId);
   }
 
   revalidatePath(`/projects/${projectId}`);
@@ -270,9 +272,14 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
   const addedAssigneeIds = input.assigneeIds.filter((id) => !previousAssigneeIds.has(id));
   if (addedAssigneeIds.length > 0) {
     await notifyAssignees(taskId, addedAssigneeIds, actorId, 'added');
+    await notifyTaskAssignment(taskId, addedAssigneeIds, actorId);
     await logTaskActivity(taskId, projectId, actorId, 'assigned', {
       userIds: addedAssigneeIds,
     });
+  }
+
+  if (previous && previous.status !== 'done' && input.status === 'done') {
+    await notifyTaskCompleted(taskId, actorId);
   }
 
   revalidatePath(`/projects/${projectId}`);
@@ -305,6 +312,9 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
       from: previous.status,
       to: status,
     });
+    if (status === 'done' && previous.status !== 'done') {
+      await notifyTaskCompleted(taskId, actorId);
+    }
   }
 
   revalidatePath(`/projects/${projectId}`);
