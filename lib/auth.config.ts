@@ -1,7 +1,7 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { NextAuthConfig } from "next-auth";
-import Azure from "@auth/core/providers/azure-ad";
-import CredentialsProvider from "@auth/core/providers/credentials";
+import Azure from "next-auth/providers/azure-ad";
+import CredentialsProvider from "next-auth/providers/credentials";
 import bcryptjs from "bcryptjs";
 import { prisma } from "./prisma";
 
@@ -19,14 +19,6 @@ declare module "next-auth" {
   }
 }
 
-declare module "next-auth/jwt" {
-  interface JWT {
-    id: string;
-    role: "admin" | "manager" | "member" | "viewer";
-    azureAdId?: string;
-  }
-}
-
 export const authConfig: NextAuthConfig = {
   adapter: PrismaAdapter(prisma),
   session: {
@@ -34,11 +26,11 @@ export const authConfig: NextAuthConfig = {
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   providers: [
-    // Microsoft Azure AD (Mandatory)
+    // Microsoft Azure AD / Entra ID
     Azure({
       clientId: process.env.APPLICATION_ID || "",
       clientSecret: process.env.CLIENT_SECRET_VALUE || "",
-      tenantId: process.env.TENANT_ID || "",
+      issuer: `https://login.microsoftonline.com/${process.env.TENANT_ID || "common"}/v2.0`,
       allowDangerousEmailAccountLinking: true,
     }),
     // Credentials provider for email/password login

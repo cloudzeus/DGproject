@@ -44,9 +44,9 @@ export async function uploadFileToCDN(options: UploadOptions): Promise<BunnyCDNF
     if (Buffer.isBuffer(file)) {
       fileData = file;
     } else if (file instanceof fs.ReadStream) {
-      fileData = await new Promise((resolve, reject) => {
+      fileData = await new Promise<Buffer>((resolve, reject) => {
         const chunks: Buffer[] = [];
-        file.on('data', (chunk) => chunks.push(chunk));
+        file.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
         file.on('end', () => resolve(Buffer.concat(chunks)));
         file.on('error', reject);
       });

@@ -66,7 +66,7 @@ export async function exportProjectToCDN(projectId: string): Promise<string> {
         size: buffer.length,
         mimeType: 'application/json',
         url: result.url,
-        source: 'bunnycdn',
+        source: 'local',
         uploadedById: project.ownerId,
       },
     });
@@ -201,7 +201,7 @@ export async function exportProjectAsCSV(projectId: string): Promise<string> {
         size: buffer.length,
         mimeType: 'text/csv',
         url: result.url,
-        source: 'bunnycdn',
+        source: 'local',
         uploadedById: project.ownerId,
       },
     });
@@ -222,7 +222,7 @@ export async function getProjectExportsFromCDN(projectId: string) {
     const attachments = await prisma.attachment.findMany({
       where: {
         projectId,
-        source: 'bunnycdn',
+        source: 'local',
         mimeType: {
           in: ['application/json', 'text/csv'],
         },

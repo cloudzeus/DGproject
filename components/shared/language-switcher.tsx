@@ -32,7 +32,7 @@ export function LanguageSwitcher() {
                 <Button
                     key={lang.code}
                     onClick={() => i18n.changeLanguage(lang.code)}
-                    variant={i18n.language === lang.code ? 'default' : 'outline'}
+                    variant={i18n.language === lang.code ? 'primary' : 'secondary'}
                     size="sm"
                     className="text-xs"
                 >

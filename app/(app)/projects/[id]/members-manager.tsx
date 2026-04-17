@@ -55,10 +55,7 @@ export function MembersManager({ projectId, canEdit, ownerId, members, allUsers 
     if (!confirm('Να αφαιρεθεί το μέλος;')) return;
     setError(null);
     startTransition(async () => {
-      const res = await removeProjectMember(projectId, userId);
-      if (res && !res.ok && (res as { error?: string }).error) {
-        setError((res as { error: string }).error);
-      }
+      await removeProjectMember(projectId, userId);
     });
   }
 
