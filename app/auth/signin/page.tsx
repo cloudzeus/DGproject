@@ -95,7 +95,6 @@ function SignInInner() {
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                placeholder="demo@example.com"
                             />
                         </div>
 
@@ -129,12 +128,6 @@ function SignInInner() {
                                 {t('auth.signup')}
                             </a>
                         </p>
-                    </div>
-
-                    <div className="mt-6 p-4 bg-blue-50 rounded-lg text-sm text-gray-600">
-                        <p className="font-semibold mb-2">Demo Credentials:</p>
-                        <p>Email: demo@example.com</p>
-                        <p>Password: password123</p>
                     </div>
                 </div>
             </div>
