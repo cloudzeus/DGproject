@@ -6,8 +6,9 @@ import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { currentUser } from '@/lib/mock-data';
 import { cn } from '@/lib/utils';
+import { TenantUsersPanel } from './tenant-users-panel';
 
-const sections = ['Profile', 'Integrations', 'Notifications', 'Appearance', 'Workspace', 'Billing'] as const;
+const sections = ['Profile', 'Integrations', 'Microsoft 365', 'Notifications', 'Appearance', 'Workspace', 'Billing'] as const;
 type Section = typeof sections[number];
 
 const integrations = [
@@ -123,6 +124,8 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+
+          {section === 'Microsoft 365' && <TenantUsersPanel />}
 
           {section === 'Notifications' && (
             <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-6">

@@ -64,6 +64,26 @@ function SignInInner() {
                         </div>
                     )}
 
+                    <button
+                        type="button"
+                        onClick={() => signIn('azure-ad', { callbackUrl })}
+                        className="w-full flex items-center justify-center gap-3 h-11 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition text-sm font-semibold text-gray-800 mb-4"
+                    >
+                        <svg viewBox="0 0 23 23" className="h-5 w-5" aria-hidden>
+                            <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+                            <rect x="12" y="1" width="10" height="10" fill="#7FBA00" />
+                            <rect x="1" y="12" width="10" height="10" fill="#00A4EF" />
+                            <rect x="12" y="12" width="10" height="10" fill="#FFB900" />
+                        </svg>
+                        Σύνδεση με Microsoft
+                    </button>
+
+                    <div className="flex items-center gap-3 my-4">
+                        <div className="flex-1 h-px bg-gray-200" />
+                        <span className="text-[11px] uppercase tracking-wider text-gray-500">{t('auth.or') ?? 'ή'}</span>
+                        <div className="flex-1 h-px bg-gray-200" />
+                    </div>
+
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
