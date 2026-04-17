@@ -40,10 +40,13 @@ export function Sidebar({ userRole, projects = [] }: { userRole?: UserRole; proj
       {/* logo */}
       <div className="h-14 flex items-center px-5 border-b border-black/5">
         <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-md bg-gradient-to-br from-fluent-blue-500 to-fluent-blue-700 flex items-center justify-center shadow-fluent-2">
-            <svg viewBox="0 0 24 24" className="h-4 w-4 text-white" fill="currentColor">
-              <path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z" />
-            </svg>
+          <div className="h-8 w-8 rounded-md bg-gradient-to-br from-fluent-blue-500 to-fluent-blue-700 flex items-center justify-center shadow-fluent-2 p-1.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://dgsoft.b-cdn.net/company/sisyphusIconWhite.svg"
+              alt="A-Sisyphus"
+              className="h-full w-full object-contain"
+            />
           </div>
           <span className="font-display font-semibold text-[15px] tracking-tight">A-Sisyphus</span>
         </div>

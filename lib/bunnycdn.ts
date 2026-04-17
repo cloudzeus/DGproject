@@ -11,7 +11,7 @@ const bunnyApi = axios.create({
 });
 
 const storageApi = axios.create({
-  baseURL: `https://${process.env.BUNNY_STORAGE_ZONE}.${process.env.BUNNY_STORAGE_API_HOST}`,
+  baseURL: `https://${process.env.BUNNY_STORAGE_API_HOST}`,
   headers: {
     'AccessKey': process.env.BUNNY_ACCESS_KEY,
   },

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { uploadFileToCDN, deleteFileFromCDN } from '@/lib/bunnycdn';
+import { syncTaskCalendar, removeTaskCalendar } from '@/lib/task-calendar-sync';
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
@@ -55,7 +56,7 @@ export async function createTask(projectId: string, formData: FormData) {
   const maxOrder = await prisma.task.aggregate({ where: { projectId }, _max: { order: true } });
   const nextOrder = (maxOrder._max.order ?? -1) + 1;
 
-  await prisma.task.create({
+  const created = await prisma.task.create({
     data: {
       projectId,
       title: input.title,
@@ -71,9 +72,14 @@ export async function createTask(projectId: string, formData: FormData) {
         create: input.assigneeIds.map((userId) => ({ userId })),
       },
     },
+    select: { id: true },
   });
 
+  await syncTaskCalendar(created.id);
+
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/board');
+  revalidatePath('/dashboard');
   return { ok: true };
 }
 
@@ -115,7 +121,11 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
       : []),
   ]);
 
+  await syncTaskCalendar(taskId);
+
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/board');
+  revalidatePath('/dashboard');
   return { ok: true };
 }
 
@@ -143,8 +153,11 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
 
 export async function deleteTask(projectId: string, taskId: string) {
   await requireProjectEditor(projectId);
+  await removeTaskCalendar(taskId);
   await prisma.task.delete({ where: { id: taskId } });
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/board');
+  revalidatePath('/dashboard');
   return { ok: true };
 }
 
@@ -158,7 +171,9 @@ export async function updateTaskDates(
     where: { id: taskId },
     data: { startDate: dates.startDate, dueDate: dates.dueDate },
   });
+  await syncTaskCalendar(taskId);
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/board');
   revalidatePath('/timeline');
   return { ok: true };
 }
@@ -237,7 +252,9 @@ export async function setTaskAssignee(projectId: string, taskId: string, userId:
   if (userId) {
     await prisma.taskAssignee.create({ data: { taskId, userId } });
   }
+  await syncTaskCalendar(taskId);
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/board');
   revalidatePath('/timeline');
   return { ok: true };
 }

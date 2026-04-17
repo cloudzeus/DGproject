@@ -131,3 +131,186 @@ export async function listTenantUsers(): Promise<TenantUser[]> {
 
   return users;
 }
+
+// ─────────────────────────── Calendar sync ──────────────────────────
+
+const DEFAULT_TZ = process.env.GRAPH_CALENDAR_TIMEZONE ?? 'Europe/Athens';
+
+export type CalendarAttendee = { email: string; name?: string };
+
+export type TaskCalendarEvent = {
+  subject: string;
+  bodyHtml: string;
+  startDate: Date;
+  endDate: Date;
+  isAllDay: boolean;
+  attendees: CalendarAttendee[];
+  categories?: string[];
+};
+
+function toGraphLocalDateTime(d: Date, allDay: boolean): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  if (allDay) return `${y}-${m}-${day}T00:00:00`;
+  return `${y}-${m}-${day}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+}
+
+function buildEventBody(event: TaskCalendarEvent) {
+  return {
+    subject: event.subject,
+    body: { contentType: 'HTML', content: event.bodyHtml },
+    start: { dateTime: toGraphLocalDateTime(event.startDate, event.isAllDay), timeZone: DEFAULT_TZ },
+    end: { dateTime: toGraphLocalDateTime(event.endDate, event.isAllDay), timeZone: DEFAULT_TZ },
+    isAllDay: event.isAllDay,
+    isReminderOn: true,
+    reminderMinutesBeforeStart: event.isAllDay ? 18 * 60 : 60,
+    categories: event.categories,
+    attendees: event.attendees.map((a) => ({
+      emailAddress: { address: a.email, name: a.name ?? a.email },
+      type: 'required',
+    })),
+  };
+}
+
+async function graphFetch(
+  path: string,
+  init: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown },
+): Promise<Response> {
+  const token = await getAppToken();
+  return fetch(`${GRAPH}${path}`, {
+    method: init.method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: init.body ? JSON.stringify(init.body) : undefined,
+    cache: 'no-store',
+  });
+}
+
+export async function createCalendarEvent(
+  organizer: string,
+  event: TaskCalendarEvent,
+): Promise<string> {
+  const res = await graphFetch(`/users/${encodeURIComponent(organizer)}/events`, {
+    method: 'POST',
+    body: buildEventBody(event),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new GraphError(`Graph create event failed (${res.status}): ${body}`, res.status);
+  }
+  const data = (await res.json()) as { id: string };
+  return data.id;
+}
+
+export async function updateCalendarEvent(
+  organizer: string,
+  eventId: string,
+  event: TaskCalendarEvent,
+): Promise<void> {
+  const res = await graphFetch(
+    `/users/${encodeURIComponent(organizer)}/events/${encodeURIComponent(eventId)}`,
+    { method: 'PATCH', body: buildEventBody(event) },
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new GraphError(`Graph update event failed (${res.status}): ${body}`, res.status);
+  }
+}
+
+export async function deleteCalendarEvent(organizer: string, eventId: string): Promise<void> {
+  const res = await graphFetch(
+    `/users/${encodeURIComponent(organizer)}/events/${encodeURIComponent(eventId)}`,
+    { method: 'DELETE' },
+  );
+  if (!res.ok && res.status !== 404) {
+    const body = await res.text().catch(() => '');
+    throw new GraphError(`Graph delete event failed (${res.status}): ${body}`, res.status);
+  }
+}
+
+export type GraphUserPhoto = {
+  buffer: Buffer;
+  contentType: string;
+};
+
+export async function getUserPhoto(userKey: string): Promise<GraphUserPhoto | null> {
+  const token = await getAppToken();
+  const res = await fetch(`${GRAPH}/users/${encodeURIComponent(userKey)}/photo/$value`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new GraphError(`Graph photo failed (${res.status}): ${body}`, res.status);
+  }
+  const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+  const arrayBuffer = await res.arrayBuffer();
+  return { buffer: Buffer.from(arrayBuffer), contentType };
+}
+
+export type UserCalendarEvent = {
+  id: string;
+  subject: string;
+  start: Date;
+  end: Date;
+  isAllDay: boolean;
+  location: string | null;
+  organizerName: string | null;
+  webLink: string | null;
+  categories: string[];
+};
+
+export async function listUserCalendarEvents(
+  userKey: string,
+  startISO: string,
+  endISO: string,
+): Promise<UserCalendarEvent[]> {
+  const token = await getAppToken();
+  const select = ['id', 'subject', 'start', 'end', 'isAllDay', 'location', 'organizer', 'webLink', 'categories'].join(',');
+  const url =
+    `${GRAPH}/users/${encodeURIComponent(userKey)}/calendarView` +
+    `?startDateTime=${encodeURIComponent(startISO)}&endDateTime=${encodeURIComponent(endISO)}` +
+    `&$select=${select}&$orderby=start/dateTime&$top=200`;
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Prefer: `outlook.timezone="${DEFAULT_TZ}"`,
+    },
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new GraphError(`Graph calendarView failed (${res.status}): ${body}`, res.status);
+  }
+  const data = (await res.json()) as {
+    value: Array<{
+      id: string;
+      subject: string | null;
+      start: { dateTime: string };
+      end: { dateTime: string };
+      isAllDay: boolean;
+      location: { displayName: string | null } | null;
+      organizer: { emailAddress: { name: string | null } } | null;
+      webLink: string | null;
+      categories: string[] | null;
+    }>;
+  };
+
+  return data.value.map((e) => ({
+    id: e.id,
+    subject: e.subject ?? '(no subject)',
+    start: new Date(e.start.dateTime),
+    end: new Date(e.end.dateTime),
+    isAllDay: e.isAllDay,
+    location: e.location?.displayName ?? null,
+    organizerName: e.organizer?.emailAddress?.name ?? null,
+    webLink: e.webLink,
+    categories: e.categories ?? [],
+  }));
+}

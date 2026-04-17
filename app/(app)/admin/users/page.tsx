@@ -10,6 +10,7 @@ export default async function AdminUsersPage() {
         email: true,
         image: true,
         role: true,
+        azureAdId: true,
         createdAt: true,
         departments: { select: { departmentId: true } },
       },
@@ -27,6 +28,7 @@ export default async function AdminUsersPage() {
     email: u.email,
     image: u.image,
     role: u.role,
+    hasMicrosoftAccount: Boolean(u.azureAdId),
     createdAt: u.createdAt.toISOString(),
     departmentIds: u.departments.map((d) => d.departmentId),
   }));

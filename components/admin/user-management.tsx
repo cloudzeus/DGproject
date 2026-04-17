@@ -9,7 +9,14 @@ import {
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { createUser, updateUser, deleteUser } from '@/app/(app)/admin/users/actions';
+import {
+  createUser,
+  updateUser,
+  deleteUser,
+  uploadUserAvatar,
+  removeUserAvatar,
+  syncUserAvatarFromMicrosoft,
+} from '@/app/(app)/admin/users/actions';
 
 type Role = 'admin' | 'manager' | 'member' | 'viewer';
 
@@ -21,6 +28,7 @@ type UserRow = {
   email: string;
   image: string | null;
   role: Role;
+  hasMicrosoftAccount: boolean;
   createdAt: string;
   departmentIds: string[];
 };
@@ -82,28 +90,27 @@ export function UserManagementClient({
   async function uploadAvatar(userId: string, file: File) {
     setUploadingId(userId);
     setError(null);
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('userId', userId);
-      const up = await fetch('/api/admin/upload-avatar', { method: 'POST', body: fd });
-      if (!up.ok) throw new Error('upload failed');
-      const { url } = await up.json();
-      const res = await fetch(`/api/admin/users/${userId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: url }),
-      });
-      if (!res.ok) throw new Error('update failed');
-      startTransition(() => {
-        // Trigger layout revalidation by navigating in place
-        window.location.reload();
-      });
-    } catch {
-      setError('Αποτυχία μεταφόρτωσης εικόνας.');
-    } finally {
-      setUploadingId(null);
-    }
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await uploadUserAvatar(userId, fd);
+    if (!res.ok) setError(res.error ?? 'Αποτυχία μεταφόρτωσης εικόνας.');
+    setUploadingId(null);
+  }
+
+  async function syncMicrosoftAvatar(userId: string) {
+    setUploadingId(userId);
+    setError(null);
+    const res = await syncUserAvatarFromMicrosoft(userId);
+    if (!res.ok) setError(res.error ?? 'Αποτυχία συγχρονισμού από Microsoft.');
+    setUploadingId(null);
+  }
+
+  async function clearAvatar(userId: string) {
+    if (!confirm('Να αφαιρεθεί η εικόνα του χρήστη;')) return;
+    setUploadingId(userId);
+    setError(null);
+    await removeUserAvatar(userId);
+    setUploadingId(null);
   }
 
   return (
@@ -192,6 +199,33 @@ export function UserManagementClient({
                     <Badge variant={roleVariant[user.role]}>{roleLabel[user.role]}</Badge>
 
                     <div className="flex items-center gap-1">
+                      {user.hasMicrosoftAccount && (
+                        <button
+                          onClick={() => syncMicrosoftAvatar(user.id)}
+                          disabled={uploadingId === user.id}
+                          className="h-8 px-2 rounded-md border border-fluent-blue-200 text-fluent-blue-700 hover:bg-fluent-blue-50 inline-flex items-center gap-1.5 text-xs font-medium disabled:opacity-50"
+                          title="Λήψη φωτογραφίας από Microsoft 365"
+                        >
+                          <svg viewBox="0 0 23 23" className="h-3.5 w-3.5" aria-hidden>
+                            <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+                            <rect x="12" y="1" width="10" height="10" fill="#7FBA00" />
+                            <rect x="1" y="12" width="10" height="10" fill="#00A4EF" />
+                            <rect x="12" y="12" width="10" height="10" fill="#FFB900" />
+                          </svg>
+                          Microsoft
+                        </button>
+                      )}
+                      {user.image && (
+                        <button
+                          onClick={() => clearAvatar(user.id)}
+                          disabled={uploadingId === user.id}
+                          className="h-8 w-8 rounded-md hover:bg-fluent-neutral-8 flex items-center justify-center text-fluent-neutral-70 disabled:opacity-50"
+                          aria-label="Αφαίρεση εικόνας"
+                          title="Αφαίρεση εικόνας"
+                        >
+                          <Dismiss20Regular className="h-4 w-4" />
+                        </button>
+                      )}
                       <button
                         onClick={() => { setEditingId(user.id); setError(null); }}
                         className="h-8 w-8 rounded-md hover:bg-fluent-neutral-8 flex items-center justify-center text-fluent-neutral-70"

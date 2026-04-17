@@ -19,6 +19,10 @@ export default async function ProjectsPage() {
     }),
   ]);
 
+  const role = session?.user?.role;
+  const currentUserId = session?.user?.id ?? '';
+  const canCreate = role === 'admin' || role === 'manager';
+
   const normalized = projects.map((p) => ({
     id: p.id,
     name: p.name,
@@ -26,22 +30,22 @@ export default async function ProjectsPage() {
     color: p.color,
     status: p.status,
     dueDate: p.dueDate,
+    ownerId: p.ownerId,
+    memberIds: p.members.map((m) => m.userId),
     tasks: p.tasks,
     members: p.members.map((m) => ({
       name: m.user.name ?? m.user.email,
       avatarUrl: m.user.image ?? undefined,
     })),
+    canEdit: role === 'admin' || role === 'manager' || p.ownerId === currentUserId,
   }));
-
-  const role = session?.user?.role;
-  const canCreate = role === 'admin' || role === 'manager';
 
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <ProjectsGrid
         projects={normalized}
         users={users.map((u) => ({ id: u.id, name: u.name ?? '', email: u.email }))}
-        currentUserId={session?.user?.id ?? ''}
+        currentUserId={currentUserId}
         canCreate={canCreate}
       />
     </div>

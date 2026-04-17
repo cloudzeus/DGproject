@@ -1,28 +1,29 @@
 'use client';
+import { useState, useTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Dismiss20Regular, Flag16Filled, Calendar16Regular, Person16Regular,
-  Tag16Regular, Comment16Regular, Attach16Regular, Send20Filled,
-  Link16Regular, CalendarAdd20Regular, FolderOpen20Regular, ChatMultiple20Regular,
+  Tag16Regular, Edit20Regular, Delete20Regular, Mail20Regular, Send20Filled,
 } from '@fluentui/react-icons';
-import { Avatar, AvatarStack } from '@/components/ui/avatar';
+import { AvatarStack } from '@/components/ui/avatar';
 import { Badge, Tag } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { mockComments, mockUsers, currentUser } from '@/lib/mock-data';
-import { cn, formatRelative, formatDate, statusLabel } from '@/lib/utils';
+import { cn, formatDate, statusLabel } from '@/lib/utils';
 import type { TaskWithRelations } from '@/types';
 
 interface Props {
   task: TaskWithRelations | null;
   onClose: () => void;
+  onEdit?: (task: TaskWithRelations) => void;
+  onDelete?: (task: TaskWithRelations) => Promise<void> | void;
+  onSendReminder?: (task: TaskWithRelations, message: string) => Promise<{ ok: boolean; error?: string; sent?: number } | void>;
 }
 
-export function TaskDrawer({ task, onClose }: Props) {
+export function TaskDrawer({ task, onClose, onEdit, onDelete, onSendReminder }: Props) {
   return (
     <AnimatePresence>
       {task && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -31,8 +32,6 @@ export function TaskDrawer({ task, onClose }: Props) {
             onClick={onClose}
             className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50"
           />
-
-          {/* Drawer */}
           <motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
@@ -40,7 +39,13 @@ export function TaskDrawer({ task, onClose }: Props) {
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             className="fixed right-0 top-0 bottom-0 w-full max-w-xl bg-white shadow-fluent-64 z-50 flex flex-col"
           >
-            <DrawerContent task={task} onClose={onClose} />
+            <DrawerContent
+              task={task}
+              onClose={onClose}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onSendReminder={onSendReminder}
+            />
           </motion.div>
         </>
       )}
@@ -48,160 +53,203 @@ export function TaskDrawer({ task, onClose }: Props) {
   );
 }
 
-function DrawerContent({ task, onClose }: { task: TaskWithRelations; onClose: () => void }) {
-  const comments = mockComments.filter(c => c.taskId === task.id);
+type DrawerContentProps = Omit<Props, 'task'> & { task: TaskWithRelations };
+
+function DrawerContent({ task, onClose, onEdit, onDelete, onSendReminder }: DrawerContentProps) {
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [reminderMsg, setReminderMsg] = useState('');
+  const [reminderFeedback, setReminderFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const [deletePending, startDelete] = useTransition();
+  const [reminderPending, startReminder] = useTransition();
+
   const overdue = task.dueDate && task.dueDate < new Date() && task.status !== 'done';
+  const canSendReminder = Boolean(onSendReminder) && task.assignees.length > 0;
+
+  function handleDelete() {
+    if (!onDelete) return;
+    if (!confirm(`Διαγραφή της εργασίας "${task.title}";`)) return;
+    startDelete(async () => {
+      await onDelete(task);
+    });
+  }
+
+  function handleSendReminder() {
+    if (!onSendReminder) return;
+    setReminderFeedback(null);
+    startReminder(async () => {
+      const res = await onSendReminder(task, reminderMsg);
+      if (res?.ok) {
+        setReminderFeedback({ ok: true, text: `Στάλθηκε σε ${res.sent ?? task.assignees.length} παραλήπτες.` });
+        setReminderMsg('');
+        setTimeout(() => setReminderOpen(false), 1500);
+      } else {
+        setReminderFeedback({ ok: false, text: res?.error ?? 'Αποτυχία αποστολής.' });
+      }
+    });
+  }
 
   return (
     <>
-      {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-black/5">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: task.project.color }} />
-          <span className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60">{task.project.name}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ background: task.project.color }} />
+          <span className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60 truncate">
+            {task.project.name}
+          </span>
         </div>
-        <button onClick={onClose} className="h-8 w-8 rounded-md hover:bg-fluent-neutral-6 flex items-center justify-center text-fluent-neutral-60">
-          <Dismiss20Regular />
-        </button>
+        <div className="flex items-center gap-1">
+          {onEdit && (
+            <button
+              onClick={() => onEdit(task)}
+              className="h-8 w-8 rounded-md hover:bg-fluent-neutral-6 flex items-center justify-center text-fluent-neutral-70"
+              aria-label="Επεξεργασία"
+              title="Επεξεργασία"
+            >
+              <Edit20Regular />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={deletePending}
+              className="h-8 w-8 rounded-md hover:bg-fluent-accent-red hover:text-white flex items-center justify-center text-fluent-neutral-70 disabled:opacity-50"
+              aria-label="Διαγραφή"
+              title="Διαγραφή"
+            >
+              <Delete20Regular />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="h-8 w-8 rounded-md hover:bg-fluent-neutral-6 flex items-center justify-center text-fluent-neutral-60"
+            aria-label="Κλείσιμο"
+          >
+            <Dismiss20Regular />
+          </button>
+        </div>
       </div>
 
-      {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-6 pb-4">
-          <h1 className="font-display text-2xl font-semibold text-fluent-neutral-95 leading-tight mb-2">{task.title}</h1>
-          <div className="flex items-center gap-2 mb-6">
+          <h1 className="font-display text-2xl font-semibold text-fluent-neutral-95 leading-tight mb-2">
+            {task.title}
+          </h1>
+          <div className="flex items-center gap-2 mb-6 flex-wrap">
             <Badge variant={task.status === 'done' ? 'green' : 'blue'}>{statusLabel(task.status)}</Badge>
-            <Badge variant={task.priority === 'high' ? 'orange' : task.priority === 'urgent' ? 'red' : 'neutral'}>
+            <Badge variant={task.priority === 'urgent' ? 'red' : task.priority === 'high' ? 'orange' : 'neutral'}>
               <Flag16Filled className="h-3 w-3" /> {task.priority}
             </Badge>
             {overdue && <Badge variant="red">Overdue</Badge>}
           </div>
 
-          {/* Meta grid */}
           <div className="grid grid-cols-[120px_1fr] gap-y-3 text-sm mb-6">
             <span className="text-fluent-neutral-60 flex items-center gap-2">
               <Person16Regular /> Assignees
             </span>
-            <div className="flex items-center gap-2">
-              <AvatarStack users={task.assignees} max={4} size="sm" />
-              <span className="text-fluent-neutral-80">{task.assignees.map(a => a.name.split(' ')[0]).join(', ')}</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {task.assignees.length === 0 ? (
+                <span className="text-fluent-neutral-50">Χωρίς ανάθεση</span>
+              ) : (
+                <>
+                  <AvatarStack users={task.assignees} max={4} size="sm" />
+                  <span className="text-fluent-neutral-80">
+                    {task.assignees.map((a) => a.name.split(' ')[0]).join(', ')}
+                  </span>
+                </>
+              )}
             </div>
 
             <span className="text-fluent-neutral-60 flex items-center gap-2">
-              <Calendar16Regular /> Due date
+              <Calendar16Regular /> Προθεσμία
             </span>
             <span className={cn('text-fluent-neutral-80', overdue && 'text-fluent-accent-red font-semibold')}>
-              {task.dueDate ? formatDate(task.dueDate, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'No due date'}
+              {task.dueDate
+                ? formatDate(task.dueDate, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+                : 'Χωρίς προθεσμία'}
             </span>
 
             <span className="text-fluent-neutral-60 flex items-center gap-2">
-              <Tag16Regular /> Tags
+              <Tag16Regular /> Ετικέτες
             </span>
             <div className="flex flex-wrap gap-1">
-              {task.tags.map(t => <Tag key={t}>{t}</Tag>)}
-              {task.tags.length === 0 && <span className="text-fluent-neutral-50">None</span>}
+              {task.tags.map((t) => <Tag key={t}>{t}</Tag>)}
+              {task.tags.length === 0 && <span className="text-fluent-neutral-50">Καμία</span>}
             </div>
           </div>
 
-          {/* Description */}
           <div className="mb-6">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60 mb-2">Description</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60 mb-2">Περιγραφή</h3>
             <p className="text-sm text-fluent-neutral-80 leading-relaxed whitespace-pre-wrap">
-              {task.description || <span className="text-fluent-neutral-50 italic">No description yet. Click to add one.</span>}
+              {task.description || <span className="text-fluent-neutral-50 italic">Χωρίς περιγραφή.</span>}
             </p>
           </div>
 
-          {/* O365 integrations */}
-          <div className="mb-6">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60 mb-2">Microsoft 365</h3>
-            <div className="grid grid-cols-3 gap-2">
-              <button className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-black/5 hover:border-fluent-blue-300 hover:bg-fluent-blue-50 transition-all group">
-                <CalendarAdd20Regular className="text-[#0078D4]" />
-                <span className="text-[11px] font-medium text-fluent-neutral-80">Add to Outlook</span>
-              </button>
-              <button className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-black/5 hover:border-fluent-blue-300 hover:bg-fluent-blue-50 transition-all">
-                <FolderOpen20Regular className="text-[#0364B8]" />
-                <span className="text-[11px] font-medium text-fluent-neutral-80">Attach from OneDrive</span>
-              </button>
-              <button className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-black/5 hover:border-fluent-blue-300 hover:bg-fluent-blue-50 transition-all">
-                <ChatMultiple20Regular className="text-[#6264A7]" />
-                <span className="text-[11px] font-medium text-fluent-neutral-80">Discuss in Teams</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Attachments */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60">Attachments</h3>
-              <button className="text-xs text-fluent-blue-600 hover:underline flex items-center gap-1">
-                <Attach16Regular className="h-3.5 w-3.5" /> Add
-              </button>
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-3 p-2.5 rounded-lg border border-black/5 hover:bg-fluent-neutral-4 transition-colors">
-                <div className="h-8 w-8 rounded bg-[#185ABD] text-white flex items-center justify-center font-bold text-xs">W</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-fluent-neutral-90 truncate">Campaign_Brief_v3.docx</p>
-                  <p className="text-[11px] text-fluent-neutral-60">OneDrive · 2.4 MB</p>
-                </div>
-                <button className="text-fluent-neutral-60 hover:text-fluent-blue-600">
-                  <Link16Regular />
-                </button>
+          {canSendReminder && (
+            <div className="mb-2">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60 flex items-center gap-1.5">
+                  <Mail20Regular className="h-4 w-4" /> Υπενθύμιση με email
+                </h3>
+                {!reminderOpen && (
+                  <Button variant="subtle" size="sm" onClick={() => setReminderOpen(true)}>
+                    Σύνταξη υπενθύμισης
+                  </Button>
+                )}
               </div>
-              <div className="flex items-center gap-3 p-2.5 rounded-lg border border-black/5 hover:bg-fluent-neutral-4 transition-colors">
-                <div className="h-8 w-8 rounded bg-[#C43E1C] text-white flex items-center justify-center font-bold text-xs">P</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-fluent-neutral-90 truncate">Launch-Deck.pptx</p>
-                  <p className="text-[11px] text-fluent-neutral-60">SharePoint · 8.1 MB</p>
-                </div>
-                <button className="text-fluent-neutral-60 hover:text-fluent-blue-600">
-                  <Link16Regular />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Comments */}
-        <div className="px-6 pb-4 border-t border-black/5 pt-5">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60 mb-3 flex items-center gap-2">
-            <Comment16Regular /> Comments ({comments.length})
-          </h3>
-          <div className="space-y-4">
-            {comments.map(c => {
-              const author = mockUsers.find(u => u.id === c.authorId)!;
-              return (
-                <div key={c.id} className="flex gap-3">
-                  <Avatar user={author} size="sm" />
-                  <div className="flex-1">
-                    <div className="flex items-baseline gap-2 mb-1">
-                      <span className="text-sm font-semibold text-fluent-neutral-90">{author.name}</span>
-                      <span className="text-[11px] text-fluent-neutral-50">{formatRelative(c.createdAt)}</span>
+              {reminderOpen && (
+                <div className="space-y-2 bg-fluent-neutral-4 rounded-lg p-3 border border-black/5">
+                  <p className="text-xs text-fluent-neutral-70">
+                    Αποστολή σε {task.assignees.length} παραλήπτη(ες):{' '}
+                    <span className="font-medium">
+                      {task.assignees.map((a) => a.name.split(' ')[0]).join(', ')}
+                    </span>
+                  </p>
+                  <textarea
+                    value={reminderMsg}
+                    onChange={(e) => setReminderMsg(e.target.value)}
+                    rows={3}
+                    placeholder="Προαιρετικό μήνυμα…"
+                    className="w-full px-3 py-2 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none bg-white"
+                  />
+                  {reminderFeedback && (
+                    <div
+                      className={cn(
+                        'text-xs rounded px-2 py-1 border',
+                        reminderFeedback.ok
+                          ? 'bg-green-50 border-green-200 text-fluent-accent-green'
+                          : 'bg-red-50 border-red-200 text-fluent-accent-red',
+                      )}
+                    >
+                      {reminderFeedback.text}
                     </div>
-                    <p className="text-sm text-fluent-neutral-80 leading-relaxed">{c.content}</p>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setReminderOpen(false);
+                        setReminderFeedback(null);
+                        setReminderMsg('');
+                      }}
+                      disabled={reminderPending}
+                    >
+                      Ακύρωση
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={<Send20Filled className="h-4 w-4" />}
+                      onClick={handleSendReminder}
+                      disabled={reminderPending}
+                    >
+                      {reminderPending ? 'Αποστολή…' : 'Αποστολή'}
+                    </Button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Comment composer */}
-      <div className="p-4 border-t border-black/5 bg-fluent-neutral-4">
-        <div className="flex gap-2">
-          <Avatar user={currentUser} size="sm" />
-          <div className="flex-1 flex items-center gap-2 bg-white rounded-lg border border-fluent-neutral-20 focus-within:border-fluent-blue-500 transition-colors px-3 py-1.5">
-            <input
-              type="text"
-              placeholder="Write a comment, @ to mention..."
-              className="flex-1 bg-transparent text-sm placeholder:text-fluent-neutral-50 focus:outline-none"
-            />
-            <button className="text-fluent-blue-600 hover:bg-fluent-blue-50 p-1 rounded">
-              <Send20Filled />
-            </button>
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </>

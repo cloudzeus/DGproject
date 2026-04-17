@@ -9,7 +9,7 @@ export default async function ProfilePage() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { name: true, email: true, image: true, role: true },
+    select: { name: true, email: true, image: true, role: true, azureAdId: true },
   });
 
   if (!user) redirect('/auth/signin');
@@ -20,7 +20,15 @@ export default async function ProfilePage() {
         Το προφίλ μου
       </h1>
       <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-6">
-        <ProfileForm initial={{ name: user.name ?? '', email: user.email, image: user.image, role: user.role }} />
+        <ProfileForm
+          initial={{
+            name: user.name ?? '',
+            email: user.email,
+            image: user.image,
+            role: user.role,
+            hasMicrosoftAccount: Boolean(user.azureAdId),
+          }}
+        />
       </div>
     </div>
   );

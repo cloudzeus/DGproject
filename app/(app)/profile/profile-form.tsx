@@ -1,11 +1,18 @@
 'use client';
 
-import { useActionState, useRef, useState } from 'react';
+import { useActionState, useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { updateProfile, type ProfileUpdateState } from './actions';
+import { updateProfile, syncMyPhotoFromMicrosoft, type ProfileUpdateState } from './actions';
 
 type Props = {
-  initial: { name: string; email: string; image: string | null; role: string };
+  initial: {
+    name: string;
+    email: string;
+    image: string | null;
+    role: string;
+    hasMicrosoftAccount: boolean;
+  };
 };
 
 const initialState: ProfileUpdateState = { ok: false };
@@ -13,11 +20,28 @@ const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
 const MAX_BYTES = 5 * 1024 * 1024;
 
 export function ProfileForm({ initial }: Props) {
+  const router = useRouter();
   const [state, formAction, pending] = useActionState(updateProfile, initialState);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(initial.image);
   const [removed, setRemoved] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [msSuccess, setMsSuccess] = useState<string | null>(null);
+  const [msPending, startMsTransition] = useTransition();
+
+  function handleMsSync() {
+    setLocalError(null);
+    setMsSuccess(null);
+    startMsTransition(async () => {
+      const res = await syncMyPhotoFromMicrosoft();
+      if (res.ok) {
+        setMsSuccess('Η φωτογραφία ενημερώθηκε από το Microsoft προφίλ σου.');
+        router.refresh();
+      } else {
+        setLocalError(res.error ?? 'Αποτυχία συγχρονισμού.');
+      }
+    });
+  }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     setLocalError(null);
@@ -53,7 +77,7 @@ export function ProfileForm({ initial }: Props) {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-fluent-neutral-90 truncate">{initial.email}</div>
           <div className="text-[11px] uppercase tracking-wider text-fluent-neutral-50 mt-0.5">{initial.role}</div>
-          <div className="flex gap-2 mt-3">
+          <div className="flex gap-2 mt-3 flex-wrap">
             <Button
               type="button"
               variant="secondary"
@@ -62,6 +86,17 @@ export function ProfileForm({ initial }: Props) {
             >
               Μεταφόρτωση εικόνας
             </Button>
+            {initial.hasMicrosoftAccount && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleMsSync}
+                disabled={msPending}
+              >
+                {msPending ? 'Συγχρονισμός…' : 'Χρήση φωτογραφίας Microsoft'}
+              </Button>
+            )}
             {preview && (
               <Button type="button" variant="ghost" size="sm" onClick={handleRemove}>
                 Αφαίρεση
@@ -121,6 +156,11 @@ export function ProfileForm({ initial }: Props) {
       {state.ok && state.message && (
         <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-md text-sm">
           {state.message}
+        </div>
+      )}
+      {msSuccess && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-md text-sm">
+          {msSuccess}
         </div>
       )}
 
