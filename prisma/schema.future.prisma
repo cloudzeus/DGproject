@@ -1,0 +1,181 @@
+// This is the FUTURE Prisma schema for Phase 2 of the project.
+// Currently the app uses mock data in /lib/mock-data.ts that conforms to the types in /types/index.ts.
+// When you're ready to add a real database, rename this file to `prisma/schema.prisma` and run:
+//   npx prisma migrate dev --name init
+//
+// The TypeScript types in /types/index.ts were designed to map 1:1 to these models,
+// so you'll only need to update the data-access layer (replace imports from @/lib/mock-data
+// with @/lib/db or similar) — the component code stays the same.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Pick your DB — Postgres recommended for production:
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Enums ─────────────────────────
+enum Role        { admin manager member viewer }
+enum Priority    { low medium high urgent }
+enum TaskStatus  { backlog todo in_progress review done }
+enum ProjStatus  { planning active on_hold completed archived }
+enum ActivityAction   { created updated completed commented assigned moved }
+enum NotificationType { mention assignment due_soon comment status_change }
+enum FileSource       { local onedrive sharepoint }
+
+// ───────────────────────── Models ────────────────────────
+model User {
+  id         String   @id @default(cuid())
+  name       String
+  email      String   @unique
+  avatarUrl  String?
+  role       Role     @default(member)
+  azureAdId  String?  @unique // links to O365 identity
+  createdAt  DateTime @default(now())
+
+  ownedWorkspaces  Workspace[]    @relation("WorkspaceOwner")
+  ownedProjects    Project[]      @relation("ProjectOwner")
+  memberProjects   Project[]      @relation("ProjectMembers")
+  assignedTasks    Task[]         @relation("TaskAssignees")
+  createdTasks     Task[]         @relation("TaskCreator")
+  comments         Comment[]
+  activities       Activity[]
+  notifications    Notification[]
+  uploadedFiles    Attachment[]
+}
+
+model Workspace {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  owner       User      @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  createdAt   DateTime  @default(now())
+
+  projects    Project[]
+  activities  Activity[]
+}
+
+model Project {
+  id                String      @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  status            ProjStatus  @default(planning)
+  color             String
+  icon              String
+  startDate         DateTime?
+  dueDate           DateTime?
+  progress          Int         @default(0)
+  ownerId           String
+  owner             User        @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members           User[]      @relation("ProjectMembers")
+  sharepointSiteUrl String?
+  teamsChannelId    String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  tasks       Task[]
+  attachments Attachment[]
+  activities  Activity[]
+
+  @@index([workspaceId, status])
+}
+
+model Task {
+  id              String     @id @default(cuid())
+  projectId       String
+  project         Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  status          TaskStatus @default(todo)
+  priority        Priority   @default(medium)
+  assignees       User[]     @relation("TaskAssignees")
+  dueDate         DateTime?
+  startDate       DateTime?
+  estimatedHours  Float?
+  completedAt     DateTime?
+  parentTaskId    String?
+  parentTask      Task?      @relation("SubTasks", fields: [parentTaskId], references: [id])
+  subTasks        Task[]     @relation("SubTasks")
+  tags            String[]
+  order           Int        @default(0)
+  outlookEventId  String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  createdById     String
+  createdBy       User       @relation("TaskCreator", fields: [createdById], references: [id])
+
+  comments    Comment[]
+  attachments Attachment[]
+  activities  Activity[]
+
+  @@index([projectId, status, order])
+  @@index([dueDate])
+}
+
+model Comment {
+  id                String   @id @default(cuid())
+  taskId            String
+  task              Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId          String
+  author            User     @relation(fields: [authorId], references: [id])
+  content           String
+  mentionedUserIds  String[] // simple array; or use a separate Mention join table
+  createdAt         DateTime @default(now())
+
+  @@index([taskId, createdAt])
+}
+
+model Attachment {
+  id                String      @id @default(cuid())
+  taskId            String?
+  task              Task?       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectId         String?
+  project           Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name              String
+  size              Int
+  mimeType          String
+  url               String
+  source            FileSource  @default(local)
+  sharepointFileId  String?
+  uploadedById      String
+  uploadedBy        User        @relation(fields: [uploadedById], references: [id])
+  createdAt         DateTime    @default(now())
+}
+
+model Activity {
+  id          String         @id @default(cuid())
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId      String?
+  task        Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  actorId     String
+  actor       User           @relation(fields: [actorId], references: [id])
+  action      ActivityAction
+  targetType  String
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+
+  @@index([workspaceId, createdAt])
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  message    String
+  type       NotificationType
+  read       Boolean          @default(false)
+  link       String?
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, read, createdAt])
+}

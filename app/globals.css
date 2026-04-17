@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-segoe: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+
+  /* Fluent surface layers */
+  --surface-canvas: #F3F3F3;
+  --surface-card:   #FFFFFF;
+  --surface-raised: #FAFAFA;
+  --border-subtle:  rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.10);
+  --border-strong:  rgba(0, 0, 0, 0.16);
+}
+
+html, body { height: 100%; }
+body {
+  font-family: var(--font-segoe);
+  background: var(--surface-canvas);
+  color: #1F1F1F;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv01', 'cv02', 'ss01';
+}
+
+/* Acrylic blur effect — Fluent signature */
+.acrylic {
+  background: rgba(255, 255, 255, 0.70);
+  backdrop-filter: blur(40px) saturate(1.4);
+  -webkit-backdrop-filter: blur(40px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+.acrylic-dark {
+  background: rgba(32, 32, 32, 0.72);
+  backdrop-filter: blur(40px) saturate(1.4);
+  -webkit-backdrop-filter: blur(40px) saturate(1.4);
+}
+
+/* Mica-style sidebar — subtle tint over canvas */
+.mica {
+  background: linear-gradient(180deg, rgba(243,243,243,0.92) 0%, rgba(243,243,243,0.98) 100%);
+  backdrop-filter: blur(60px);
+}
+
+/* Scrollbars — Fluent style */
+* { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.2) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.15);
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.3); }
+
+/* Focus ring — Fluent 2 style */
+*:focus-visible {
+  outline: 2px solid #0078D4;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Reveal effect on interactive surfaces */
+.reveal {
+  position: relative;
+  overflow: hidden;
+}
+.reveal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(0, 120, 212, 0.06),
+    transparent 40%
+  );
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.reveal:hover::before { opacity: 1; }
+
+/* Skeleton shimmer */
+.shimmer {
+  background: linear-gradient(90deg, #F0F0F0 0%, #FAFAFA 50%, #F0F0F0 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Draggable cursor states */
+.draggable { cursor: grab; }
+.draggable:active { cursor: grabbing; }

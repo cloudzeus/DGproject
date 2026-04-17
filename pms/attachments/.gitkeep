@@ -1,0 +1,13 @@
+# Attachments Storage
+
+This folder stores references to file attachments from Bunny CDN.
+
+Files include:
+- Project documents (Word, PDF, Excel)
+- Images and media files
+- Spreadsheets and reports
+- Archive files
+
+Files are directly uploaded to Bunny CDN storage and referenced in the database.
+
+See parent README.md for more details.

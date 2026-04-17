@@ -1,0 +1,19 @@
+# Exports Storage
+
+This folder stores exported reports and data files from Bunny CDN.
+
+Files include:
+- CSV exports of projects and tasks
+- PDF reports with charts and summaries
+- Excel workbooks with data analysis
+- Filtered data exports for specific views
+
+Example filename: `project-abc123def456-export-1713361200000.csv`
+
+To export as CSV:
+```typescript
+import { exportProjectAsCSV } from '@/lib/pms-storage';
+const url = await exportProjectAsCSV(projectId);
+```
+
+See parent README.md for more details.

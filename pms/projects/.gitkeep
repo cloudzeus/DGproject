@@ -1,0 +1,19 @@
+# Projects Storage
+
+This folder stores project-related exports and backups from Bunny CDN.
+
+Files are organized by project ID and include:
+- Project metadata snapshots
+- Task lists with current status
+- Project statistics and progress tracking
+- Configuration backups
+
+Example filename: `project-abc123def456-1713361200000.json`
+
+To export a project:
+```typescript
+import { exportProjectToCDN } from '@/lib/pms-storage';
+const url = await exportProjectToCDN(projectId);
+```
+
+See parent README.md for more details.

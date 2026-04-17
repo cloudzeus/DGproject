@@ -1,0 +1,19 @@
+# Tasks Storage
+
+This folder stores task-specific data snapshots from Bunny CDN.
+
+Files include:
+- Individual task backups
+- Comments and discussion history
+- Task attachments references
+- Status and priority history
+
+Example filename: `task-xyz789abc123-1713361200000.json`
+
+To store a task:
+```typescript
+import { storeTaskToCDN } from '@/lib/pms-storage';
+const url = await storeTaskToCDN(taskId);
+```
+
+See parent README.md for more details.

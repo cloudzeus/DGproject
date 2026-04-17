@@ -1,0 +1,398 @@
+// Production-ready A-Sisyphus Prisma schema
+// All models fully typed with enums, relationships, and performance indexes
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── ENUMS ──────────────────────────
+enum UserRole {
+  admin
+  manager
+  member
+  viewer
+}
+
+enum ProjectStatus {
+  planning
+  active
+  on_hold
+  completed
+  archived
+}
+
+enum TaskStatus {
+  backlog
+  todo
+  in_progress
+  review
+  done
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum ActivityAction {
+  created
+  updated
+  completed
+  commented
+  assigned
+  moved
+}
+
+enum ActivityTargetType {
+  task
+  project
+  comment
+}
+
+enum FileSource {
+  local
+  onedrive
+  sharepoint
+}
+
+enum NotificationType {
+  mention
+  assignment
+  due_soon
+  comment
+  status_change
+}
+
+// ───────────────────────── MODELS ────────────────────────────
+
+// Auth & User Management
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String?   // Optional for OAuth users
+  name          String?
+  image         String?
+  role          UserRole  @default(member)
+  azureAdId     String?   @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  ownedWorkspaces      Workspace[]               @relation("WorkspaceOwner")
+  ownedProjects        Project[]                 @relation("ProjectOwner")
+  projectMemberships   ProjectMember[]
+  assignedTasks        TaskAssignee[]
+  createdTasks         Task[]                    @relation("TaskCreator")
+  comments             Comment[]
+  attachments          Attachment[]
+  activities           Activity[]
+  notifications        Notification[]
+  accounts             Account[]
+  sessions             Session[]
+  mentionedInComments  CommentMention[]
+  departments          UserDepartment[]
+
+  @@index([email])
+  @@index([role])
+  @@index([createdAt])
+}
+
+model Account {
+  id                 String    @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?   @db.Text
+  access_token       String?   @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?   @db.Text
+  session_state      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String    @id @default(cuid())
+  sessionToken String    @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Workspace & Projects
+model Workspace {
+  id          String    @id @default(cuid())
+  name        String
+  description String?   @db.Text
+  ownerId     String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  owner       User      @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  projects    Project[]
+  activities  Activity[]
+
+  @@index([ownerId])
+  @@index([createdAt])
+}
+
+model Project {
+  id                  String          @id @default(cuid())
+  workspaceId         String
+  name                String
+  description         String?         @db.Text
+  status              ProjectStatus   @default(planning)
+  color               String
+  icon                String
+  startDate           DateTime?
+  dueDate             DateTime?
+  progress            Int             @default(0) // 0-100
+  ownerId             String
+  sharepointSiteUrl   String?
+  teamsChannelId      String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  workspace           Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner               User            @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  tasks               Task[]
+  attachments         Attachment[]
+  activities          Activity[]
+  members             ProjectMember[]
+
+  @@index([workspaceId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model ProjectMember {
+  id        String    @id @default(cuid())
+  projectId String
+  userId    String
+  role      UserRole  @default(member)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+// Tasks & Assignments
+model Task {
+  id              String      @id @default(cuid())
+  projectId       String
+  title           String
+  description     String?     @db.Text
+  status          TaskStatus  @default(todo)
+  priority        TaskPriority @default(medium)
+  dueDate         DateTime?
+  startDate       DateTime?
+  estimatedHours  Float?
+  completedAt     DateTime?
+  parentTaskId    String?
+  order           Int         @default(0)
+  outlookEventId  String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  createdById     String
+
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator         User            @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  assignees       TaskAssignee[]
+  comments        Comment[]
+  attachments     Attachment[]
+  tags            TaskTag[]
+  activities      Activity[]
+  mentionedUsers  CommentMention[] @relation("MentionedInTasks")
+
+  @@index([projectId])
+  @@index([status])
+  @@index([priority])
+  @@index([dueDate])
+  @@index([createdById])
+  @@index([updatedAt])
+  @@index([parentTaskId])
+}
+
+model TaskAssignee {
+  id        String    @id @default(cuid())
+  taskId    String
+  userId    String
+  createdAt DateTime  @default(now())
+
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+}
+
+model TaskTag {
+  id      String    @id @default(cuid())
+  taskId  String
+  name    String
+  createdAt DateTime @default(now())
+
+  task    Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, name])
+  @@index([taskId])
+  @@index([name])
+}
+
+// Comments & Interactions
+model Comment {
+  id        String    @id @default(cuid())
+  taskId    String
+  authorId  String
+  content   String    @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  task              Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author            User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  mentionedUsers    CommentMention[]
+
+  @@index([taskId])
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+model CommentMention {
+  id        String    @id @default(cuid())
+  commentId String
+  userId    String
+  taskId    String
+  createdAt DateTime  @default(now())
+
+  comment   Comment   @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task      Task      @relation("MentionedInTasks", fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([commentId])
+  @@index([userId])
+  @@index([taskId])
+}
+
+// Files & Attachments
+model Attachment {
+  id               String      @id @default(cuid())
+  taskId           String?
+  projectId        String?
+  name             String
+  size             Int
+  mimeType         String
+  url              String      @db.Text
+  source           FileSource  @default(local)
+  sharepointFileId String?
+  uploadedById     String
+  createdAt        DateTime    @default(now())
+
+  task             Task?       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  project          Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedBy       User        @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([projectId])
+  @@index([uploadedById])
+  @@index([source])
+}
+
+// Activity & Audit Trail
+model Activity {
+  id            String              @id @default(cuid())
+  workspaceId   String
+  projectId     String?
+  taskId        String?
+  actorId       String
+  action        ActivityAction
+  targetType    ActivityTargetType
+  metadata      Json?               // Store additional context
+  createdAt     DateTime            @default(now())
+
+  workspace     Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task          Task?               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor         User                @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([taskId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@index([action])
+}
+
+// Departments
+model Department {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?          @db.Text
+  color       String           @default("#0078D4")
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  members     UserDepartment[]
+
+  @@index([name])
+}
+
+model UserDepartment {
+  id           String     @id @default(cuid())
+  userId       String
+  departmentId String
+  createdAt    DateTime   @default(now())
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, departmentId])
+  @@index([userId])
+  @@index([departmentId])
+}
+
+// Notifications
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  message   String           @db.Text
+  type      NotificationType
+  read      Boolean          @default(false)
+  link      String?
+  createdAt DateTime         @default(now())
+  readAt    DateTime?
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+  @@index([type])
+}
