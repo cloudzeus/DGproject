@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { SettingsClient } from './settings-client';
+import { getMailgunSettings } from './mailgun-actions';
+import type { MailgunSettingsView } from './mailgun-actions';
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -21,6 +23,16 @@ export default async function SettingsPage() {
     validUntil: process.env.SOFTWARE_LICENSE_TO ?? null,
   };
 
+  const isAdmin = user.role === 'admin';
+  let mailgunInitial: MailgunSettingsView | null = null;
+  if (isAdmin) {
+    try {
+      mailgunInitial = await getMailgunSettings();
+    } catch {
+      mailgunInitial = null;
+    }
+  }
+
   return (
     <SettingsClient
       user={{
@@ -31,7 +43,8 @@ export default async function SettingsPage() {
         role: user.role,
       }}
       license={license}
-      isAdmin={user.role === 'admin'}
+      isAdmin={isAdmin}
+      mailgunInitial={mailgunInitial}
     />
   );
 }

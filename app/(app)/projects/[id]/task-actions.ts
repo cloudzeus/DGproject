@@ -21,6 +21,8 @@ async function requireProjectEditor(projectId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
   const role = session.user.role;
+  // Viewers (clients) are read-only — they can ask/answer questions but never edit tasks.
+  if (role === 'viewer') throw new Error('Forbidden: viewer role cannot edit');
   if (role === 'admin' || role === 'manager') return session.user.id;
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { ownerId: true } });
   if (!project) throw new Error('Project not found');

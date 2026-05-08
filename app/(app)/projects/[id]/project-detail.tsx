@@ -7,12 +7,16 @@ import {
   ArrowLeft20Regular, Share20Regular, MoreHorizontal20Regular,
   Board20Regular, List20Regular, Calendar20Regular, DataBarVertical20Regular,
   ArrowDownload20Regular, Open20Regular, CheckmarkCircle20Filled,
+  DocumentMultiple20Regular,
 } from '@fluentui/react-icons';
 import { AvatarStack } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { formatDate, statusLabel } from '@/lib/utils';
 import { ListView, BoardView, TimelineView, ReportsView, computeStats, type TaskRow } from './task-views';
 import type { TaskAssigneeOption } from './task-form';
+import type { ProjectMemberOption } from './task-questions-panel';
+import { ProjectAttachments, type ProjectAttachmentInfo } from './project-attachments';
+import { ProjectFiles, type ProjectFileItem } from './project-files';
 
 type AvatarUser = { name: string; avatarUrl?: string };
 
@@ -28,10 +32,15 @@ type ProjectDetailProps = {
     tasks: TaskRow[];
   };
   projectMembers: TaskAssigneeOption[];
+  questionMembers: ProjectMemberOption[];
+  currentUserId: string;
+  isPrivileged: boolean;
   canEdit: boolean;
+  projectAttachments: ProjectAttachmentInfo[];
+  aggregatedFiles: ProjectFileItem[];
 };
 
-type Tab = 'board' | 'list' | 'timeline' | 'reports';
+type Tab = 'board' | 'list' | 'timeline' | 'files' | 'reports';
 
 function MenuItem({
   icon,
@@ -59,10 +68,20 @@ const TABS: { id: Tab; label: string; Icon: typeof Board20Regular }[] = [
   { id: 'board', label: 'Board', Icon: Board20Regular },
   { id: 'list', label: 'Λίστα', Icon: List20Regular },
   { id: 'timeline', label: 'Χρονοδιάγραμμα', Icon: Calendar20Regular },
+  { id: 'files', label: 'Αρχεία', Icon: DocumentMultiple20Regular },
   { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular },
 ];
 
-export function ProjectDetail({ project, projectMembers, canEdit }: ProjectDetailProps) {
+export function ProjectDetail({
+  project,
+  projectMembers,
+  questionMembers,
+  currentUserId,
+  isPrivileged,
+  canEdit,
+  projectAttachments,
+  aggregatedFiles,
+}: ProjectDetailProps) {
   const [tab, setTab] = useState<Tab>('board');
   const [shareCopied, setShareCopied] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -227,6 +246,7 @@ export function ProjectDetail({ project, projectMembers, canEdit }: ProjectDetai
         <div className="max-w-[1600px] mx-auto flex gap-1">
           {TABS.map((t) => {
             const active = tab === t.id;
+            const count = t.id === 'files' ? aggregatedFiles.length : null;
             return (
               <button
                 key={t.id}
@@ -234,6 +254,15 @@ export function ProjectDetail({ project, projectMembers, canEdit }: ProjectDetai
                 className={`flex items-center gap-2 px-4 h-11 text-sm font-medium transition-colors border-b-2 -mb-px ${active ? 'text-fluent-blue-700 border-fluent-blue-500' : 'text-fluent-neutral-70 border-transparent hover:text-fluent-neutral-90'}`}
               >
                 <t.Icon className="h-4 w-4" /> {t.label}
+                {count !== null && count > 0 && (
+                  <span
+                    className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] tabular-nums font-semibold ${
+                      active ? 'bg-fluent-blue-600 text-white' : 'bg-fluent-neutral-8 text-fluent-neutral-70'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -241,9 +270,19 @@ export function ProjectDetail({ project, projectMembers, canEdit }: ProjectDetai
       </div>
 
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
-        {tab === 'board' && <BoardView projectId={project.id} tasks={project.tasks} members={projectMembers} canEdit={canEdit} />}
-        {tab === 'list' && <ListView projectId={project.id} tasks={project.tasks} members={projectMembers} canEdit={canEdit} />}
-        {tab === 'timeline' && <TimelineView projectId={project.id} projectName={project.name} projectColor={project.color} tasks={project.tasks} members={projectMembers} canEdit={canEdit} />}
+        {tab === 'board' && <BoardView projectId={project.id} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
+        {tab === 'list' && <ListView projectId={project.id} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
+        {tab === 'timeline' && <TimelineView projectId={project.id} projectName={project.name} projectColor={project.color} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
+        {tab === 'files' && (
+          <div className="space-y-4">
+            <ProjectAttachments
+              projectId={project.id}
+              attachments={projectAttachments}
+              canEdit={canEdit}
+            />
+            <ProjectFiles files={aggregatedFiles} />
+          </div>
+        )}
         {tab === 'reports' && <ReportsView tasks={project.tasks} />}
       </div>
     </div>

@@ -8,13 +8,16 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { TenantUsersPanel } from './tenant-users-panel';
 import { SoftOnePanel } from './softone-panel';
+import { MailgunPanel } from './mailgun-panel';
+import type { MailgunSettingsView } from './mailgun-actions';
 
-type Section = 'profile' | 'microsoft' | 'softone' | 'notifications' | 'license';
+type Section = 'profile' | 'microsoft' | 'softone' | 'mailgun' | 'notifications' | 'license';
 
 const SECTIONS: { id: Section; label: string; adminOnly?: boolean }[] = [
   { id: 'profile', label: 'Προφίλ' },
   { id: 'microsoft', label: 'Microsoft 365', adminOnly: true },
   { id: 'softone', label: 'SoftOne Integration', adminOnly: true },
+  { id: 'mailgun', label: 'Mailgun (Email)', adminOnly: true },
   { id: 'notifications', label: 'Ειδοποιήσεις' },
   { id: 'license', label: 'Άδεια χρήσης' },
 ];
@@ -39,9 +42,10 @@ interface Props {
   user: UserInfo;
   license: LicenseInfo;
   isAdmin: boolean;
+  mailgunInitial: MailgunSettingsView | null;
 }
 
-export function SettingsClient({ user, license, isAdmin }: Props) {
+export function SettingsClient({ user, license, isAdmin, mailgunInitial }: Props) {
   const [section, setSection] = useState<Section>('profile');
   const visibleSections = SECTIONS.filter((s) => !s.adminOnly || isAdmin);
 
@@ -81,6 +85,9 @@ export function SettingsClient({ user, license, isAdmin }: Props) {
           {section === 'profile' && <ProfileSection user={user} />}
           {section === 'microsoft' && isAdmin && <TenantUsersPanel />}
           {section === 'softone' && isAdmin && <SoftOnePanel />}
+          {section === 'mailgun' && isAdmin && (
+            <MailgunPanel initial={mailgunInitial} currentUserEmail={user.email} />
+          )}
           {section === 'notifications' && <NotificationsSection />}
           {section === 'license' && <LicenseSection license={license} />}
         </motion.div>

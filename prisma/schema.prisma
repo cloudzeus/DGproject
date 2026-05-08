@@ -68,21 +68,31 @@ enum NotificationType {
   due_soon
   comment
   status_change
+  question
+  answer
+}
+
+enum TaskQuestionAttachmentKind {
+  question
+  answer
 }
 
 // ───────────────────────── MODELS ────────────────────────────
 
 // Auth & User Management
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password      String?   // Optional for OAuth users
-  name          String?
-  image         String?
-  role          UserRole  @default(member)
-  azureAdId     String?   @unique
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  password            String?   // Optional for OAuth users
+  name                String?
+  image               String?
+  role                UserRole  @default(member)
+  azureAdId           String?   @unique
+  // When true, the user signed in with a temporary password issued by an admin
+  // and must change it before accessing the rest of the app.
+  mustChangePassword  Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   // Relations
   ownedWorkspaces      Workspace[]               @relation("WorkspaceOwner")
@@ -98,6 +108,9 @@ model User {
   sessions             Session[]
   mentionedInComments  CommentMention[]
   departments          UserDepartment[]
+  questionsAsked       TaskQuestion[]            @relation("QuestionAsker")
+  questionsAddressed   TaskQuestion[]            @relation("QuestionAskee")
+  taskQuestionFiles    TaskQuestionAttachment[]
 
   @@index([email])
   @@index([role])
@@ -166,6 +179,9 @@ model Project {
   startDate           DateTime?
   dueDate             DateTime?
   progress            Int             @default(0) // 0-100
+  // Manual sort order for the projects grid / dashboard. Smaller = earlier. Ties
+  // broken by updatedAt DESC. Set on drag-and-drop reorder.
+  order               Int             @default(0)
   ownerId             String
   sharepointSiteUrl   String?
   teamsChannelId      String?
@@ -183,6 +199,7 @@ model Project {
   @@index([ownerId])
   @@index([status])
   @@index([updatedAt])
+  @@index([order])
 }
 
 model ProjectMember {
@@ -228,6 +245,7 @@ model Task {
   tags            TaskTag[]
   activities      Activity[]
   mentionedUsers  CommentMention[] @relation("MentionedInTasks")
+  questions       TaskQuestion[]
 
   @@index([projectId])
   @@index([status])
@@ -376,6 +394,57 @@ model UserDepartment {
   @@unique([userId, departmentId])
   @@index([userId])
   @@index([departmentId])
+}
+
+// Task Q&A — directed questions to a specific assigned user, with optional answer
+model TaskQuestion {
+  id           String    @id @default(cuid())
+  taskId       String
+  askedById    String
+  askedToId    String
+  question     String    @db.Text
+  answer       String?   @db.Text
+  answeredAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  task         Task                     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  askedBy      User                     @relation("QuestionAsker", fields: [askedById], references: [id], onDelete: Cascade)
+  askedTo      User                     @relation("QuestionAskee", fields: [askedToId], references: [id], onDelete: Cascade)
+  attachments  TaskQuestionAttachment[]
+
+  @@index([taskId])
+  @@index([askedById])
+  @@index([askedToId])
+  @@index([createdAt])
+}
+
+model TaskQuestionAttachment {
+  id           String                      @id @default(cuid())
+  questionId   String
+  uploadedById String
+  kind         TaskQuestionAttachmentKind
+  name         String
+  title        String?                     @db.Text
+  size         Int
+  mimeType     String
+  url          String                      @db.Text
+  createdAt    DateTime                    @default(now())
+
+  question     TaskQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@index([uploadedById])
+  @@index([kind])
+}
+
+// App-wide key/value settings (admin-managed, stored encrypted-at-rest by hosting platform)
+model AppSetting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
 }
 
 // Notifications

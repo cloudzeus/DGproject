@@ -9,6 +9,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { uploadTaskAttachment, deleteTaskAttachment } from './task-actions';
 import { useRouter } from 'next/navigation';
+import {
+  TaskQuestionsPanel,
+  type TaskQuestionInfo,
+  type ProjectMemberOption,
+} from './task-questions-panel';
 
 export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
@@ -65,9 +70,29 @@ type Props = {
   projectId?: string;
   taskId?: string;
   attachments?: TaskAttachmentInfo[];
+  questions?: TaskQuestionInfo[];
+  questionMembers?: ProjectMemberOption[];
+  currentUserId?: string;
+  isPrivileged?: boolean;
+  /** When true: task fields render as disabled/read-only. Q&A panel stays interactive. */
+  readOnly?: boolean;
 };
 
-export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, projectId, taskId, attachments }: Props) {
+export function TaskForm({
+  members,
+  initial,
+  submitLabel,
+  onSubmit,
+  onCancel,
+  projectId,
+  taskId,
+  attachments,
+  questions,
+  questionMembers,
+  currentUserId,
+  isPrivileged,
+  readOnly = false,
+}: Props) {
   const [assignees, setAssignees] = useState<string[]>(initial?.assigneeIds ?? []);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -84,17 +109,28 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
     });
   }
 
+  const inputCls = `w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none ${readOnly ? 'bg-fluent-neutral-4 text-fluent-neutral-80 cursor-not-allowed' : ''}`;
+  const textareaCls = `w-full px-3 py-2 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none ${readOnly ? 'bg-fluent-neutral-4 text-fluent-neutral-80 cursor-not-allowed' : ''}`;
+  const selectCls = `w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none ${readOnly ? 'bg-fluent-neutral-4 text-fluent-neutral-80 cursor-not-allowed' : 'bg-white'}`;
+
   return (
-    <form action={handleSubmit} className="space-y-4">
+    <form action={readOnly ? undefined : handleSubmit} className="space-y-4">
+      {readOnly && (
+        <div className="bg-fluent-blue-50 border border-fluent-blue-200 text-fluent-blue-800 text-xs rounded-md px-3 py-2">
+          Προβολή μόνο. Μπορείς να δεις την εργασία και να συμμετέχεις στις ερωτήσεις.
+        </div>
+      )}
       <div>
         <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Τίτλος</label>
         <input
           name="title"
           defaultValue={initial?.title ?? ''}
-          required
+          required={!readOnly}
           minLength={2}
-          autoFocus
-          className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+          autoFocus={!readOnly}
+          readOnly={readOnly}
+          disabled={readOnly}
+          className={inputCls}
         />
       </div>
 
@@ -104,7 +140,9 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
           name="description"
           defaultValue={initial?.description ?? ''}
           rows={3}
-          className="w-full px-3 py-2 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+          readOnly={readOnly}
+          disabled={readOnly}
+          className={textareaCls}
         />
       </div>
 
@@ -114,7 +152,8 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
           <select
             name="status"
             defaultValue={initial?.status ?? 'todo'}
-            className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none bg-white"
+            disabled={readOnly}
+            className={selectCls}
           >
             {STATUS_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
@@ -126,7 +165,8 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
           <select
             name="priority"
             defaultValue={initial?.priority ?? 'medium'}
-            className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none bg-white"
+            disabled={readOnly}
+            className={selectCls}
           >
             {PRIORITY_OPTIONS.map((p) => (
               <option key={p.value} value={p.value}>{p.label}</option>
@@ -140,7 +180,9 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
             name="startDate"
             min="2020-01-01T09:00"
             defaultValue={toDateTimeInput(initial?.startDate ?? null)}
-            className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+            readOnly={readOnly}
+            disabled={readOnly}
+            className={inputCls}
           />
         </div>
         <div>
@@ -149,7 +191,9 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
             type="datetime-local"
             name="dueDate"
             defaultValue={toDateTimeInput(initial?.dueDate ?? null)}
-            className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+            readOnly={readOnly}
+            disabled={readOnly}
+            className={inputCls}
           />
         </div>
         <div className="col-span-2">
@@ -161,7 +205,9 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
             min="0"
             defaultValue={initial?.estimatedHours ?? ''}
             placeholder="π.χ. 4.5"
-            className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+            readOnly={readOnly}
+            disabled={readOnly}
+            className={inputCls}
           />
         </div>
       </div>
@@ -182,14 +228,15 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
                 <button
                   type="button"
                   key={u.id}
-                  onClick={() => toggleAssignee(u.id)}
+                  onClick={() => !readOnly && toggleAssignee(u.id)}
+                  disabled={readOnly}
                   className={`text-xs px-2.5 py-1 rounded-full border transition-all inline-flex items-center gap-1 ${
                     active
                       ? 'bg-fluent-blue-600 text-white border-transparent'
                       : 'border-fluent-neutral-20 text-fluent-neutral-80 hover:bg-fluent-neutral-4'
-                  }`}
+                  } ${readOnly ? 'cursor-not-allowed opacity-80' : ''}`}
                 >
-                  {active && <Dismiss20Regular className="h-3 w-3" />}
+                  {active && !readOnly && <Dismiss20Regular className="h-3 w-3" />}
                   {u.name || u.email}
                 </button>
               );
@@ -202,16 +249,36 @@ export function TaskForm({ members, initial, submitLabel, onSubmit, onCancel, pr
       </div>
 
       {projectId && taskId && (
-        <AttachmentsPanel projectId={projectId} taskId={taskId} attachments={attachments ?? []} />
+        <AttachmentsPanel
+          projectId={projectId}
+          taskId={taskId}
+          attachments={attachments ?? []}
+          readOnly={readOnly}
+        />
+      )}
+
+      {projectId && taskId && currentUserId && questionMembers && (
+        <TaskQuestionsPanel
+          projectId={projectId}
+          taskId={taskId}
+          currentUserId={currentUserId}
+          isPrivileged={isPrivileged ?? false}
+          members={questionMembers}
+          questions={questions ?? []}
+        />
       )}
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-md text-sm">{error}</div>}
 
       <div className="flex justify-end gap-2 pt-1">
-        <Button type="button" variant="secondary" size="md" onClick={onCancel} disabled={pending}>Ακύρωση</Button>
-        <Button type="submit" variant="primary" size="md" disabled={pending}>
-          {pending ? 'Αποθήκευση…' : submitLabel}
+        <Button type="button" variant="secondary" size="md" onClick={onCancel} disabled={pending}>
+          {readOnly ? 'Κλείσιμο' : 'Ακύρωση'}
         </Button>
+        {!readOnly && (
+          <Button type="submit" variant="primary" size="md" disabled={pending}>
+            {pending ? 'Αποθήκευση…' : submitLabel}
+          </Button>
+        )}
       </div>
     </form>
   );
@@ -221,10 +288,12 @@ function AttachmentsPanel({
   projectId,
   taskId,
   attachments,
+  readOnly = false,
 }: {
   projectId: string;
   taskId: string;
   attachments: TaskAttachmentInfo[];
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -285,7 +354,7 @@ function AttachmentsPanel({
           <Attach20Regular className="h-4 w-4" />
           Συνημμένα ({attachments.length})
         </label>
-        {!pendingFile && (
+        {!readOnly && !pendingFile && (
           <Button
             type="button"
             variant="secondary"
@@ -295,10 +364,12 @@ function AttachmentsPanel({
             Επιλογή αρχείου
           </Button>
         )}
-        <input ref={inputRef} type="file" className="hidden" onChange={handleFileChange} />
+        {!readOnly && (
+          <input ref={inputRef} type="file" className="hidden" onChange={handleFileChange} />
+        )}
       </div>
 
-      {pendingFile && (
+      {!readOnly && pendingFile && (
         <div className="bg-fluent-neutral-4 border border-fluent-neutral-20 rounded-md p-3 mb-2 space-y-2">
           <div className="flex items-center gap-2 text-sm">
             <FileIcon mimeType={pendingFile.type} />
@@ -365,14 +436,16 @@ function AttachmentsPanel({
               <span className="text-[11px] text-fluent-neutral-60 tabular-nums shrink-0">
                 {formatBytes(a.size)}
               </span>
-              <button
-                type="button"
-                onClick={() => handleRemove(a.id)}
-                className="h-7 w-7 rounded hover:bg-fluent-accent-red hover:text-white flex items-center justify-center text-fluent-neutral-60"
-                aria-label="Διαγραφή"
-              >
-                <Delete20Regular className="h-4 w-4" />
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => handleRemove(a.id)}
+                  className="h-7 w-7 rounded hover:bg-fluent-accent-red hover:text-white flex items-center justify-center text-fluent-neutral-60"
+                  aria-label="Διαγραφή"
+                >
+                  <Delete20Regular className="h-4 w-4" />
+                </button>
+              )}
             </li>
           ))}
         </ul>

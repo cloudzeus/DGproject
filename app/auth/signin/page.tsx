@@ -24,6 +24,7 @@ function SignInInner() {
     const [isLoading, setIsLoading] = useState(false);
 
     const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
+    const passwordChanged = searchParams.get('changed') === '1';
 
     async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -57,6 +58,12 @@ function SignInInner() {
                         <h1 className="text-3xl font-bold text-gray-900">{t('auth.signin')}</h1>
                         <p className="text-gray-600 mt-2">A-Sisyphus</p>
                     </div>
+
+                    {passwordChanged && !error && (
+                        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 text-sm">
+                            Ο κωδικός σου άλλαξε επιτυχώς. Συνδέσου με τον νέο σου κωδικό.
+                        </div>
+                    )}
 
                     {error && (
                         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">

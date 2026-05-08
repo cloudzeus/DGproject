@@ -12,6 +12,8 @@ async function requireTaskEditor(taskId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
   const role = session.user.role;
+  // Viewers (clients) are read-only — they can ask/answer questions but never edit tasks.
+  if (role === 'viewer') throw new Error('Forbidden: viewer role cannot edit');
   if (role === 'admin' || role === 'manager') return session.user.id;
 
   const task = await prisma.task.findUnique({
@@ -85,6 +87,7 @@ function escapeHtml(s: string): string {
 export async function sendTaskReminder(taskId: string, customMessage?: string) {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, error: 'Unauthorized' };
+  if (session.user.role === 'viewer') return { ok: false, error: 'Forbidden' };
 
   const task = await prisma.task.findUnique({
     where: { id: taskId },

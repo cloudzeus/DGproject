@@ -55,7 +55,7 @@ export default async function DashboardPage() {
               ],
             }),
       },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: [{ order: 'asc' }, { updatedAt: 'desc' }],
       include: {
         members: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
         tasks: { select: { status: true } },
@@ -123,6 +123,7 @@ export default async function DashboardPage() {
       dueSoon={dueSoon}
       activities={activityList}
       activeProjects={activeProjects}
+      canReorder={session?.user?.role !== 'viewer'}
     />
   );
 }

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Delete20Regular, Edit20Regular, Add20Filled,
   ArrowUpload20Regular, Dismiss20Regular,
+  KeyReset20Regular, Mail20Regular,
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +17,7 @@ import {
   uploadUserAvatar,
   removeUserAvatar,
   syncUserAvatarFromMicrosoft,
+  resendUserCredentials,
 } from '@/app/(app)/admin/users/actions';
 
 type Role = 'admin' | 'manager' | 'member' | 'viewer';
@@ -60,11 +62,27 @@ export function UserManagementClient({
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  const [info, setInfo] = useState<string | null>(null);
+
   function submitCreate(formData: FormData) {
     setError(null);
+    setInfo(null);
     startTransition(async () => {
       const res = await createUser(formData);
-      if (res?.ok) setShowAdd(false);
+      if (res?.ok) {
+        setShowAdd(false);
+        if ('warning' in res && res.warning) setInfo(res.warning);
+      } else if (res?.error) setError(res.error);
+    });
+  }
+
+  function resendCredentials(id: string, email: string) {
+    if (!confirm(`Να σταλεί νέος προσωρινός κωδικός στο ${email}; Ο τρέχων κωδικός θα ακυρωθεί.`)) return;
+    setError(null);
+    setInfo(null);
+    startTransition(async () => {
+      const res = await resendUserCredentials(id);
+      if (res?.ok) setInfo(`Στάλθηκαν νέα στοιχεία πρόσβασης στο ${email}.`);
       else if (res?.error) setError(res.error);
     });
   }
@@ -124,6 +142,11 @@ export function UserManagementClient({
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-md text-sm">{error}</div>
+      )}
+      {info && (
+        <div className="bg-fluent-blue-50 border border-fluent-blue-200 text-fluent-blue-800 px-3 py-2 rounded-md text-sm inline-flex items-center gap-2">
+          <Mail20Regular className="h-4 w-4 shrink-0" /> {info}
+        </div>
       )}
 
       <AnimatePresence>
@@ -227,6 +250,15 @@ export function UserManagementClient({
                         </button>
                       )}
                       <button
+                        onClick={() => resendCredentials(user.id, user.email)}
+                        disabled={pending}
+                        className="h-8 w-8 rounded-md hover:bg-fluent-blue-50 flex items-center justify-center text-fluent-neutral-70 hover:text-fluent-blue-700 disabled:opacity-50"
+                        aria-label="Επαναποστολή προσωρινού κωδικού"
+                        title="Αποστολή νέου προσωρινού κωδικού με email"
+                      >
+                        <KeyReset20Regular className="h-4 w-4" />
+                      </button>
+                      <button
                         onClick={() => { setEditingId(user.id); setError(null); }}
                         className="h-8 w-8 rounded-md hover:bg-fluent-neutral-8 flex items-center justify-center text-fluent-neutral-70"
                         aria-label="Επεξεργασία"
@@ -268,6 +300,7 @@ function UserForm({
   onCancel: () => void;
 }) {
   const [selectedDepts, setSelectedDepts] = useState<string[]>(initial?.departmentIds ?? []);
+  const [sendCredentials, setSendCredentials] = useState<boolean>(mode === 'create');
   const formRef = useRef<HTMLFormElement>(null);
 
   function toggleDept(id: string) {
@@ -297,19 +330,21 @@ function UserForm({
             className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
           />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
-            {mode === 'create' ? 'Κωδικός' : 'Νέος κωδικός (προαιρ.)'}
-          </label>
-          <input
-            name={mode === 'create' ? 'password' : 'newPassword'}
-            type="password"
-            required={mode === 'create'}
-            minLength={8}
-            placeholder={mode === 'edit' ? 'Αφήστε κενό για να μην αλλάξει' : undefined}
-            className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
-          />
-        </div>
+        {(mode === 'edit' || !sendCredentials) && (
+          <div>
+            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
+              {mode === 'create' ? 'Κωδικός' : 'Νέος κωδικός (προαιρ.)'}
+            </label>
+            <input
+              name={mode === 'create' ? 'password' : 'newPassword'}
+              type="password"
+              required={mode === 'create' && !sendCredentials}
+              minLength={8}
+              placeholder={mode === 'edit' ? 'Αφήστε κενό για να μην αλλάξει' : undefined}
+              className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+            />
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Ρόλος</label>
           <select
@@ -320,10 +355,32 @@ function UserForm({
             <option value="admin">Διαχειριστής</option>
             <option value="manager">Διευθυντής</option>
             <option value="member">Μέλος</option>
-            <option value="viewer">Προβολή</option>
+            <option value="viewer">Προβολή (πελάτης)</option>
           </select>
         </div>
       </div>
+
+      {mode === 'create' && (
+        <label className="flex items-start gap-3 rounded-lg border border-fluent-blue-200 bg-fluent-blue-50/50 p-3 cursor-pointer">
+          <input
+            type="checkbox"
+            name="sendCredentials"
+            checked={sendCredentials}
+            onChange={(e) => setSendCredentials(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-fluent-blue-600"
+          />
+          <span className="flex-1">
+            <span className="block text-sm font-medium text-fluent-neutral-90 inline-flex items-center gap-1.5">
+              <Mail20Regular className="h-4 w-4 text-fluent-blue-600" />
+              Αυτόματη δημιουργία κωδικού &amp; αποστολή με email
+            </span>
+            <span className="block text-xs text-fluent-neutral-60 mt-0.5">
+              Δημιουργείται ασφαλής προσωρινός κωδικός και στέλνεται μέσω Mailgun. Ο χρήστης θα
+              πρέπει να τον αλλάξει στην πρώτη σύνδεση.
+            </span>
+          </span>
+        </label>
+      )}
 
       <div>
         <label className="block text-xs font-medium text-fluent-neutral-70 mb-1.5">Τμήματα</label>

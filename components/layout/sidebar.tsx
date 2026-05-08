@@ -14,27 +14,39 @@ import {
   PeopleTeam24Regular, PeopleTeam24Filled,
   BuildingMultiple24Regular, BuildingMultiple24Filled,
   DataBarVertical24Regular, DataBarVertical24Filled,
+  ChatBubblesQuestion24Regular, ChatBubblesQuestion24Filled,
   ChevronRight16Regular,
   Add16Regular,
 } from '@fluentui/react-icons';
 import { cn } from '@/lib/utils';
 
 const nav = [
-  { href: '/dashboard', label: 'Αρχική', Regular: Home24Regular, Filled: Home24Filled },
-  { href: '/board', label: 'Οι εργασίες μου', Regular: Board24Regular, Filled: Board24Filled },
-  { href: '/projects', label: 'Έργα', Regular: Folder24Regular, Filled: Folder24Filled },
-  { href: '/timeline', label: 'Χρονοδιάγραμμα', Regular: CalendarLtr24Regular, Filled: CalendarLtr24Filled },
-  { href: '/calendar', label: 'Ημερολόγιο', Regular: Calendar24Regular, Filled: Calendar24Filled },
-  { href: '/files', label: 'Αρχεία', Regular: DocumentMultiple24Regular, Filled: DocumentMultiple24Filled },
-  { href: '/team', label: 'Ομάδα', Regular: People24Regular, Filled: People24Filled },
-  { href: '/reports', label: 'Αναφορές', Regular: DataBarVertical24Regular, Filled: DataBarVertical24Filled },
+  { href: '/dashboard', label: 'Αρχική', Regular: Home24Regular, Filled: Home24Filled, badgeKey: undefined },
+  { href: '/board', label: 'Οι εργασίες μου', Regular: Board24Regular, Filled: Board24Filled, badgeKey: undefined },
+  { href: '/projects', label: 'Έργα', Regular: Folder24Regular, Filled: Folder24Filled, badgeKey: undefined },
+  { href: '/questions', label: 'Ερωτήσεις', Regular: ChatBubblesQuestion24Regular, Filled: ChatBubblesQuestion24Filled, badgeKey: 'questions' as const },
+  { href: '/timeline', label: 'Χρονοδιάγραμμα', Regular: CalendarLtr24Regular, Filled: CalendarLtr24Filled, badgeKey: undefined },
+  { href: '/calendar', label: 'Ημερολόγιο', Regular: Calendar24Regular, Filled: Calendar24Filled, badgeKey: undefined },
+  { href: '/files', label: 'Αρχεία', Regular: DocumentMultiple24Regular, Filled: DocumentMultiple24Filled, badgeKey: undefined },
+  { href: '/team', label: 'Ομάδα', Regular: People24Regular, Filled: People24Filled, badgeKey: undefined },
+  { href: '/reports', label: 'Αναφορές', Regular: DataBarVertical24Regular, Filled: DataBarVertical24Filled, badgeKey: undefined },
 ];
 
 type UserRole = 'admin' | 'manager' | 'member' | 'viewer' | undefined;
 
 type ProjectLink = { id: string; name: string; color: string };
 
-export function Sidebar({ userRole, projects = [] }: { userRole?: UserRole; projects?: ProjectLink[] }) {
+type Badges = { questions?: number };
+
+export function Sidebar({
+  userRole,
+  projects = [],
+  badges = {},
+}: {
+  userRole?: UserRole;
+  projects?: ProjectLink[];
+  badges?: Badges;
+}) {
   const pathname = usePathname();
   const isAdmin = userRole === 'admin';
 
@@ -61,6 +73,7 @@ export function Sidebar({ userRole, projects = [] }: { userRole?: UserRole; proj
           {nav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/');
             const Icon = active ? item.Filled : item.Regular;
+            const badge = item.badgeKey ? badges[item.badgeKey] : undefined;
             return (
               <Link
                 key={item.href}
@@ -80,7 +93,12 @@ export function Sidebar({ userRole, projects = [] }: { userRole?: UserRole; proj
                   />
                 )}
                 <Icon className={cn('h-5 w-5', active ? 'text-fluent-blue-600' : 'text-fluent-neutral-60')} />
-                {item.label}
+                <span className="flex-1 truncate">{item.label}</span>
+                {typeof badge === 'number' && badge > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] rounded-full text-[10px] font-bold px-1.5 bg-fluent-accent-orange text-white">
+                    {badge > 99 ? '99+' : badge}
+                  </span>
+                )}
               </Link>
             );
           })}

@@ -17,6 +17,8 @@ async function requireAuth() {
 
 async function requireProjectEditor(projectId: string) {
   const { id, role } = await requireAuth();
+  // Viewers are read-only clients; they cannot create or modify projects.
+  if (role === 'viewer') throw new Error('Forbidden: viewer role cannot edit');
   if (role === 'admin' || role === 'manager') return { id, role };
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { ownerId: true } });
   if (!project) throw new Error('Project not found');
@@ -126,5 +128,70 @@ export async function updateProjectStatus(id: string, status: Status) {
   revalidatePath('/projects');
   revalidatePath(`/projects/${id}`);
   revalidatePath('/dashboard');
+  return { ok: true };
+}
+
+/**
+ * Reorders the supplied subset of project ids while preserving the relative
+ * positions of every other project in the global list.
+ *
+ * The UI only ever drags within whatever the user currently sees (e.g. "active"
+ * tab on dashboard, or filtered list on /projects). To keep that intuitive across
+ * views, we walk the global order and, wherever the current id is one of the
+ * visible/dragged ones, substitute the next id from the user's new ordering.
+ * Non-visible projects keep their slots, so their relative position is unchanged.
+ *
+ * Auth: viewers (read-only clients) are rejected. Non-privileged users can only
+ * include in `visibleIdsInNewOrder` projects they own or are members of.
+ */
+export async function reorderProjects(visibleIdsInNewOrder: string[]) {
+  const { id, role } = await requireAuth();
+  if (role === 'viewer') return { ok: false, error: 'Forbidden' };
+
+  const visibleIds = Array.from(
+    new Set(visibleIdsInNewOrder.filter((s) => typeof s === 'string' && s.length > 0)),
+  );
+  if (visibleIds.length === 0) return { ok: true };
+
+  const isPrivileged = role === 'admin' || role === 'manager';
+
+  if (!isPrivileged) {
+    const allowed = await prisma.project.findMany({
+      where: {
+        id: { in: visibleIds },
+        OR: [{ ownerId: id }, { members: { some: { userId: id } } }],
+      },
+      select: { id: true },
+    });
+    const allowedSet = new Set(allowed.map((p) => p.id));
+    const unauthorized = visibleIds.filter((x) => !allowedSet.has(x));
+    if (unauthorized.length > 0) return { ok: false, error: 'Forbidden' };
+  }
+
+  const all = await prisma.project.findMany({
+    orderBy: [{ order: 'asc' }, { updatedAt: 'desc' }],
+    select: { id: true },
+  });
+  const allIds = all.map((p) => p.id);
+  const visibleSet = new Set(visibleIds);
+
+  // Sanity: every visibleId must exist globally (otherwise abort to avoid corrupting state).
+  if (visibleIds.some((vid) => !allIds.includes(vid))) {
+    return { ok: false, error: 'Project not found' };
+  }
+
+  // Walk allIds; whenever we hit a visible slot, drop in the next id from the new ordering.
+  const queue = [...visibleIds];
+  const merged = allIds.map((aid) => (visibleSet.has(aid) ? queue.shift()! : aid));
+
+  await prisma.$transaction(
+    merged.map((projectId, index) =>
+      prisma.project.update({ where: { id: projectId }, data: { order: index } }),
+    ),
+  );
+
+  revalidatePath('/projects');
+  revalidatePath('/dashboard');
+  revalidatePath('/', 'layout'); // sidebar list
   return { ok: true };
 }

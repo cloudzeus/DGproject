@@ -15,13 +15,30 @@ import {
   Delete20Regular,
   Grid20Regular,
   TextBulletList20Regular,
+  ReOrderDotsVertical20Regular,
 } from '@fluentui/react-icons';
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  rectSortingStrategy,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { AvatarStack } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { formatDate, statusLabel, cn } from '@/lib/utils';
 import { NewProjectButton } from './new-project-button';
 import { ProjectForm, ProjectModal, type UserOption } from './project-form';
-import { updateProject, deleteProject, updateProjectStatus } from './actions';
+import { updateProject, deleteProject, updateProjectStatus, reorderProjects } from './actions';
 
 type Status = 'active' | 'planning' | 'on_hold' | 'completed' | 'archived';
 
@@ -64,16 +81,23 @@ export function ProjectsGrid({
   users,
   currentUserId,
   canCreate,
+  canReorder = true,
 }: {
   projects: ProjectWithRelations[];
   users: UserOption[];
   currentUserId: string;
   canCreate: boolean;
+  canReorder?: boolean;
 }) {
+  const router = useRouter();
   const [editingProject, setEditingProject] = useState<ProjectWithRelations | null>(null);
   const [bucket, setBucket] = useState<StatusBucket>('active');
   const [view, setView] = useState<ViewMode>('cards');
   const [query, setQuery] = useState('');
+  // Local optimistic order so the drag preview lands instantly; server reorder
+  // call follows in the background.
+  const [orderOverride, setOrderOverride] = useState<string[] | null>(null);
+  const [, startReorder] = useTransition();
 
   const counts = useMemo(() => {
     const c = { active: 0, completed: 0, archived: 0, all: projects.length };
@@ -85,9 +109,27 @@ export function ProjectsGrid({
     return c;
   }, [projects]);
 
+  const orderedProjects = useMemo(() => {
+    if (!orderOverride) return projects;
+    const map = new Map(projects.map((p) => [p.id, p]));
+    const reordered: ProjectWithRelations[] = [];
+    const seen = new Set<string>();
+    for (const id of orderOverride) {
+      const p = map.get(id);
+      if (p) {
+        reordered.push(p);
+        seen.add(id);
+      }
+    }
+    for (const p of projects) {
+      if (!seen.has(p.id)) reordered.push(p);
+    }
+    return reordered;
+  }, [projects, orderOverride]);
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return projects.filter((p) => {
+    return orderedProjects.filter((p) => {
       if (bucket === 'active' && !ACTIVE_STATUSES.includes(p.status)) return false;
       if (bucket === 'completed' && p.status !== 'completed') return false;
       if (bucket === 'archived' && p.status !== 'archived') return false;
@@ -97,7 +139,34 @@ export function ProjectsGrid({
         (p.description?.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [projects, bucket, query]);
+  }, [orderedProjects, bucket, query]);
+
+  const visibleIds = useMemo(() => visible.map((p) => p.id), [visible]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const fromIdx = visibleIds.indexOf(String(active.id));
+    const toIdx = visibleIds.indexOf(String(over.id));
+    if (fromIdx === -1 || toIdx === -1) return;
+    const reorderedVisibleIds = arrayMove(visibleIds, fromIdx, toIdx);
+    // Apply optimistic full-list ordering: visible items follow the new sequence,
+    // hidden items keep their slots.
+    const visibleSet = new Set(reorderedVisibleIds);
+    const queue = [...reorderedVisibleIds];
+    const nextFullIds = orderedProjects.map((p) => (visibleSet.has(p.id) ? queue.shift()! : p.id));
+    setOrderOverride(nextFullIds);
+    startReorder(async () => {
+      const res = await reorderProjects(reorderedVisibleIds);
+      if (!res?.ok) {
+        // Revert on failure.
+        setOrderOverride(null);
+      }
+      router.refresh();
+    });
+  }
 
   const tabs: Array<{ id: StatusBucket; label: string; count: number }> = [
     { id: 'active', label: 'Ενεργά', count: counts.active },
@@ -189,10 +258,19 @@ export function ProjectsGrid({
             {query ? 'Κανένα έργο δεν ταιριάζει με την αναζήτηση.' : 'Δεν υπάρχουν έργα σε αυτή την κατηγορία.'}
           </p>
         </div>
-      ) : view === 'cards' ? (
-        <ProjectsCards projects={visible} onEdit={setEditingProject} />
       ) : (
-        <ProjectsList projects={visible} onEdit={setEditingProject} />
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext
+            items={visibleIds}
+            strategy={view === 'cards' ? rectSortingStrategy : verticalListSortingStrategy}
+          >
+            {view === 'cards' ? (
+              <ProjectsCards projects={visible} canReorder={canReorder} onEdit={setEditingProject} />
+            ) : (
+              <ProjectsList projects={visible} canReorder={canReorder} onEdit={setEditingProject} />
+            )}
+          </SortableContext>
+        </DndContext>
       )}
 
       <AnimatePresence>
@@ -230,84 +308,125 @@ export function ProjectsGrid({
 function ProjectsCards({
   projects,
   onEdit,
+  canReorder,
 }: {
   projects: ProjectWithRelations[];
   onEdit: (p: ProjectWithRelations) => void;
+  canReorder: boolean;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-      {projects.map((p, i) => {
-        const { done, total, pct } = progressOf(p);
-        return (
-          <motion.div
-            key={p.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.4) }}
-          >
-            <Link href={`/projects/${p.id}`} className="block group">
-              <div className="bg-white rounded-xl border border-black/5 overflow-hidden shadow-fluent-2 hover:shadow-fluent-16 hover:-translate-y-0.5 transition-all duration-300">
-                <div className="h-20 relative" style={{ background: `linear-gradient(135deg, ${p.color} 0%, ${p.color}dd 100%)` }}>
-                  <div className="absolute inset-0 bg-mesh opacity-30" />
-                  <ProjectCardMenu project={p} onEdit={() => onEdit(p)} />
-                  <div className="absolute -bottom-5 left-5 h-10 w-10 rounded-lg bg-white shadow-fluent-4 flex items-center justify-center text-lg font-bold" style={{ color: p.color }}>
-                    {p.name[0]}
-                  </div>
-                </div>
-
-                <div className="pt-7 px-5 pb-5">
-                  <div className="flex items-start justify-between mb-1">
-                    <h3 className="font-display font-semibold text-fluent-neutral-95 truncate">{p.name}</h3>
-                    <Badge variant={STATUS_VARIANT[p.status]}>{statusLabel(p.status)}</Badge>
-                  </div>
-                  <p className="text-xs text-fluent-neutral-60 line-clamp-2 mb-4 min-h-[32px]">{p.description}</p>
-
-                  <div className="mb-4">
-                    <div className="flex justify-between text-[11px] mb-1.5">
-                      <span className="text-fluent-neutral-60">Πρόοδος</span>
-                      <span className="font-semibold text-fluent-neutral-90">{pct}%</span>
-                    </div>
-                    <div className="h-1.5 bg-fluent-neutral-8 rounded-full overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${pct}%` }}
-                        transition={{ duration: 0.8, delay: 0.2, ease: [0.33, 0, 0.67, 1] }}
-                        className="h-full rounded-full"
-                        style={{ background: p.color }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 text-[11px] text-fluent-neutral-60 mb-4">
-                    <span className="flex items-center gap-1">
-                      <CheckmarkCircle16Regular /> {done}/{total}
-                    </span>
-                    {p.dueDate && (
-                      <span className="flex items-center gap-1">
-                        <Calendar16Regular /> {formatDate(p.dueDate)}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t border-black/5">
-                    <AvatarStack users={p.members} max={4} size="xs" />
-                  </div>
-                </div>
-              </div>
-            </Link>
-          </motion.div>
-        );
-      })}
+      {projects.map((p, i) => (
+        <SortableCard key={p.id} project={p} index={i} onEdit={onEdit} canReorder={canReorder && p.canEdit} />
+      ))}
     </div>
+  );
+}
+
+function SortableCard({
+  project: p,
+  index: i,
+  onEdit,
+  canReorder,
+}: {
+  project: ProjectWithRelations;
+  index: number;
+  onEdit: (p: ProjectWithRelations) => void;
+  canReorder: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: p.id, disabled: !canReorder });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 50 : 'auto',
+  };
+  const { done, total, pct } = progressOf(p);
+  return (
+    <motion.div
+      ref={setNodeRef}
+      style={style}
+      initial={{ opacity: 0, y: 12 }}
+      animate={isDragging ? undefined : { opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.4) }}
+      className="relative group/card"
+    >
+      {canReorder && (
+        <button
+          ref={setActivatorNodeRef}
+          {...listeners}
+          {...attributes}
+          type="button"
+          aria-label="Σύρε για αλλαγή σειράς"
+          title="Σύρε για αλλαγή σειράς"
+          className="absolute top-2 left-2 z-20 h-7 w-7 rounded-md bg-white/85 backdrop-blur shadow-fluent-2 text-fluent-neutral-70 hover:bg-white hover:text-fluent-neutral-90 cursor-grab active:cursor-grabbing flex items-center justify-center opacity-0 group-hover/card:opacity-100 focus:opacity-100 transition-opacity"
+        >
+          <ReOrderDotsVertical20Regular className="h-4 w-4" />
+        </button>
+      )}
+      <Link href={`/projects/${p.id}`} className="block group">
+        <div className="bg-white rounded-xl border border-black/5 overflow-hidden shadow-fluent-2 hover:shadow-fluent-16 hover:-translate-y-0.5 transition-all duration-300">
+          <div className="h-20 relative" style={{ background: `linear-gradient(135deg, ${p.color} 0%, ${p.color}dd 100%)` }}>
+            <div className="absolute inset-0 bg-mesh opacity-30" />
+            <ProjectCardMenu project={p} onEdit={() => onEdit(p)} />
+            <div className="absolute -bottom-5 left-5 h-10 w-10 rounded-lg bg-white shadow-fluent-4 flex items-center justify-center text-lg font-bold" style={{ color: p.color }}>
+              {p.name[0]}
+            </div>
+          </div>
+
+          <div className="pt-7 px-5 pb-5">
+            <div className="flex items-start justify-between mb-1">
+              <h3 className="font-display font-semibold text-fluent-neutral-95 truncate">{p.name}</h3>
+              <Badge variant={STATUS_VARIANT[p.status]}>{statusLabel(p.status)}</Badge>
+            </div>
+            <p className="text-xs text-fluent-neutral-60 line-clamp-2 mb-4 min-h-[32px]">{p.description}</p>
+
+            <div className="mb-4">
+              <div className="flex justify-between text-[11px] mb-1.5">
+                <span className="text-fluent-neutral-60">Πρόοδος</span>
+                <span className="font-semibold text-fluent-neutral-90">{pct}%</span>
+              </div>
+              <div className="h-1.5 bg-fluent-neutral-8 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${pct}%` }}
+                  transition={{ duration: 0.8, delay: 0.2, ease: [0.33, 0, 0.67, 1] }}
+                  className="h-full rounded-full"
+                  style={{ background: p.color }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 text-[11px] text-fluent-neutral-60 mb-4">
+              <span className="flex items-center gap-1">
+                <CheckmarkCircle16Regular /> {done}/{total}
+              </span>
+              {p.dueDate && (
+                <span className="flex items-center gap-1">
+                  <Calendar16Regular /> {formatDate(p.dueDate)}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-black/5">
+              <AvatarStack users={p.members} max={4} size="xs" />
+            </div>
+          </div>
+        </div>
+      </Link>
+    </motion.div>
   );
 }
 
 function ProjectsList({
   projects,
   onEdit,
+  canReorder,
 }: {
   projects: ProjectWithRelations[];
   onEdit: (p: ProjectWithRelations) => void;
+  canReorder: boolean;
 }) {
   return (
     <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2">
@@ -320,73 +439,114 @@ function ProjectsList({
         <div className="col-span-2 sm:col-span-1 md:col-span-1 text-right pr-1">Ενέργειες</div>
       </div>
       <ul className="divide-y divide-black/5">
-        {projects.map((p) => {
-          const { done, total, pct } = progressOf(p);
-          return (
-            <li key={p.id} className="relative last:rounded-b-xl hover:bg-fluent-neutral-4/40 transition-colors">
-              <Link
-                href={`/projects/${p.id}`}
-                className="grid grid-cols-12 gap-3 px-4 py-3 pr-14 items-center"
-              >
-                <div className="col-span-5 sm:col-span-4 flex items-center gap-3 min-w-0">
-                  <div
-                    className="h-9 w-9 rounded-md flex items-center justify-center text-white text-sm font-bold shrink-0"
-                    style={{ background: p.color }}
-                  >
-                    {p.name[0]}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-fluent-neutral-90 truncate">{p.name}</div>
-                    {p.description && (
-                      <div className="text-[11px] text-fluent-neutral-60 truncate">{p.description}</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="hidden sm:block sm:col-span-2">
-                  <Badge variant={STATUS_VARIANT[p.status]}>{statusLabel(p.status)}</Badge>
-                </div>
-
-                <div className="col-span-5 sm:col-span-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-fluent-neutral-8 overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: p.color }} />
-                    </div>
-                    <span className="text-[11px] font-semibold text-fluent-neutral-80 tabular-nums w-8 text-right">{pct}%</span>
-                  </div>
-                  <div className="text-[10px] text-fluent-neutral-60 mt-0.5 tabular-nums">
-                    {done}/{total} εργασίες
-                  </div>
-                </div>
-
-                <div className="hidden md:block md:col-span-2 text-[11px] text-fluent-neutral-70">
-                  {p.dueDate ? (
-                    <span className="inline-flex items-center gap-1">
-                      <Calendar16Regular className="text-fluent-neutral-50" />
-                      {formatDate(p.dueDate, { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </span>
-                  ) : (
-                    <span className="text-fluent-neutral-50">—</span>
-                  )}
-                </div>
-
-                <div className="hidden lg:flex lg:col-span-1">
-                  {p.members.length > 0 ? (
-                    <AvatarStack users={p.members} max={3} size="xs" />
-                  ) : (
-                    <span className="text-[11px] text-fluent-neutral-50">—</span>
-                  )}
-                </div>
-              </Link>
-
-              <div className="absolute top-1/2 right-3 -translate-y-1/2">
-                <ProjectCardMenu project={p} onEdit={() => onEdit(p)} compact />
-              </div>
-            </li>
-          );
-        })}
+        {projects.map((p) => (
+          <SortableRow key={p.id} project={p} onEdit={onEdit} canReorder={canReorder && p.canEdit} />
+        ))}
       </ul>
     </div>
+  );
+}
+
+function SortableRow({
+  project: p,
+  onEdit,
+  canReorder,
+}: {
+  project: ProjectWithRelations;
+  onEdit: (p: ProjectWithRelations) => void;
+  canReorder: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: p.id, disabled: !canReorder });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    background: isDragging ? 'rgb(232 244 253)' : undefined,
+    zIndex: isDragging ? 50 : undefined,
+  };
+  const { done, total, pct } = progressOf(p);
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className="relative last:rounded-b-xl hover:bg-fluent-neutral-4/40 transition-colors group/row"
+    >
+      {canReorder && (
+        <button
+          ref={setActivatorNodeRef}
+          {...listeners}
+          {...attributes}
+          type="button"
+          aria-label="Σύρε για αλλαγή σειράς"
+          title="Σύρε για αλλαγή σειράς"
+          className="absolute top-1/2 left-0 -translate-y-1/2 h-9 w-6 flex items-center justify-center text-fluent-neutral-50 hover:text-fluent-neutral-80 cursor-grab active:cursor-grabbing opacity-0 group-hover/row:opacity-100 focus:opacity-100 transition-opacity"
+        >
+          <ReOrderDotsVertical20Regular className="h-4 w-4" />
+        </button>
+      )}
+      <Link
+        href={`/projects/${p.id}`}
+        className={cn(
+          'grid grid-cols-12 gap-3 px-4 py-3 pr-14 items-center',
+          canReorder && 'pl-7',
+        )}
+      >
+        <div className="col-span-5 sm:col-span-4 flex items-center gap-3 min-w-0">
+          <div
+            className="h-9 w-9 rounded-md flex items-center justify-center text-white text-sm font-bold shrink-0"
+            style={{ background: p.color }}
+          >
+            {p.name[0]}
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-fluent-neutral-90 truncate">{p.name}</div>
+            {p.description && (
+              <div className="text-[11px] text-fluent-neutral-60 truncate">{p.description}</div>
+            )}
+          </div>
+        </div>
+
+        <div className="hidden sm:block sm:col-span-2">
+          <Badge variant={STATUS_VARIANT[p.status]}>{statusLabel(p.status)}</Badge>
+        </div>
+
+        <div className="col-span-5 sm:col-span-3">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1.5 rounded-full bg-fluent-neutral-8 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: p.color }} />
+            </div>
+            <span className="text-[11px] font-semibold text-fluent-neutral-80 tabular-nums w-8 text-right">{pct}%</span>
+          </div>
+          <div className="text-[10px] text-fluent-neutral-60 mt-0.5 tabular-nums">
+            {done}/{total} εργασίες
+          </div>
+        </div>
+
+        <div className="hidden md:block md:col-span-2 text-[11px] text-fluent-neutral-70">
+          {p.dueDate ? (
+            <span className="inline-flex items-center gap-1">
+              <Calendar16Regular className="text-fluent-neutral-50" />
+              {formatDate(p.dueDate, { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          ) : (
+            <span className="text-fluent-neutral-50">—</span>
+          )}
+        </div>
+
+        <div className="hidden lg:flex lg:col-span-1">
+          {p.members.length > 0 ? (
+            <AvatarStack users={p.members} max={3} size="xs" />
+          ) : (
+            <span className="text-[11px] text-fluent-neutral-50">—</span>
+          )}
+        </div>
+      </Link>
+
+      <div className="absolute top-1/2 right-3 -translate-y-1/2">
+        <ProjectCardMenu project={p} onEdit={() => onEdit(p)} compact />
+      </div>
+    </li>
   );
 }
 

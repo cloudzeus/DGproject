@@ -6,6 +6,8 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { uploadFileToCDN } from '@/lib/bunnycdn';
 import { getUserPhoto, graphIsConfigured, GraphError } from '@/lib/microsoft-graph';
+import { generateTempPassword } from '@/lib/passwords';
+import { sendCredentialsEmail } from '@/lib/credentials-email';
 
 type Role = 'admin' | 'manager' | 'member' | 'viewer';
 const ROLES: Role[] = ['admin', 'manager', 'member', 'viewer'];
@@ -32,38 +34,116 @@ async function requireAdmin() {
   return session.user.id;
 }
 
+async function requireAdminUser() {
+  const session = await auth();
+  if (!session?.user?.id || session.user.role !== 'admin') {
+    throw new Error('Unauthorized');
+  }
+  return { id: session.user.id, name: session.user.name, email: session.user.email };
+}
+
 function parseDepartmentIds(formData: FormData): string[] {
   return formData.getAll('departmentIds').map((v) => String(v)).filter(Boolean);
 }
 
 export async function createUser(formData: FormData) {
-  await requireAdmin();
+  const admin = await requireAdminUser();
   const name = String(formData.get('name') ?? '').trim();
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
-  const password = String(formData.get('password') ?? '');
   const role = (String(formData.get('role') ?? 'member') as Role);
   const departmentIds = parseDepartmentIds(formData);
+  const sendCredentials = String(formData.get('sendCredentials') ?? '') === 'on';
+  const adminPassword = String(formData.get('password') ?? '');
 
   if (name.length < 2) return { ok: false, error: 'Το όνομα είναι πολύ σύντομο.' };
   if (!email.includes('@')) return { ok: false, error: 'Μη έγκυρο email.' };
-  if (password.length < 8) return { ok: false, error: 'Ο κωδικός πρέπει να έχει τουλάχιστον 8 χαρακτήρες.' };
   if (!ROLES.includes(role)) return { ok: false, error: 'Μη έγκυρος ρόλος.' };
+
+  let plainPassword: string;
+  let mustChangePassword = false;
+  if (sendCredentials) {
+    plainPassword = generateTempPassword(12);
+    mustChangePassword = true;
+  } else {
+    if (adminPassword.length < 8) {
+      return { ok: false, error: 'Ο κωδικός πρέπει να έχει τουλάχιστον 8 χαρακτήρες.' };
+    }
+    plainPassword = adminPassword;
+  }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return { ok: false, error: 'Υπάρχει ήδη χρήστης με αυτό το email.' };
 
-  const hashed = await bcryptjs.hash(password, 10);
+  const hashed = await bcryptjs.hash(plainPassword, 10);
   await prisma.user.create({
     data: {
       name,
       email,
       password: hashed,
       role,
+      mustChangePassword,
       departments: departmentIds.length
         ? { create: departmentIds.map((departmentId) => ({ departmentId })) }
         : undefined,
     },
   });
+
+  if (sendCredentials) {
+    try {
+      await sendCredentialsEmail({
+        to: email,
+        name,
+        tempPassword: plainPassword,
+        reason: 'invite',
+        invitedByName: admin.name ?? admin.email ?? undefined,
+      });
+    } catch (e) {
+      console.warn('[createUser] credentials email failed', e);
+      // The user exists; surface a partial-success warning so the admin can resend.
+      revalidatePath('/admin/users');
+      return {
+        ok: true,
+        warning:
+          'Ο χρήστης δημιουργήθηκε αλλά απέτυχε η αποστολή email. Δοκίμασε «Επαναποστολή στοιχείων».',
+      };
+    }
+  }
+
+  revalidatePath('/admin/users');
+  return { ok: true };
+}
+
+export async function resendUserCredentials(id: string) {
+  const admin = await requireAdminUser();
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, name: true, email: true },
+  });
+  if (!user) return { ok: false, error: 'Ο χρήστης δεν βρέθηκε.' };
+
+  const tempPassword = generateTempPassword(12);
+  const hashed = await bcryptjs.hash(tempPassword, 10);
+
+  await prisma.user.update({
+    where: { id },
+    data: { password: hashed, mustChangePassword: true },
+  });
+
+  try {
+    await sendCredentialsEmail({
+      to: user.email,
+      name: user.name ?? user.email,
+      tempPassword,
+      reason: 'reset',
+      invitedByName: admin.name ?? admin.email ?? undefined,
+    });
+  } catch (e) {
+    console.warn('[resendUserCredentials] email failed', e);
+    return {
+      ok: false,
+      error: 'Ο κωδικός ενημερώθηκε αλλά απέτυχε η αποστολή του email. Έλεγξε το Mailgun setup.',
+    };
+  }
 
   revalidatePath('/admin/users');
   return { ok: true };

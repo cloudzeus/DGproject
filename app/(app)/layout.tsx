@@ -10,16 +10,37 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/auth/signin?callbackUrl=/dashboard');
   }
 
-  const [user, sidebarProjects] = await Promise.all([
+  // Force users with a temporary password into the change-password flow before they
+  // can access any other app surface. The /auth/change-password route lives outside
+  // the (app) group so this redirect doesn't loop.
+  if (session.user.mustChangePassword) {
+    redirect('/auth/change-password');
+  }
+
+  // Privileged users see all projects in the sidebar; members + viewers (clients) only
+  // see projects they own or are members of.
+  const role = session.user.role;
+  const userId = session.user.id;
+  const isPrivileged = role === 'admin' || role === 'manager';
+
+  const [user, sidebarProjects, pendingQuestions] = await Promise.all([
     prisma.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: userId },
       select: { name: true, email: true, image: true, role: true, azureAdId: true },
     }),
     prisma.project.findMany({
-      where: { status: { not: 'archived' } },
+      where: {
+        status: { not: 'archived' },
+        ...(isPrivileged
+          ? {}
+          : { OR: [{ ownerId: userId }, { members: { some: { userId } } }] }),
+      },
       select: { id: true, name: true, color: true },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: [{ order: 'asc' }, { updatedAt: 'desc' }],
       take: 8,
+    }),
+    prisma.taskQuestion.count({
+      where: { askedToId: userId, answer: null },
     }),
   ]);
 
@@ -37,6 +58,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         image: user.image,
         microsoftConnected: Boolean(user.azureAdId),
       }}
+      badges={{ questions: pendingQuestions }}
     >
       {children}
     </AppShell>

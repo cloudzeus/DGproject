@@ -1,0 +1,174 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-05-08T18:35:32.970Z",
+  "source": "auto-postool",
+  "partial": false,
+  "phase": null,
+  "phase_name": null,
+  "phase_dir": null,
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "auto-checkpoint",
+  "completed_tasks": [],
+  "remaining_tasks": [],
+  "blockers": [],
+  "human_actions_pending": [],
+  "decisions": [],
+  "uncommitted_files": [
+    {
+      "status": "M",
+      "path": "app/(app)/admin/users/actions.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/board/actions.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/dashboard/dashboard-client.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/dashboard/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/layout.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/project-detail.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/task-actions.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/task-form.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/task-views.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/actions.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/projects-grid.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/settings/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/settings/settings-client.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/timeline/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/auth/signin/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "components/admin/user-management.tsx"
+    },
+    {
+      "status": "M",
+      "path": "components/layout/app-shell.tsx"
+    },
+    {
+      "status": "M",
+      "path": "components/layout/sidebar.tsx"
+    },
+    {
+      "status": "M",
+      "path": "lib/auth.config.ts"
+    },
+    {
+      "status": "M",
+      "path": "lib/mailgun.ts"
+    },
+    {
+      "status": "M",
+      "path": "prisma/schema.prisma"
+    },
+    {
+      "status": "??",
+      "path": ".planning/"
+    },
+    {
+      "status": "??",
+      "path": "app/(app)/projects/[id]/project-files.tsx"
+    },
+    {
+      "status": "??",
+      "path": "app/(app)/projects/[id]/question-actions.ts"
+    },
+    {
+      "status": "??",
+      "path": "app/(app)/projects/[id]/task-questions-panel.tsx"
+    },
+    {
+      "status": "??",
+      "path": "app/(app)/questions/"
+    },
+    {
+      "status": "??",
+      "path": "app/(app)/settings/mailgun-actions.ts"
+    },
+    {
+      "status": "??",
+      "path": "app/(app)/settings/mailgun-panel.tsx"
+    },
+    {
+      "status": "??",
+      "path": "app/auth/change-password/"
+    },
+    {
+      "status": "??",
+      "path": "lib/app-settings.ts"
+    },
+    {
+      "status": "??",
+      "path": "lib/credentials-email.ts"
+    },
+    {
+      "status": "??",
+      "path": "lib/passwords.ts"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/20260508172001_add_task_questions/"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/20260508174355_add_app_setting/"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/20260508180337_add_must_change_password/"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/20260508181426_add_project_order/"
+    }
+  ],
+  "next_action": null,
+  "context_notes": "Recent commits:\n8308149 feat: wire up board add-task buttons, assignee/priority/more filters\nff2ebeb feat: real notifications, M365 apps launcher, timeline zoom, projects list view\n12d170e feat: reports + exports, settings revamp, file attachments with titles, mobile sidebar, translations\nc0c62af feat: task datetime + business hours, assignee email notify, project status quick-change, SSO oid fix\n3370839 feat: real data across dashboard/board/calendar, task CRUD, email reminders, Outlook calendar sync"
+}

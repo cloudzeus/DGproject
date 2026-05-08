@@ -7,7 +7,7 @@ export default async function GlobalTimelinePage() {
     auth(),
     prisma.project.findMany({
       where: { status: { not: 'archived' } },
-      orderBy: [{ updatedAt: 'desc' }],
+      orderBy: [{ order: 'asc' }, { updatedAt: 'desc' }],
       include: {
         tasks: {
           orderBy: { order: 'asc' },

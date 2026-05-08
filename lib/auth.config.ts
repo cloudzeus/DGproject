@@ -14,6 +14,7 @@ declare module "next-auth" {
       name: string;
       image?: string;
       role: "admin" | "manager" | "member" | "viewer";
+      mustChangePassword?: boolean;
     };
     accessToken?: string;
   }
@@ -77,7 +78,7 @@ export const authConfig: NextAuthConfig = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user, account, profile }) {
+    async jwt({ token, user, account, profile, trigger }) {
       // Add user data to token on login
       if (user) {
         token.id = user.id;
@@ -86,6 +87,17 @@ export const authConfig: NextAuthConfig = {
         });
         token.role = (dbUser?.role as any) || "member";
         token.azureAdId = dbUser?.azureAdId;
+        token.mustChangePassword = !!dbUser?.mustChangePassword;
+      }
+
+      // After password change we call session.update() — re-read the flag from DB.
+      if (trigger === "update" && token.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { mustChangePassword: true, role: true },
+        });
+        token.mustChangePassword = !!dbUser?.mustChangePassword;
+        token.role = (dbUser?.role as any) || token.role;
       }
 
       // Handle Azure AD login — prefer `oid` (Object ID) over `sub`
@@ -94,6 +106,8 @@ export const authConfig: NextAuthConfig = {
       if (account?.provider === "azure-ad") {
         const oid = (profile as { oid?: string } | undefined)?.oid;
         token.azureAdId = oid ?? account.providerAccountId;
+        // OAuth users never go through the temp-password flow.
+        token.mustChangePassword = false;
       }
 
       return token;
@@ -102,6 +116,7 @@ export const authConfig: NextAuthConfig = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = (token.role as any) || "member";
+        session.user.mustChangePassword = !!token.mustChangePassword;
       }
       return session;
     },

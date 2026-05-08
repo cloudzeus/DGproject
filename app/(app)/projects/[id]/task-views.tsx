@@ -27,6 +27,7 @@ import {
   type TaskPriority,
   type TaskAssigneeOption,
 } from './task-form';
+import type { TaskQuestionInfo, ProjectMemberOption } from './task-questions-panel';
 import { createTask, updateTask, deleteTask, updateTaskStatus, updateTaskDates } from './task-actions';
 import { Gantt, type GanttTask, type GanttZoom } from '@/components/gantt/gantt';
 import { ChevronLeft20Regular, ChevronRight20Regular } from '@fluentui/react-icons';
@@ -53,6 +54,7 @@ export type TaskRow = {
   completedAt: Date | null;
   assignees: Array<{ id: string; name: string; avatarUrl?: string }>;
   attachments: TaskAttachment[];
+  questions: TaskQuestionInfo[];
 };
 
 const STATUS_ORDER: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done'];
@@ -74,6 +76,9 @@ type ViewProps = {
   tasks: TaskRow[];
   members: TaskAssigneeOption[];
   canEdit: boolean;
+  questionMembers: ProjectMemberOption[];
+  currentUserId: string;
+  isPrivileged: boolean;
 };
 
 function useTaskMutations(projectId: string) {
@@ -116,10 +121,17 @@ function useTaskMutations(projectId: string) {
   return { create, update, remove, setStatus, pending };
 }
 
-export function ListView({ projectId, tasks, members, canEdit }: ViewProps) {
+export function ListView({ projectId, tasks, members, canEdit, questionMembers, currentUserId, isPrivileged }: ViewProps) {
   const mutations = useTaskMutations(projectId);
   const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<TaskRow | null>(null);
+  // Track only the id; derive `editing` from the live `tasks` array so router.refresh()
+  // (e.g. after asking/answering a question) re-feeds the modal with fresh data.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editing = useMemo(
+    () => (editingId ? tasks.find((t) => t.id === editingId) ?? null : null),
+    [editingId, tasks],
+  );
+  const setEditing = (t: TaskRow | null) => setEditingId(t?.id ?? null);
 
   return (
     <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 overflow-hidden">
@@ -141,7 +153,8 @@ export function ListView({ projectId, tasks, members, canEdit }: ViewProps) {
             initial={{ opacity: 0, x: -4 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.2, delay: i * 0.02 }}
-            className="p-4 hover:bg-fluent-neutral-4 transition-colors flex items-center gap-3"
+            onClick={() => setEditing(t)}
+            className="p-4 hover:bg-fluent-neutral-4 transition-colors flex items-center gap-3 cursor-pointer"
           >
             <Badge variant={t.status === 'done' ? 'green' : 'blue'}>{statusLabel(t.status)}</Badge>
             <Badge variant={PRIORITY_VARIANT[t.priority]}>{PRIORITY_LABEL[t.priority]}</Badge>
@@ -156,14 +169,20 @@ export function ListView({ projectId, tasks, members, canEdit }: ViewProps) {
             {canEdit && (
               <div className="flex items-center gap-1 ml-2">
                 <button
-                  onClick={() => setEditing(t)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditing(t);
+                  }}
                   className="h-7 w-7 rounded-md hover:bg-fluent-neutral-8 flex items-center justify-center text-fluent-neutral-70"
                   aria-label="Επεξεργασία"
                 >
                   <Edit20Regular className="h-4 w-4" />
                 </button>
                 <button
-                  onClick={() => mutations.remove(t.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    mutations.remove(t.id);
+                  }}
                   className="h-7 w-7 rounded-md hover:bg-fluent-accent-red hover:text-white flex items-center justify-center text-fluent-neutral-70"
                   aria-label="Διαγραφή"
                 >
@@ -191,13 +210,18 @@ export function ListView({ projectId, tasks, members, canEdit }: ViewProps) {
           </TaskModal>
         )}
         {editing && (
-          <TaskModal title="Επεξεργασία εργασίας" onClose={() => setEditing(null)}>
+          <TaskModal title={canEdit ? 'Επεξεργασία εργασίας' : 'Λεπτομέρειες εργασίας'} onClose={() => setEditing(null)}>
             <TaskForm
               members={members}
               submitLabel="Αποθήκευση"
               projectId={projectId}
               taskId={editing.id}
               attachments={editing.attachments}
+              questions={editing.questions}
+              questionMembers={questionMembers}
+              currentUserId={currentUserId}
+              isPrivileged={isPrivileged}
+              readOnly={!canEdit}
               initial={{
                 title: editing.title,
                 description: editing.description,
@@ -221,10 +245,15 @@ export function ListView({ projectId, tasks, members, canEdit }: ViewProps) {
   );
 }
 
-export function BoardView({ projectId, tasks, members, canEdit }: ViewProps) {
+export function BoardView({ projectId, tasks, members, canEdit, questionMembers, currentUserId, isPrivileged }: ViewProps) {
   const mutations = useTaskMutations(projectId);
   const [creating, setCreating] = useState<TaskStatus | null>(null);
-  const [editing, setEditing] = useState<TaskRow | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editing = useMemo(
+    () => (editingId ? tasks.find((t) => t.id === editingId) ?? null : null),
+    [editingId, tasks],
+  );
+  const setEditing = (t: TaskRow | null) => setEditingId(t?.id ?? null);
   const [activeTask, setActiveTask] = useState<TaskRow | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -312,13 +341,18 @@ export function BoardView({ projectId, tasks, members, canEdit }: ViewProps) {
           </TaskModal>
         )}
         {editing && (
-          <TaskModal title="Επεξεργασία εργασίας" onClose={() => setEditing(null)}>
+          <TaskModal title={canEdit ? 'Επεξεργασία εργασίας' : 'Λεπτομέρειες εργασίας'} onClose={() => setEditing(null)}>
             <TaskForm
               members={members}
               submitLabel="Αποθήκευση"
               projectId={projectId}
               taskId={editing.id}
               attachments={editing.attachments}
+              questions={editing.questions}
+              questionMembers={questionMembers}
+              currentUserId={currentUserId}
+              isPrivileged={isPrivileged}
+              readOnly={!canEdit}
               initial={{
                 title: editing.title,
                 description: editing.description,
@@ -380,9 +414,17 @@ export function TimelineView({
   tasks,
   members,
   canEdit,
+  questionMembers,
+  currentUserId,
+  isPrivileged,
 }: ViewProps & { projectName: string; projectColor: string }) {
   const mutations = useTaskMutations(projectId);
-  const [editing, setEditing] = useState<TaskRow | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editing = useMemo(
+    () => (editingId ? tasks.find((t) => t.id === editingId) ?? null : null),
+    [editingId, tasks],
+  );
+  const setEditing = (t: TaskRow | null) => setEditingId(t?.id ?? null);
   const [zoom, setZoom] = useState<GanttZoom>('month');
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const router = useRouter();
@@ -484,13 +526,18 @@ export function TimelineView({
 
       <AnimatePresence>
         {editing && (
-          <TaskModal title="Επεξεργασία εργασίας" onClose={() => setEditing(null)}>
+          <TaskModal title={canEdit ? 'Επεξεργασία εργασίας' : 'Λεπτομέρειες εργασίας'} onClose={() => setEditing(null)}>
             <TaskForm
               members={members}
               submitLabel="Αποθήκευση"
               projectId={projectId}
               taskId={editing.id}
               attachments={editing.attachments}
+              questions={editing.questions}
+              questionMembers={questionMembers}
+              currentUserId={currentUserId}
+              isPrivileged={isPrivileged}
+              readOnly={!canEdit}
               initial={{
                 title: editing.title,
                 description: editing.description,

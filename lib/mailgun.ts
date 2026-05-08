@@ -1,16 +1,42 @@
 import Mailgun from 'mailgun.js';
 import FormData from 'form-data';
+import { getMailgunConfig, type MailgunConfig } from './app-settings';
 
-const mailgun = new Mailgun(FormData);
-const region = (process.env.MAILGUN_REGION || 'us').toLowerCase();
-const defaultUrl = region === 'eu' ? 'https://api.eu.mailgun.net' : 'https://api.mailgun.net';
-const client = mailgun.client({
-  username: 'api',
-  key: process.env.MAILGUN_API_KEY || '',
-  url: process.env.MAILGUN_URL || defaultUrl,
-});
+const mailgunFactory = new Mailgun(FormData);
 
-const domain = process.env.MAILGUN_DOMAIN || '';
+type Cached = {
+  client: ReturnType<typeof mailgunFactory.client>;
+  domain: string;
+  from: string;
+  cacheKey: string;
+};
+
+let cached: Cached | null = null;
+
+function buildFrom(config: MailgunConfig): string {
+  if (!config.fromEmail) return '';
+  return config.fromName ? `${config.fromName} <${config.fromEmail}>` : config.fromEmail;
+}
+
+async function getClient(): Promise<{ client: Cached['client']; domain: string; from: string }> {
+  const config = await getMailgunConfig();
+  const url = config.region === 'eu' ? 'https://api.eu.mailgun.net' : 'https://api.mailgun.net';
+  const cacheKey = `${config.apiKey}|${url}|${config.domain}|${buildFrom(config)}`;
+  if (cached && cached.cacheKey === cacheKey) return cached;
+
+  const client = mailgunFactory.client({
+    username: 'api',
+    key: config.apiKey || '',
+    url,
+  });
+  cached = { client, domain: config.domain, from: buildFrom(config), cacheKey };
+  return cached;
+}
+
+/** Call after persisting Mailgun settings so the next sendEmail rebuilds the client. */
+export function invalidateMailgunCache(): void {
+  cached = null;
+}
 
 export interface SendEmailOptions {
   to: string | string[];
@@ -20,13 +46,18 @@ export interface SendEmailOptions {
   from?: string;
   cc?: string[];
   bcc?: string[];
-  attachments?: any[];
+  attachments?: unknown[];
 }
 
 export async function sendEmail(options: SendEmailOptions) {
   try {
+    const { client, domain, from } = await getClient();
+    if (!domain) throw new Error('Mailgun domain not configured');
+    const fromAddr = options.from || from;
+    if (!fromAddr) throw new Error('Mailgun from address not configured');
+
     const message = {
-      from: options.from || `noreply@${domain}`,
+      from: fromAddr,
       to: options.to,
       subject: options.subject,
       html: options.html,
@@ -48,7 +79,7 @@ export async function sendEmailTemplate(
   to: string | string[],
   subject: string,
   htmlContent: string,
-  options?: Partial<SendEmailOptions>
+  options?: Partial<SendEmailOptions>,
 ) {
   return sendEmail({
     to,

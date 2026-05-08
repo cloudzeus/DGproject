@@ -19,10 +19,11 @@ interface Props {
   userRole: UserRole;
   projects: ProjectLink[];
   user: TopBarUser;
+  badges?: { questions?: number };
   children: React.ReactNode;
 }
 
-export function AppShell({ userRole, projects, user, children }: Props) {
+export function AppShell({ userRole, projects, user, badges, children }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
@@ -46,7 +47,7 @@ export function AppShell({ userRole, projects, user, children }: Props) {
     <div className="flex min-h-screen bg-mesh">
       {/* Desktop sidebar — always visible */}
       <div className="hidden lg:block">
-        <Sidebar userRole={userRole} projects={projects} />
+        <Sidebar userRole={userRole} projects={projects} badges={badges} />
       </div>
 
       {/* Mobile drawer */}
@@ -69,7 +70,7 @@ export function AppShell({ userRole, projects, user, children }: Props) {
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
               className="fixed top-0 left-0 bottom-0 z-50 lg:hidden"
             >
-              <Sidebar userRole={userRole} projects={projects} />
+              <Sidebar userRole={userRole} projects={projects} badges={badges} />
             </motion.div>
           </>
         )}
