@@ -2,14 +2,17 @@ import { prisma } from './prisma';
 import {
   emailLayout,
   metaTable,
-  quote,
   priorityPill,
-  priorityLabel,
   formatGreekDateTime,
   escapeHtml,
   appUrl,
   BRAND,
   pill,
+  statRow,
+  progressBar,
+  sectionHeader,
+  personRow,
+  infoCard,
   type ActionButton,
 } from './email-templates';
 
@@ -70,27 +73,6 @@ function formatDate(d: Date | null | undefined): string {
   return d.toLocaleDateString('el-GR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
-function statTile(label: string, value: string | number, accent: string): string {
-  return `
-    <td style="padding:8px;width:25%;vertical-align:top;">
-      <div style="background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:10px;padding:14px 16px;">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${BRAND.textDim};">${escapeHtml(label)}</div>
-        <div style="font-size:24px;font-weight:700;color:${accent};margin-top:4px;line-height:1.1;">${escapeHtml(String(value))}</div>
-      </div>
-    </td>`;
-}
-
-function progressBar(pct: number, color: string): string {
-  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
-  return `
-    <div style="display:flex;align-items:center;gap:10px;margin:0 0 18px;">
-      <div style="flex:1;height:8px;background:#EEE;border-radius:999px;overflow:hidden;">
-        <div style="height:100%;width:${clamped}%;background:${color};border-radius:999px;"></div>
-      </div>
-      <div style="font-size:13px;font-weight:700;color:${BRAND.text};min-width:48px;text-align:right;">${clamped}%</div>
-    </div>`;
-}
-
 function taskRowHtml(t: NonNullable<ProjectReportData>['tasks'][number]): string {
   const due = t.dueDate ? formatGreekDateTime(t.dueDate) : '—';
   const assignees = t.assignees
@@ -141,55 +123,45 @@ function statusSection(
 ): string {
   const list = tasks.filter((t) => t.status === status);
   if (list.length === 0) return '';
-  const color = STATUS_COLOR[status];
   return `
-    <div style="margin:18px 0 0;">
-      <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <span style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};"></span>
-        <span style="font-size:13px;font-weight:700;color:${BRAND.text};">${escapeHtml(STATUS_LABEL[status])}</span>
-        <span style="font-size:11px;color:${BRAND.textDim};">· ${list.length}</span>
-      </div>
-      <table role="presentation" style="border-collapse:collapse;width:100%;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:10px;overflow:hidden;">
-        <thead>
-          <tr style="background:${BRAND.bg};">
-            <th align="left" style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${BRAND.textDim};border-bottom:1px solid ${BRAND.border};">Εργασία</th>
-            <th align="left" style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${BRAND.textDim};border-bottom:1px solid ${BRAND.border};">Προτεραιότητα</th>
-            <th align="left" style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${BRAND.textDim};border-bottom:1px solid ${BRAND.border};">Λήξη</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${list.map(taskRowHtml).join('')}
-        </tbody>
-      </table>
-    </div>`;
+    ${sectionHeader({ label: STATUS_LABEL[status], color: STATUS_COLOR[status], count: list.length })}
+    <table role="presentation" style="border-collapse:collapse;width:100%;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:10px;overflow:hidden;">
+      <thead>
+        <tr style="background:${BRAND.bg};">
+          <th align="left" style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${BRAND.textDim};border-bottom:1px solid ${BRAND.border};">Εργασία</th>
+          <th align="left" style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${BRAND.textDim};border-bottom:1px solid ${BRAND.border};">Προτεραιότητα</th>
+          <th align="left" style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${BRAND.textDim};border-bottom:1px solid ${BRAND.border};">Λήξη</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${list.map(taskRowHtml).join('')}
+      </tbody>
+    </table>`;
 }
 
 function membersBlock(project: NonNullable<ProjectReportData>): string {
   const owner = project.owner;
   const others = project.members.filter((m) => m.userId !== project.ownerId);
   if (!owner && others.length === 0) return '';
-  const ownerHtml = owner
-    ? `<li style="margin-bottom:6px;">
-         <span style="display:inline-block;font-size:10px;font-weight:700;color:white;background:${BRAND.primary};padding:1px 8px;border-radius:999px;margin-right:6px;">OWNER</span>
-         <strong style="color:${BRAND.text};font-size:13px;">${escapeHtml(owner.name ?? owner.email)}</strong>
-         <span style="color:${BRAND.textDim};font-size:11px;">· ${escapeHtml(owner.email)}</span>
-       </li>`
-    : '';
-  const items = others
-    .map(
-      (m) => `
-      <li style="margin-bottom:6px;">
-        <strong style="color:${BRAND.text};font-size:13px;">${escapeHtml(m.user.name ?? m.user.email)}</strong>
-        <span style="color:${BRAND.textDim};font-size:11px;">· ${escapeHtml(m.user.email)}</span>
-      </li>`,
-    )
-    .join('');
+
+  const lines: string[] = [];
+  if (owner) {
+    lines.push(
+      personRow({
+        name: owner.name ?? owner.email,
+        email: owner.email,
+        badge: { label: 'OWNER', color: BRAND.primary },
+      }),
+    );
+  }
+  for (const m of others) {
+    lines.push(personRow({ name: m.user.name ?? m.user.email, email: m.user.email }));
+  }
+
   return `
     <div style="margin:24px 0 0;">
-      <h3 style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${BRAND.textDim};margin:0 0 10px;">Ομάδα έργου</h3>
-      <ul style="list-style:none;padding:0;margin:0;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:10px;padding:12px 16px;">
-        ${ownerHtml}${items}
-      </ul>
+      <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${BRAND.textDim};margin:0 0 10px;">Ομάδα έργου</h3>
+      ${infoCard(lines.join(''))}
     </div>`;
 }
 
@@ -252,15 +224,12 @@ export function buildProjectReportHtml({
       </div>`
     : '';
 
-  const statsRow = `
-    <table role="presentation" style="border-collapse:collapse;width:100%;margin:0 -8px 8px;">
-      <tr>
-        ${statTile('Σύνολο εργασιών', total, BRAND.text)}
-        ${statTile('Ολοκληρωμένες', `${done}/${total}`, BRAND.success)}
-        ${statTile('Σε εξέλιξη', inProgress, BRAND.info)}
-        ${statTile('Εκπρόθεσμες', overdue, overdue > 0 ? BRAND.danger : BRAND.textSoft)}
-      </tr>
-    </table>`;
+  const statsRow = statRow([
+    { label: 'Σύνολο εργασιών', value: total, tone: 'default' },
+    { label: 'Ολοκληρωμένες', value: `${done}/${total}`, tone: 'success' },
+    { label: 'Σε εξέλιξη', value: inProgress, tone: 'info' },
+    { label: 'Εκπρόθεσμες', value: overdue, tone: overdue > 0 ? 'danger' : 'default' },
+  ]);
 
   const hoursRow = totalHours > 0
     ? `

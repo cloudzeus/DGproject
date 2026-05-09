@@ -9,7 +9,13 @@ import {
   type MailgunRegion,
 } from '@/lib/app-settings';
 import { invalidateMailgunCache, sendEmail } from '@/lib/mailgun';
-import { emailLayout, metaTable, formatGreekDateTime, BRAND as EBRAND } from '@/lib/email-templates';
+import {
+  emailLayout,
+  formatGreekDateTime,
+  BRAND as EBRAND,
+  statRow,
+  infoCard,
+} from '@/lib/email-templates';
 
 async function requireAdmin() {
   const session = await auth();
@@ -117,21 +123,33 @@ export async function sendMailgunTest(
 
   const senderDisplay = config.fromName ? `${config.fromName} <${config.fromEmail}>` : config.fromEmail;
   const body = `
-    <p style="font-size:14px;color:${EBRAND.text};line-height:1.55;margin:0 0 12px;">
-      Αν λαμβάνεις αυτό το email, η σύνδεση του A-Sisyphus με το Mailgun λειτουργεί κανονικά.
+    <p style="font-size:14px;color:${EBRAND.text};line-height:1.55;margin:0 0 16px;">
+      Αν λαμβάνεις αυτό το email, η σύνδεση του A-Sisyphus με το Mailgun λειτουργεί κανονικά
+      και έτοιμη να στέλνει ειδοποιήσεις, αναφορές και άλλα μηνύματα.
     </p>
-    ${metaTable([
-      { label: 'Domain', value: escapeHtml(config.domain) },
-      { label: 'Περιοχή', value: config.region.toUpperCase() },
-      { label: 'Αποστολέας', value: escapeHtml(senderDisplay) },
-      { label: 'Στάλθηκε', value: formatGreekDateTime(new Date()) },
+    ${statRow([
+      { label: 'Domain', value: config.domain, tone: 'default' },
+      { label: 'Περιοχή', value: config.region.toUpperCase(), tone: 'info' },
+      { label: 'Κατάσταση', value: 'Ενεργό', tone: 'success' },
     ])}
+    ${infoCard(
+      `<table role="presentation" style="border-collapse:collapse;width:100%;">
+         <tr>
+           <td style="padding:6px 16px 6px 0;color:${EBRAND.textSoft};font-size:12px;width:140px;">Αποστολέας</td>
+           <td style="padding:6px 0;color:${EBRAND.text};font-size:13px;font-weight:500;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;">${escapeHtml(senderDisplay)}</td>
+         </tr>
+         <tr>
+           <td style="padding:6px 16px 6px 0;color:${EBRAND.textSoft};font-size:12px;">Στάλθηκε</td>
+           <td style="padding:6px 0;color:${EBRAND.text};font-size:13px;font-weight:500;">${escapeHtml(formatGreekDateTime(new Date()))}</td>
+         </tr>
+       </table>`,
+    )}
   `;
 
   const html = emailLayout({
     header: {
       kicker: { text: '✓ Δοκιμαστικό email', tone: 'success' },
-      title: 'A-Sisyphus Mailgun OK',
+      title: 'Η σύνδεση Mailgun λειτουργεί',
     },
     body,
     footerNote: 'Αν δεν αναμένεις αυτό το email, αγνόησέ το.',

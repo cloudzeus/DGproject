@@ -177,6 +177,213 @@ export function actions(buttons: ActionButton[]): string {
   return `<div style="margin:24px 0 8px;">${buttons.map(buttonHtml).join('')}</div>`;
 }
 
+// ──────────────────────────── Report-style atoms ────────────────────────────
+
+export type StatTileTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
+
+export type StatTile = {
+  label: string;
+  value: string | number;
+  tone?: StatTileTone;
+};
+
+const STAT_TONE_COLOR: Record<StatTileTone, string> = {
+  default: BRAND.text,
+  success: BRAND.success,
+  warning: BRAND.warning,
+  danger: BRAND.danger,
+  info: BRAND.info,
+};
+
+/**
+ * A single stat tile used inside `statRow`. Always renders inside a `<td>` so
+ * email clients hold the column layout.
+ */
+export function statTile({ label, value, tone = 'default' }: StatTile): string {
+  const accent = STAT_TONE_COLOR[tone];
+  return `
+    <td style="padding:6px;vertical-align:top;">
+      <div style="background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:10px;padding:12px 14px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${BRAND.textDim};">${escapeHtml(label)}</div>
+        <div style="font-size:22px;font-weight:700;color:${accent};margin-top:4px;line-height:1.1;">${escapeHtml(String(value))}</div>
+      </div>
+    </td>`;
+}
+
+/** Lays out 1–4 stat tiles as a single equal-width row. */
+export function statRow(tiles: StatTile[]): string {
+  if (tiles.length === 0) return '';
+  const widthPct = `${Math.floor(100 / tiles.length)}%`;
+  // Re-render each tile but with the col width applied; statTile already opens its own <td>.
+  const cells = tiles
+    .map((t) =>
+      statTile(t).replace('<td style="padding:6px;', `<td style="width:${widthPct};padding:6px;`),
+    )
+    .join('');
+  return `
+    <table role="presentation" style="border-collapse:collapse;width:100%;margin:0 -6px 8px;">
+      <tr>${cells}</tr>
+    </table>`;
+}
+
+/** A 0–100 progress bar with a colored fill and percentage on the right. */
+export function progressBar(pct: number, color: string = BRAND.primary): string {
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+  return `
+    <table role="presentation" style="border-collapse:collapse;width:100%;margin:0 0 18px;">
+      <tr>
+        <td style="padding-right:10px;vertical-align:middle;">
+          <div style="height:8px;background:#EEE;border-radius:999px;overflow:hidden;">
+            <div style="height:100%;width:${clamped}%;background:${color};border-radius:999px;"></div>
+          </div>
+        </td>
+        <td style="width:48px;vertical-align:middle;text-align:right;font-size:13px;font-weight:700;color:${BRAND.text};">${clamped}%</td>
+      </tr>
+    </table>`;
+}
+
+/** A horizontal divider between report sections. */
+export function divider(): string {
+  return `<hr style="border:none;border-top:1px solid ${BRAND.border};margin:18px 0;" />`;
+}
+
+/** A "section header" with a colored dot, label, and optional count. */
+export function sectionHeader({
+  label,
+  color,
+  count,
+}: {
+  label: string;
+  color: string;
+  count?: number;
+}): string {
+  const countSpan =
+    typeof count === 'number'
+      ? `<span style="font-size:11px;color:${BRAND.textDim};margin-left:6px;">· ${count}</span>`
+      : '';
+  return `
+    <div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px;">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};"></span>
+      <span style="font-size:13px;font-weight:700;color:${BRAND.text};">${escapeHtml(label)}</span>
+      ${countSpan}
+    </div>`;
+}
+
+/**
+ * Initials avatar circle. Email clients can't load arbitrary CSS so we render
+ * the user's initials inside a colored circle. Color stays consistent for the
+ * same name (hash → palette index).
+ */
+const AVATAR_PALETTE = [
+  '#0078D4',
+  '#107C41',
+  '#D83B01',
+  '#8764B8',
+  '#C50F1F',
+  '#0099BC',
+  '#E3008C',
+  '#5C2E91',
+];
+
+export function avatarCircle(
+  name: string,
+  opts?: { size?: number; color?: string },
+): string {
+  const size = opts?.size ?? 28;
+  // Take up to two initials.
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.charAt(0) ?? '?';
+  const second = parts.length > 1 ? parts[parts.length - 1].charAt(0) : '';
+  const initials = (first + second).toUpperCase();
+  const hash = Array.from(name).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  const color = opts?.color ?? AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+  return `
+    <span style="display:inline-block;width:${size}px;height:${size}px;line-height:${size}px;border-radius:999px;background:${color};color:#FFFFFF;font-size:${Math.round(size * 0.42)}px;font-weight:700;text-align:center;letter-spacing:0.02em;">${escapeHtml(initials)}</span>`;
+}
+
+/** A row showing a person's avatar, primary line and secondary line. */
+export function personRow({
+  name,
+  email,
+  role,
+  badge,
+}: {
+  name: string;
+  email?: string;
+  role?: string;
+  /** A small uppercase chip rendered before the name (e.g. "OWNER"). */
+  badge?: { label: string; color?: string };
+}): string {
+  const badgeHtml = badge
+    ? `<span style="display:inline-block;font-size:10px;font-weight:700;color:white;background:${badge.color ?? BRAND.primary};padding:1px 8px;border-radius:999px;margin-right:6px;">${escapeHtml(badge.label)}</span>`
+    : '';
+  const meta: string[] = [];
+  if (email) meta.push(escapeHtml(email));
+  if (role) meta.push(escapeHtml(role));
+  return `
+    <table role="presentation" style="border-collapse:collapse;width:100%;margin-bottom:6px;">
+      <tr>
+        <td style="width:36px;padding-right:10px;vertical-align:middle;">${avatarCircle(name, { size: 28 })}</td>
+        <td style="vertical-align:middle;">
+          <div style="font-size:13px;color:${BRAND.text};">${badgeHtml}<strong>${escapeHtml(name)}</strong></div>
+          ${meta.length ? `<div style="font-size:11px;color:${BRAND.textDim};">${meta.join(' · ')}</div>` : ''}
+        </td>
+      </tr>
+    </table>`;
+}
+
+export type CardTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+
+const CARD_TONE_BG: Record<CardTone, string> = {
+  neutral: BRAND.card,
+  info: BRAND.infoBg,
+  success: BRAND.successBg,
+  warning: BRAND.warningBg,
+  danger: '#FCEAEA',
+};
+const CARD_TONE_BORDER: Record<CardTone, string> = {
+  neutral: BRAND.border,
+  info: '#BEE2FA',
+  success: '#A5DCB6',
+  warning: '#FFE08A',
+  danger: '#F2B8B8',
+};
+
+/**
+ * Generic content card. Use to wrap a content block in a soft tinted container,
+ * matching the report's "info card" / "credential card" look.
+ */
+export function infoCard(html: string, opts?: { tone?: CardTone; padded?: boolean }): string {
+  const tone = opts?.tone ?? 'neutral';
+  const padding = opts?.padded === false ? '0' : '14px 16px';
+  return `
+    <div style="background:${CARD_TONE_BG[tone]};border:1px solid ${CARD_TONE_BORDER[tone]};border-radius:10px;padding:${padding};margin:0 0 16px;">
+      ${html}
+    </div>`;
+}
+
+/**
+ * Numbered checklist commonly used for "what's next" sections in onboarding /
+ * notification emails. Each step renders as a row with a circular index badge.
+ */
+export function checklist(steps: string[]): string {
+  if (steps.length === 0) return '';
+  const items = steps
+    .map(
+      (s, i) => `
+      <tr>
+        <td style="width:28px;padding:8px 12px 8px 0;vertical-align:top;">
+          <span style="display:inline-block;width:24px;height:24px;line-height:24px;border-radius:999px;background:${BRAND.infoBg};color:${BRAND.primary};font-size:12px;font-weight:700;text-align:center;">${i + 1}</span>
+        </td>
+        <td style="padding:8px 0;font-size:13px;color:${BRAND.text};line-height:1.5;vertical-align:top;">
+          ${s}
+        </td>
+      </tr>`,
+    )
+    .join('');
+  return `<table role="presentation" style="border-collapse:collapse;margin:0 0 16px;">${items}</table>`;
+}
+
 // ──────────────────────────── Layout shell ────────────────────────────
 
 export type EmailKickerTone = 'info' | 'success' | 'warning' | 'neutral';

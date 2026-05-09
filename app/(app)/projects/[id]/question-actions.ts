@@ -14,6 +14,12 @@ import {
   formatGreekDateTime,
   formatDuration,
   appUrl,
+  avatarCircle,
+  infoCard,
+  statRow,
+  sectionHeader,
+  escapeHtml as escEmail,
+  BRAND as EBRAND,
   type Attachment as EmailAttachmentInfo,
 } from '@/lib/email-templates';
 
@@ -53,6 +59,33 @@ function taskHeaderPills(meta?: TaskMetaForEmail): string {
   return `${priorityPill(meta.priority)}${dueChip}`;
 }
 
+/**
+ * "Sender" line: avatar circle + name + role line + secondary timestamp/email.
+ * Used at the top of question/answer email bodies for an inbox-style cue.
+ */
+function senderLine({
+  name,
+  email,
+  caption,
+}: {
+  name: string;
+  email?: string | null;
+  caption: string;
+}): string {
+  return `
+    <table role="presentation" style="border-collapse:collapse;width:100%;margin:0 0 12px;">
+      <tr>
+        <td style="width:44px;padding-right:10px;vertical-align:middle;">${avatarCircle(name, { size: 36 })}</td>
+        <td style="vertical-align:middle;">
+          <div style="font-size:13px;color:${EBRAND.text};font-weight:600;line-height:1.2;">${escEmail(name)}</div>
+          <div style="font-size:11px;color:${EBRAND.textDim};line-height:1.2;margin-top:2px;">
+            ${escEmail(caption)}${email ? ` · ${escEmail(email)}` : ''}
+          </div>
+        </td>
+      </tr>
+    </table>`;
+}
+
 async function notifyQuestionCreated(params: {
   questionId: string;
   taskId: string;
@@ -84,12 +117,21 @@ async function notifyQuestionCreated(params: {
   if (!askedTo.email) return;
 
   const bodyHtml = `
-    ${quote({
-      body,
-      tone: 'info',
-      caption: `Από ${askerName} · ${formatGreekDateTime(createdAt)}`,
+    ${senderLine({
+      name: askerName,
+      email: askedBy.email,
+      caption: `έθεσε ερώτηση · ${formatGreekDateTime(createdAt)}`,
     })}
+    ${quote({ body, tone: 'info' })}
     ${attachmentsBlock(attachments ?? [])}
+    ${infoCard(
+      `<div style="font-size:12px;color:${EBRAND.textSoft};line-height:1.55;">
+        Απάντησε απευθείας από την πλατφόρμα για να μείνει η συζήτηση σε ένα μέρος.
+        Θα ειδοποιηθεί ο/η <strong style="color:${EBRAND.text};">${escEmail(askerName)}</strong>
+        όταν στείλεις την απάντησή σου.
+      </div>`,
+      { tone: 'info' },
+    )}
   `;
 
   const html = emailLayout({
@@ -105,7 +147,7 @@ async function notifyQuestionCreated(params: {
       { label: 'Απάντηση στις ερωτήσεις', url: appUrl('/questions'), variant: 'primary' },
       { label: 'Άνοιγμα εργασίας', url: appUrl(`/projects/${params.projectId}?task=${taskId}`), variant: 'secondary' },
     ],
-    footerNote: 'Απάντησε απευθείας από την πλατφόρμα για να κρατάμε όλη τη συζήτηση σε ένα μέρος.',
+    footerNote: 'Όλες οι ερωτήσεις και απαντήσεις διατηρούνται στο νήμα της εργασίας.',
   });
 
   try {
@@ -167,20 +209,33 @@ async function notifyAnswerCreated(params: {
 
   if (!asker.email) return;
 
+  // Stats tiles up top: total response time + the date answered. Mirrors the
+  // report-style "at-a-glance" header.
+  const responseTiles = responseDuration
+    ? statRow([
+        { label: 'Χρόνος απόκρισης', value: responseDuration, tone: 'success' },
+        { label: 'Απαντήθηκε', value: formatGreekDateTime(answeredAt), tone: 'default' },
+      ])
+    : statRow([{ label: 'Απαντήθηκε', value: formatGreekDateTime(answeredAt), tone: 'success' }]);
+
   const bodyHtml = `
-    ${quote({
-      body: question,
-      tone: 'neutral',
-      caption: `Η ερώτησή σου προς ${responderName} · ${formatGreekDateTime(questionCreatedAt)}`,
+    ${responseTiles}
+    ${sectionHeader({ label: 'Η ερώτησή σου', color: EBRAND.textSoft })}
+    ${senderLine({
+      name: askerName,
+      email: asker.email,
+      caption: `Στάλθηκε · ${formatGreekDateTime(questionCreatedAt)}`,
     })}
+    ${quote({ body: question, tone: 'neutral' })}
     ${attachmentsBlock(questionAttachments)}
-    ${quote({
-      body: answer,
-      tone: 'success',
-      caption: responseDuration
-        ? `${responderName} απάντησε ${formatGreekDateTime(answeredAt)} · απόκριση σε ${responseDuration}`
-        : `${responderName} απάντησε ${formatGreekDateTime(answeredAt)}`,
+
+    ${sectionHeader({ label: 'Η απάντηση', color: EBRAND.success })}
+    ${senderLine({
+      name: responderName,
+      email: answeredBy.email,
+      caption: `Απάντησε · ${formatGreekDateTime(answeredAt)}`,
     })}
+    ${quote({ body: answer, tone: 'success' })}
     ${attachmentsBlock(answerAttachments)}
   `;
 
@@ -197,7 +252,7 @@ async function notifyAnswerCreated(params: {
       { label: 'Όλες οι ερωτήσεις', url: appUrl('/questions'), variant: 'primary' },
       { label: 'Άνοιγμα εργασίας', url: appUrl(`/projects/${params.projectId}?task=${taskId}`), variant: 'secondary' },
     ],
-    footerNote: 'Απάντησε απευθείας από την πλατφόρμα για συνεχή νήμα συζήτησης.',
+    footerNote: 'Όλες οι ερωτήσεις και απαντήσεις διατηρούνται στο νήμα της εργασίας.',
   });
 
   try {

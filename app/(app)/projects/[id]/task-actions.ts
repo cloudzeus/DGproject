@@ -8,7 +8,6 @@ import { syncTaskCalendar, removeTaskCalendar } from '@/lib/task-calendar-sync';
 import { syncTaskTeams, removeTaskTeams } from '@/lib/task-teams-sync';
 import {
   emailLayout,
-  metaTable,
   quote,
   priorityPill,
   priorityLabel,
@@ -16,6 +15,10 @@ import {
   escapeHtml,
   appUrl,
   BRAND,
+  statRow,
+  infoCard,
+  personRow,
+  sectionHeader,
 } from '@/lib/email-templates';
 import {
   normalizeToBusinessHours,
@@ -97,22 +100,25 @@ async function notifyAssignees(
           title: true,
           description: true,
           priority: true,
+          status: true,
           startDate: true,
           dueDate: true,
-          project: { select: { name: true, color: true } },
+          estimatedHours: true,
+          project: { select: { id: true, name: true, color: true } },
+          assignees: {
+            include: { user: { select: { id: true, name: true, email: true } } },
+          },
         },
       }),
       prisma.user.findMany({
         where: { id: { in: recipientUserIds } },
-        select: { email: true, name: true },
+        select: { id: true, email: true, name: true },
       }),
       actorId
         ? prisma.user.findUnique({ where: { id: actorId }, select: { name: true, email: true } })
         : Promise.resolve(null),
     ]);
     if (!task) return;
-    const emails = recipients.map((r) => r.email).filter((e): e is string => Boolean(e));
-    if (emails.length === 0) return;
 
     const senderName = actor?.name ?? actor?.email ?? 'A-Sisyphus';
     const subject =
@@ -121,36 +127,90 @@ async function notifyAssignees(
         : `[${task.project.name}] Προστέθηκες στην εργασία: ${task.title}`;
     const verb = reason === 'assigned' ? 'σου ανέθεσε' : 'σε πρόσθεσε στην εργασία';
 
-    const meta: Array<{ label: string; value: string }> = [];
-    if (task.startDate) meta.push({ label: 'Έναρξη', value: formatGreekDateTime(task.startDate) });
-    if (task.dueDate) meta.push({ label: 'Λήξη', value: formatGreekDateTime(task.dueDate) });
-    meta.push({ label: 'Προτεραιότητα', value: priorityLabel(task.priority) });
+    // Stats tiles: priority, due, hours. They give the recipient an at-a-glance brief.
+    const dueLabel = task.dueDate ? formatGreekDateTime(task.dueDate) : '—';
+    const dueDays = task.dueDate
+      ? Math.round((task.dueDate.getTime() - Date.now()) / 86400000)
+      : null;
+    const dueTone: 'default' | 'danger' | 'warning' | 'info' =
+      dueDays === null ? 'default' : dueDays < 0 ? 'danger' : dueDays <= 1 ? 'warning' : 'info';
 
-    const body = `
-      <p style="font-size:14px;line-height:1.5;color:${BRAND.text};margin:0 0 12px;">
-        Ο/Η <strong>${escapeHtml(senderName)}</strong> ${verb}.
-      </p>
-      ${
-        task.description?.trim()
-          ? quote({ body: task.description, tone: 'neutral', caption: 'Περιγραφή' })
-          : ''
-      }
-      ${metaTable(meta)}
-    `;
+    const tiles = [
+      { label: 'Προτεραιότητα', value: priorityLabel(task.priority), tone: 'default' as const },
+      { label: 'Λήξη', value: task.dueDate ? formatGreekDateTime(task.dueDate) : 'Χωρίς ημερ.', tone: dueTone },
+      ...(task.estimatedHours
+        ? [{ label: 'Εκτιμώμενες ώρες', value: `${task.estimatedHours}h`, tone: 'default' as const }]
+        : []),
+    ];
 
-    const html = emailLayout({
-      header: {
-        kicker: { text: reason === 'assigned' ? '👤 Νέα ανάθεση' : '👥 Προστέθηκες στην εργασία', tone: 'info' },
-        eyebrow: { text: task.project.name, color: task.project.color },
-        title: task.title,
-        pillsHtml: priorityPill(task.priority),
-      },
-      body,
-      actions: [{ label: 'Άνοιγμα εργασίας', url: appUrl('/board'), variant: 'primary' }],
-      footerNote: 'Αν δεν χρειάζεται να βλέπεις αυτές τις ειδοποιήσεις, ενημέρωσε τον διαχειριστή.',
-    });
+    // Co-assignees other than the recipient list — gives "who else is on this".
+    const coAssignees = task.assignees
+      .filter((a) => !recipientUserIds.includes(a.user.id))
+      .map((a) => a.user);
 
-    await sendEmail({ to: emails, subject, html });
+    const teamLines: string[] = [];
+    if (actor) {
+      teamLines.push(
+        personRow({
+          name: senderName,
+          email: actor.email ?? undefined,
+          badge: { label: 'CREATOR', color: BRAND.primary },
+        }),
+      );
+    }
+    for (const u of coAssignees) {
+      teamLines.push(personRow({ name: u.name ?? u.email, email: u.email }));
+    }
+
+    // Build a per-recipient email so the greeting is personalized. Falls back
+    // to a single broadcast if name resolution fails.
+    for (const r of recipients) {
+      if (!r.email) continue;
+      const recipientName = r.name ?? r.email;
+
+      const body = `
+        <p style="font-size:14px;line-height:1.55;color:${BRAND.text};margin:0 0 14px;">
+          Ο/Η <strong>${escapeHtml(senderName)}</strong> ${verb}.
+        </p>
+        ${statRow(tiles)}
+        ${task.description?.trim() ? quote({ body: task.description, tone: 'neutral', caption: 'Περιγραφή' }) : ''}
+        ${
+          task.startDate
+            ? `<p style="font-size:12px;color:${BRAND.textSoft};margin:0 0 16px;">⏱ Έναρξη: <strong style="color:${BRAND.text};">${escapeHtml(formatGreekDateTime(task.startDate))}</strong>${
+                task.dueDate
+                  ? ` · Λήξη: <strong style="color:${BRAND.text};">${escapeHtml(dueLabel)}</strong>`
+                  : ''
+              }</p>`
+            : ''
+        }
+        ${
+          teamLines.length > 0
+            ? `${sectionHeader({ label: 'Ομάδα εργασίας', color: BRAND.primary })}${infoCard(teamLines.join(''))}`
+            : ''
+        }
+      `;
+
+      const html = emailLayout({
+        recipientName,
+        header: {
+          kicker: {
+            text: reason === 'assigned' ? '👤 Νέα ανάθεση' : '👥 Προστέθηκες στην εργασία',
+            tone: 'info',
+          },
+          eyebrow: { text: task.project.name, color: task.project.color },
+          title: task.title,
+          pillsHtml: priorityPill(task.priority),
+        },
+        body,
+        actions: [
+          { label: 'Άνοιγμα εργασίας', url: appUrl('/board'), variant: 'primary' },
+          { label: 'Άνοιγμα έργου', url: appUrl(`/projects/${task.project.id}`), variant: 'secondary' },
+        ],
+        footerNote: 'Αν δεν χρειάζεται να βλέπεις αυτές τις ειδοποιήσεις, ενημέρωσε τον διαχειριστή.',
+      });
+
+      await sendEmail({ to: r.email, subject, html });
+    }
   } catch (e) {
     console.warn('[task notify] failed', e);
   }

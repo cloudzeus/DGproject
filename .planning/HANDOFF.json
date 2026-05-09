@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-09T12:14:00.245Z",
+  "timestamp": "2026-05-09T12:57:39.432Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -22,14 +22,6 @@
     },
     {
       "status": "M",
-      "path": "app/(app)/projects/[id]/page.tsx"
-    },
-    {
-      "status": "M",
-      "path": "app/(app)/projects/[id]/project-detail.tsx"
-    },
-    {
-      "status": "M",
       "path": "app/(app)/projects/[id]/question-actions.ts"
     },
     {
@@ -38,23 +30,7 @@
     },
     {
       "status": "M",
-      "path": "app/(app)/projects/[id]/task-form.tsx"
-    },
-    {
-      "status": "M",
-      "path": "app/(app)/projects/[id]/task-views.tsx"
-    },
-    {
-      "status": "M",
       "path": "app/(app)/settings/mailgun-actions.ts"
-    },
-    {
-      "status": "M",
-      "path": "app/(app)/timeline/page.tsx"
-    },
-    {
-      "status": "M",
-      "path": "components/gantt/gantt.tsx"
     },
     {
       "status": "M",
@@ -62,49 +38,13 @@
     },
     {
       "status": "M",
-      "path": "lib/microsoft-graph.ts"
-    },
-    {
-      "status": "M",
-      "path": "lib/task-calendar-sync.ts"
-    },
-    {
-      "status": "M",
-      "path": "prisma/schema.prisma"
-    },
-    {
-      "status": "??",
-      "path": "app/(app)/projects/[id]/report-actions.ts"
-    },
-    {
-      "status": "??",
-      "path": "app/(app)/projects/[id]/report-modal.tsx"
-    },
-    {
-      "status": "??",
-      "path": "app/(app)/projects/[id]/template-actions.ts"
-    },
-    {
-      "status": "??",
       "path": "lib/email-templates.ts"
     },
     {
-      "status": "??",
+      "status": "M",
       "path": "lib/project-report.ts"
-    },
-    {
-      "status": "??",
-      "path": "lib/task-teams-sync.ts"
-    },
-    {
-      "status": "??",
-      "path": "prisma/migrations/20260508184947_add_task_sync_flags/"
-    },
-    {
-      "status": "??",
-      "path": "prisma/migrations/20260509120150_add_task_dependencies_and_templates/"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\n12093b2 New features questions files drag and drop customer view\n8308149 feat: wire up board add-task buttons, assignee/priority/more filters\nff2ebeb feat: real notifications, M365 apps launcher, timeline zoom, projects list view\n12d170e feat: reports + exports, settings revamp, file attachments with titles, mobile sidebar, translations\nc0c62af feat: task datetime + business hours, assignee email notify, project status quick-change, SSO oid fix"
+  "context_notes": "Recent commits:\n7bf9d4a new super features\n12093b2 New features questions files drag and drop customer view\n8308149 feat: wire up board add-task buttons, assignee/priority/more filters\nff2ebeb feat: real notifications, M365 apps launcher, timeline zoom, projects list view\n12d170e feat: reports + exports, settings revamp, file attachments with titles, mobile sidebar, translations"
 }

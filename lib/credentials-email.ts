@@ -1,5 +1,5 @@
 import { sendEmail } from './mailgun';
-import { emailLayout, escapeHtml, appUrl, BRAND } from './email-templates';
+import { emailLayout, escapeHtml, appUrl, BRAND, infoCard, checklist } from './email-templates';
 
 export type SendCredentialsEmailInput = {
   to: string;
@@ -25,33 +25,37 @@ export async function sendCredentialsEmail(input: SendCredentialsEmailInput): Pr
     ? `<p style="font-size:13px;color:${BRAND.textSoft};margin:0 0 16px;">Ο/Η <strong>${escapeHtml(invitedByName)}</strong> ${reason === 'reset' ? 'εξέδωσε νέο κωδικό για εσένα' : 'σε προσκάλεσε στο A-Sisyphus'}.</p>`
     : '';
 
-  // The credentials card is one of the few places we deviate from the standard
-  // body helpers — it needs a high-contrast monospace block for the password.
-  const credentialsCard = `
-    <div style="background:${BRAND.bg};border:1px solid ${BRAND.border};border-radius:12px;padding:18px 20px;margin:0 0 20px;">
-      <table role="presentation" style="border-collapse:collapse;width:100%;">
-        <tr>
-          <td style="padding:6px 16px 6px 0;color:${BRAND.textSoft};font-size:12px;width:140px;">Email</td>
-          <td style="padding:6px 0;color:${BRAND.text};font-size:14px;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;">${escapeHtml(to)}</td>
-        </tr>
-        <tr>
-          <td style="padding:10px 16px 6px 0;color:${BRAND.textSoft};font-size:12px;vertical-align:top;">Προσωρινός κωδικός</td>
-          <td style="padding:10px 0 6px;">
-            <code style="display:inline-block;font-size:16px;font-weight:700;letter-spacing:0.05em;background:${BRAND.card};border:1px dashed ${BRAND.primary};padding:10px 14px;border-radius:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:${BRAND.primary};">${escapeHtml(tempPassword)}</code>
-          </td>
-        </tr>
-      </table>
-    </div>
-  `;
+  // The credentials block has its own visual treatment because the password
+  // chip needs to stand out (monospace, dashed-blue border) — but it lives
+  // inside the standard `infoCard` shell to stay consistent.
+  const credentialsCard = infoCard(`
+    <table role="presentation" style="border-collapse:collapse;width:100%;">
+      <tr>
+        <td style="padding:6px 16px 6px 0;color:${BRAND.textSoft};font-size:12px;width:140px;">Email</td>
+        <td style="padding:6px 0;color:${BRAND.text};font-size:14px;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;">${escapeHtml(to)}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 16px 6px 0;color:${BRAND.textSoft};font-size:12px;vertical-align:top;">Προσωρινός κωδικός</td>
+        <td style="padding:10px 0 6px;">
+          <code style="display:inline-block;font-size:16px;font-weight:700;letter-spacing:0.05em;background:${BRAND.card};border:1px dashed ${BRAND.primary};padding:10px 14px;border-radius:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:${BRAND.primary};">${escapeHtml(tempPassword)}</code>
+        </td>
+      </tr>
+    </table>
+  `);
 
-  const securityNotice = `
-    <div style="background:${BRAND.warningBg};border:1px solid #FFE08A;border-radius:8px;padding:12px 14px;margin:0 0 8px;">
-      <p style="font-size:13px;color:#7A4F01;margin:0;line-height:1.55;">
-        <strong>Σημαντικό:</strong> Ο κωδικός είναι προσωρινός. Στην πρώτη σου σύνδεση θα σου ζητηθεί
-        να ορίσεις νέο, προσωπικό κωδικό. Μην τον κοινοποιήσεις σε κανέναν.
-      </p>
-    </div>
-  `;
+  const securityNotice = infoCard(
+    `<p style="font-size:13px;color:#7A4F01;margin:0;line-height:1.55;">
+       <strong>Σημαντικό:</strong> Ο κωδικός είναι προσωρινός. Στην πρώτη σου σύνδεση θα σου ζητηθεί
+       να ορίσεις νέο, προσωπικό κωδικό. Μην τον κοινοποιήσεις σε κανέναν.
+     </p>`,
+    { tone: 'warning' },
+  );
+
+  const nextSteps = checklist([
+    `Πάτησε το κουμπί <strong>«Σύνδεση στο A-Sisyphus»</strong> και βάλε το email και τον προσωρινό κωδικό σου.`,
+    `Όρισε νέο, προσωπικό κωδικό. Πρέπει να έχει τουλάχιστον 8 χαρακτήρες, ένα γράμμα και έναν αριθμό.`,
+    `Ξεκίνα να εργάζεσαι στο A-Sisyphus — δες έργα, εργασίες και ερωτήσεις που σε αφορούν.`,
+  ]);
 
   const body = `
     <p style="font-size:14px;color:${BRAND.text};line-height:1.55;margin:0 0 12px;">
@@ -60,6 +64,8 @@ export async function sendCredentialsEmail(input: SendCredentialsEmailInput): Pr
     ${inviterLine}
     ${credentialsCard}
     ${securityNotice}
+    <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${BRAND.textDim};margin:18px 0 8px;">Επόμενα βήματα</h3>
+    ${nextSteps}
   `;
 
   const html = emailLayout({
