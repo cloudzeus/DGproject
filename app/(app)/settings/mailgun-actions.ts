@@ -9,6 +9,7 @@ import {
   type MailgunRegion,
 } from '@/lib/app-settings';
 import { invalidateMailgunCache, sendEmail } from '@/lib/mailgun';
+import { emailLayout, metaTable, formatGreekDateTime, BRAND as EBRAND } from '@/lib/email-templates';
 
 async function requireAdmin() {
   const session = await auth();
@@ -114,34 +115,27 @@ export async function sendMailgunTest(
   // Always rebuild client against latest config
   invalidateMailgunCache();
 
-  const sentAt = new Date().toLocaleString('el-GR', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
-  const html = `
-    <div style="font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f1f1f;background:#FFF;">
-      <div style="display:inline-block;font-size:11px;font-weight:700;color:#107C41;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:14px;">
-        ✓ Δοκιμαστικό email
-      </div>
-      <h1 style="font-size:20px;font-weight:600;color:#242424;margin:0 0 8px;">A-Sisyphus Mailgun OK</h1>
-      <p style="font-size:14px;color:#424242;line-height:1.55;margin:0 0 12px;">
-        Αυτό είναι ένα δοκιμαστικό email από το A-Sisyphus για να επιβεβαιωθεί η σύνδεση με το Mailgun.
-      </p>
-      <table style="border-collapse:collapse;font-size:13px;margin:8px 0 16px;">
-        <tr><td style="padding:4px 12px 4px 0;color:#616161;">Domain</td><td style="padding:4px 0;color:#242424;font-weight:500;">${escapeHtml(config.domain)}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;color:#616161;">Περιοχή</td><td style="padding:4px 0;color:#242424;font-weight:500;">${config.region.toUpperCase()}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;color:#616161;">Αποστολέας</td><td style="padding:4px 0;color:#242424;font-weight:500;">${escapeHtml(config.fromName ? `${config.fromName} <${config.fromEmail}>` : config.fromEmail)}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;color:#616161;">Στάλθηκε</td><td style="padding:4px 0;color:#242424;font-weight:500;">${escapeHtml(sentAt)}</td></tr>
-      </table>
-      <p style="font-size:11px;color:#9E9E9E;margin:0;">
-        Αν λάβεις αυτό το email, η σύνδεση Mailgun είναι εντάξει.
-      </p>
-    </div>
+  const senderDisplay = config.fromName ? `${config.fromName} <${config.fromEmail}>` : config.fromEmail;
+  const body = `
+    <p style="font-size:14px;color:${EBRAND.text};line-height:1.55;margin:0 0 12px;">
+      Αν λαμβάνεις αυτό το email, η σύνδεση του A-Sisyphus με το Mailgun λειτουργεί κανονικά.
+    </p>
+    ${metaTable([
+      { label: 'Domain', value: escapeHtml(config.domain) },
+      { label: 'Περιοχή', value: config.region.toUpperCase() },
+      { label: 'Αποστολέας', value: escapeHtml(senderDisplay) },
+      { label: 'Στάλθηκε', value: formatGreekDateTime(new Date()) },
+    ])}
   `;
+
+  const html = emailLayout({
+    header: {
+      kicker: { text: '✓ Δοκιμαστικό email', tone: 'success' },
+      title: 'A-Sisyphus Mailgun OK',
+    },
+    body,
+    footerNote: 'Αν δεν αναμένεις αυτό το email, αγνόησέ το.',
+  });
 
   try {
     const result = await sendEmail({

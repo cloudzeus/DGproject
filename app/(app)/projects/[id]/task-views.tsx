@@ -26,6 +26,7 @@ import {
   type TaskStatus,
   type TaskPriority,
   type TaskAssigneeOption,
+  type TaskOption,
 } from './task-form';
 import type { TaskQuestionInfo, ProjectMemberOption } from './task-questions-panel';
 import { createTask, updateTask, deleteTask, updateTaskStatus, updateTaskDates } from './task-actions';
@@ -55,6 +56,9 @@ export type TaskRow = {
   assignees: Array<{ id: string; name: string; avatarUrl?: string }>;
   attachments: TaskAttachment[];
   questions: TaskQuestionInfo[];
+  addToCalendar: boolean;
+  addToTeams: boolean;
+  dependencyIds: string[];
 };
 
 const STATUS_ORDER: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done'];
@@ -132,6 +136,10 @@ export function ListView({ projectId, tasks, members, canEdit, questionMembers, 
     [editingId, tasks],
   );
   const setEditing = (t: TaskRow | null) => setEditingId(t?.id ?? null);
+  const taskOptions: TaskOption[] = useMemo(
+    () => tasks.map((t) => ({ id: t.id, title: t.title, status: t.status, dueDate: t.dueDate })),
+    [tasks],
+  );
 
   return (
     <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 overflow-hidden">
@@ -200,6 +208,7 @@ export function ListView({ projectId, tasks, members, canEdit, questionMembers, 
             <TaskForm
               members={members}
               submitLabel="Δημιουργία"
+              availableDependencies={taskOptions}
               onCancel={() => setCreating(false)}
               onSubmit={async (fd) => {
                 const res = await mutations.create(fd);
@@ -221,6 +230,7 @@ export function ListView({ projectId, tasks, members, canEdit, questionMembers, 
               questionMembers={questionMembers}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
+              availableDependencies={taskOptions}
               readOnly={!canEdit}
               initial={{
                 title: editing.title,
@@ -230,6 +240,9 @@ export function ListView({ projectId, tasks, members, canEdit, questionMembers, 
                 dueDate: editing.dueDate,
                 estimatedHours: editing.estimatedHours,
                 assigneeIds: editing.assignees.map((a) => a.id),
+                addToCalendar: editing.addToCalendar,
+                addToTeams: editing.addToTeams,
+                dependencyIds: editing.dependencyIds,
               }}
               onCancel={() => setEditing(null)}
               onSubmit={async (fd) => {
@@ -254,6 +267,10 @@ export function BoardView({ projectId, tasks, members, canEdit, questionMembers,
     [editingId, tasks],
   );
   const setEditing = (t: TaskRow | null) => setEditingId(t?.id ?? null);
+  const taskOptions: TaskOption[] = useMemo(
+    () => tasks.map((t) => ({ id: t.id, title: t.title, status: t.status, dueDate: t.dueDate })),
+    [tasks],
+  );
   const [activeTask, setActiveTask] = useState<TaskRow | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -330,6 +347,7 @@ export function BoardView({ projectId, tasks, members, canEdit, questionMembers,
                 dueDate: null,
                 estimatedHours: null,
                 assigneeIds: [],
+                dependencyIds: [],
               }}
               onCancel={() => setCreating(null)}
               onSubmit={async (fd) => {
@@ -352,6 +370,7 @@ export function BoardView({ projectId, tasks, members, canEdit, questionMembers,
               questionMembers={questionMembers}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
+              availableDependencies={taskOptions}
               readOnly={!canEdit}
               initial={{
                 title: editing.title,
@@ -361,6 +380,9 @@ export function BoardView({ projectId, tasks, members, canEdit, questionMembers,
                 dueDate: editing.dueDate,
                 estimatedHours: editing.estimatedHours,
                 assigneeIds: editing.assignees.map((a) => a.id),
+                addToCalendar: editing.addToCalendar,
+                addToTeams: editing.addToTeams,
+                dependencyIds: editing.dependencyIds,
               }}
               onCancel={() => setEditing(null)}
               onSubmit={async (fd) => {
@@ -425,6 +447,10 @@ export function TimelineView({
     [editingId, tasks],
   );
   const setEditing = (t: TaskRow | null) => setEditingId(t?.id ?? null);
+  const taskOptions: TaskOption[] = useMemo(
+    () => tasks.map((t) => ({ id: t.id, title: t.title, status: t.status, dueDate: t.dueDate })),
+    [tasks],
+  );
   const [zoom, setZoom] = useState<GanttZoom>('month');
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const router = useRouter();
@@ -441,6 +467,7 @@ export function TimelineView({
     projectName,
     projectColor,
     assignees: t.assignees,
+    dependencyIds: t.dependencyIds,
   }));
 
   const undated = tasks.filter((t) => !t.startDate && !t.dueDate);
@@ -537,6 +564,7 @@ export function TimelineView({
               questionMembers={questionMembers}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
+              availableDependencies={taskOptions}
               readOnly={!canEdit}
               initial={{
                 title: editing.title,
@@ -546,6 +574,9 @@ export function TimelineView({
                 dueDate: editing.dueDate,
                 estimatedHours: editing.estimatedHours,
                 assigneeIds: editing.assignees.map((a) => a.id),
+                addToCalendar: editing.addToCalendar,
+                addToTeams: editing.addToTeams,
+                dependencyIds: editing.dependencyIds,
               }}
               onCancel={() => setEditing(null)}
               onSubmit={async (fd) => {

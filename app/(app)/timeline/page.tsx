@@ -11,7 +11,10 @@ export default async function GlobalTimelinePage() {
       include: {
         tasks: {
           orderBy: { order: 'asc' },
-          include: { assignees: { include: { user: true } } },
+          include: {
+            assignees: { include: { user: true } },
+            dependencies: { select: { dependsOnId: true } },
+          },
         },
       },
     }),
@@ -44,6 +47,7 @@ export default async function GlobalTimelinePage() {
         name: a.user.name ?? a.user.email,
         avatarUrl: a.user.image ?? undefined,
       })),
+      dependencyIds: t.dependencies.map((d) => d.dependsOnId),
     })),
   }));
 

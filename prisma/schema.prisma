@@ -111,6 +111,7 @@ model User {
   questionsAsked       TaskQuestion[]            @relation("QuestionAsker")
   questionsAddressed   TaskQuestion[]            @relation("QuestionAskee")
   taskQuestionFiles    TaskQuestionAttachment[]
+  taskTemplates        TaskTemplate[]            @relation("TaskTemplateCreator")
 
   @@index([email])
   @@index([role])
@@ -233,6 +234,12 @@ model Task {
   parentTaskId    String?
   order           Int         @default(0)
   outlookEventId  String?
+  // Per-task sync preferences chosen at creation time (and overridable on edit).
+  // addToCalendar: when true and the task has a due date, sync to the creator's Outlook calendar.
+  // addToTeams:    when true and the project has a teamsChannelId, post/update a card in that channel.
+  addToCalendar   Boolean     @default(true)
+  addToTeams      Boolean     @default(false)
+  teamsMessageId  String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   createdById     String
@@ -246,6 +253,10 @@ model Task {
   activities      Activity[]
   mentionedUsers  CommentMention[] @relation("MentionedInTasks")
   questions       TaskQuestion[]
+  // Tasks this task depends on (must complete before this can start)
+  dependencies    TaskDependency[] @relation("TaskDependents")
+  // Tasks that depend on this task (this must complete before they can start)
+  dependents      TaskDependency[] @relation("TaskPrerequisites")
 
   @@index([projectId])
   @@index([status])
@@ -394,6 +405,45 @@ model UserDepartment {
   @@unique([userId, departmentId])
   @@index([userId])
   @@index([departmentId])
+}
+
+// Reusable task definitions a user can save and pull into any project from the
+// task creation form. Workspace-global (anyone authenticated can use any template);
+// only the creator (or admin) can edit/delete.
+model TaskTemplate {
+  id              String       @id @default(cuid())
+  name            String       // friendly display name in the picker
+  title           String       // pre-fills the new task's title
+  description     String?      @db.Text
+  priority        TaskPriority @default(medium)
+  estimatedHours  Float?
+  addToCalendar   Boolean      @default(true)
+  addToTeams      Boolean      @default(false)
+  tags            String?      // comma-separated; copied verbatim into the new task
+  createdById     String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  createdBy       User         @relation("TaskTemplateCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById])
+  @@index([name])
+}
+
+// Task dependency — directed edge "task depends on dependsOn"; dependsOn must complete first.
+// Project-scoped via the related tasks; cycle prevention happens in the server action.
+model TaskDependency {
+  id           String   @id @default(cuid())
+  taskId       String
+  dependsOnId  String
+  createdAt    DateTime @default(now())
+
+  task         Task     @relation("TaskDependents", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOn    Task     @relation("TaskPrerequisites", fields: [dependsOnId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnId])
+  @@index([taskId])
+  @@index([dependsOnId])
 }
 
 // Task Q&A — directed questions to a specific assigned user, with optional answer

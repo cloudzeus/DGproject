@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE `Task` ADD COLUMN `addToCalendar` BOOLEAN NOT NULL DEFAULT true,
+    ADD COLUMN `addToTeams` BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN `teamsMessageId` VARCHAR(191) NULL;

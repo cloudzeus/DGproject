@@ -232,6 +232,78 @@ export async function deleteCalendarEvent(organizer: string, eventId: string): P
   }
 }
 
+/**
+ * Microsoft Teams channel post.
+ *
+ * Channel identifier format: "{teamId}/channels/{channelId}" — same shape produced
+ * by Graph's getAllChannels / Teams deep links. We split it apart here so callers
+ * can store a single string on the project.
+ */
+function splitChannelKey(channelKey: string): { teamId: string; channelId: string } | null {
+  // Accept either "teamId/channels/channelId" or "teamId|channelId".
+  const slash = channelKey.match(/^([^/]+)\/channels\/(.+)$/);
+  if (slash) return { teamId: slash[1], channelId: slash[2] };
+  const pipe = channelKey.split('|');
+  if (pipe.length === 2 && pipe[0] && pipe[1]) return { teamId: pipe[0], channelId: pipe[1] };
+  return null;
+}
+
+type ChannelMessageInput = { contentHtml: string; subject?: string };
+
+export async function postTeamsChannelMessage(
+  channelKey: string,
+  message: ChannelMessageInput,
+): Promise<string> {
+  const parts = splitChannelKey(channelKey);
+  if (!parts) throw new GraphError('Invalid teamsChannelId format. Expected "teamId/channels/channelId".');
+  const { teamId, channelId } = parts;
+  const body: Record<string, unknown> = {
+    body: { contentType: 'html', content: message.contentHtml },
+  };
+  if (message.subject) body.subject = message.subject;
+  const res = await graphFetch(
+    `/teams/${encodeURIComponent(teamId)}/channels/${encodeURIComponent(channelId)}/messages`,
+    { method: 'POST', body },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new GraphError(`Graph postTeamsChannelMessage failed (${res.status}): ${text}`, res.status);
+  }
+  const data = (await res.json()) as { id: string };
+  return data.id;
+}
+
+export async function updateTeamsChannelMessage(
+  channelKey: string,
+  messageId: string,
+  message: ChannelMessageInput,
+): Promise<void> {
+  const parts = splitChannelKey(channelKey);
+  if (!parts) throw new GraphError('Invalid teamsChannelId format.');
+  const { teamId, channelId } = parts;
+  const body: Record<string, unknown> = {
+    body: { contentType: 'html', content: message.contentHtml },
+  };
+  if (message.subject) body.subject = message.subject;
+  const res = await graphFetch(
+    `/teams/${encodeURIComponent(teamId)}/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(messageId)}`,
+    { method: 'PATCH', body },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new GraphError(`Graph updateTeamsChannelMessage failed (${res.status}): ${text}`, res.status);
+  }
+}
+
+/**
+ * Teams disallows hard-deleting messages via Graph; we soft-delete by editing the body.
+ */
+export async function softDeleteTeamsChannelMessage(channelKey: string, messageId: string): Promise<void> {
+  await updateTeamsChannelMessage(channelKey, messageId, {
+    contentHtml: '<i style="color:#9E9E9E">Η εργασία διαγράφηκε από το A-Sisyphus.</i>',
+  });
+}
+
 export type GraphUserPhoto = {
   buffer: Buffer;
   contentType: string;

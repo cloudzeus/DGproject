@@ -24,6 +24,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               select: { id: true, name: true, title: true, size: true, mimeType: true, url: true, createdAt: true },
               orderBy: { createdAt: 'desc' },
             },
+            dependencies: {
+              select: { dependsOnId: true },
+            },
             questions: {
               orderBy: { createdAt: 'desc' },
               include: {
@@ -155,6 +158,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       dueDate: t.dueDate,
       estimatedHours: t.estimatedHours,
       completedAt: t.completedAt,
+      addToCalendar: t.addToCalendar,
+      addToTeams: t.addToTeams,
+      dependencyIds: t.dependencies.map((d) => d.dependsOnId),
       assignees: t.assignees.map((a) => ({
         id: a.user.id,
         name: a.user.name ?? a.user.email,

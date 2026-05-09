@@ -7,8 +7,9 @@ import {
   ArrowLeft20Regular, Share20Regular, MoreHorizontal20Regular,
   Board20Regular, List20Regular, Calendar20Regular, DataBarVertical20Regular,
   ArrowDownload20Regular, Open20Regular, CheckmarkCircle20Filled,
-  DocumentMultiple20Regular,
+  DocumentMultiple20Regular, Mail20Regular,
 } from '@fluentui/react-icons';
+import { ReportModal } from './report-modal';
 import { AvatarStack } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { formatDate, statusLabel } from '@/lib/utils';
@@ -85,6 +86,7 @@ export function ProjectDetail({
   const [tab, setTab] = useState<Tab>('board');
   const [shareCopied, setShareCopied] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const stats = computeStats(project.tasks);
   const statusVariant = ({ active: 'green', planning: 'blue', on_hold: 'orange', completed: 'neutral', archived: 'neutral' } as const)[project.status];
@@ -200,6 +202,22 @@ export function ProjectDetail({
                     transition={{ duration: 0.12 }}
                     className="absolute right-0 top-full mt-2 w-64 rounded-lg bg-white shadow-fluent-16 border border-black/5 py-1 text-sm z-20 overflow-hidden"
                   >
+                    {canEdit && (
+                      <MenuItem
+                        icon={<Mail20Regular />}
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setReportOpen(true);
+                        }}
+                      >
+                        <div>
+                          <div className="font-medium">Αποστολή αναφοράς πελάτη</div>
+                          <div className="text-[11px] text-fluent-neutral-60">
+                            Στείλε branded HTML αναφορά μέσω email
+                          </div>
+                        </div>
+                      </MenuItem>
+                    )}
                     <MenuItem icon={<ArrowDownload20Regular />} onClick={handleExportExcel}>
                       <div>
                         <div className="font-medium">Λήψη αναφοράς Excel</div>
@@ -285,6 +303,16 @@ export function ProjectDetail({
         )}
         {tab === 'reports' && <ReportsView tasks={project.tasks} />}
       </div>
+
+      <AnimatePresence>
+        {reportOpen && (
+          <ReportModal
+            projectId={project.id}
+            projectName={project.name}
+            onClose={() => setReportOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

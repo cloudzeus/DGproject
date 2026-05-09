@@ -19,6 +19,8 @@ export type GanttTask = {
   projectName: string;
   projectColor: string;
   assignees: GanttAssignee[];
+  /** IDs of tasks that must complete before this one. Used to draw arrows on the timeline. */
+  dependencyIds?: string[];
 };
 
 export type GanttRow = {
@@ -238,7 +240,7 @@ export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule,
               />
             )}
 
-            <div style={{ width: totalWidth }}>
+            <div style={{ width: totalWidth, position: 'relative' }}>
               {rows.map((r) => (
                 <GanttRowGrid
                   key={r.id}
@@ -253,11 +255,149 @@ export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule,
                   onReassign={onReassign}
                 />
               ))}
+              <DependencyArrowsLayer
+                rows={rows}
+                rangeStart={range.start}
+                dayWidth={DAY_WIDTH}
+                zoom={zoom}
+                totalWidth={totalWidth}
+              />
             </div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * SVG overlay drawing curved arrows from each prerequisite task's right edge to
+ * the dependent task's left edge. Sits on top of the bars but is non-interactive
+ * (pointer-events: none) so dragging/clicking still hits the bars below.
+ */
+function DependencyArrowsLayer({
+  rows,
+  rangeStart,
+  dayWidth,
+  zoom,
+  totalWidth,
+}: {
+  rows: GanttRow[];
+  rangeStart: Date;
+  dayWidth: number;
+  zoom: GanttZoom;
+  totalWidth: number;
+}) {
+  type TaskPos = { left: number; right: number; y: number };
+  const positions = new Map<string, TaskPos>();
+
+  let yOffset = 0;
+  let totalHeight = 0;
+  for (const row of rows) {
+    const lanes = row.tasks.length;
+    const rowHeight = Math.max(ROW_HEIGHT, lanes * ROW_HEIGHT + 12);
+
+    row.tasks.forEach((task, idx) => {
+      const dates = resolveDates(task);
+      if (!dates) return;
+
+      // Match GanttBar's positioning logic
+      const startOffset = differenceInCalendarDays(dates.start, rangeStart);
+      const durationDays = Math.max(1, differenceInCalendarDays(dates.end, dates.start) + 1);
+
+      const rawStart = task.startDate;
+      const rawDue = task.dueDate;
+      const hasTime =
+        zoom === 'day' &&
+        ((rawStart && (rawStart.getHours() !== 0 || rawStart.getMinutes() !== 0)) ||
+          (rawDue && (rawDue.getHours() !== 0 || rawDue.getMinutes() !== 0)));
+
+      let left = startOffset * dayWidth;
+      let width = durationDays * dayWidth - 4;
+      if (hasTime && rawStart && rawDue) {
+        const startMin = rawStart.getHours() * 60 + rawStart.getMinutes();
+        const endMin = rawDue.getHours() * 60 + rawDue.getMinutes();
+        const startDayOffset = differenceInCalendarDays(rawStart, rangeStart);
+        const endDayOffset = differenceInCalendarDays(rawDue, rangeStart);
+        left = startDayOffset * dayWidth + (startMin / (24 * 60)) * dayWidth;
+        const endPx = endDayOffset * dayWidth + (endMin / (24 * 60)) * dayWidth;
+        width = Math.max(24, endPx - left - 2);
+      }
+      const top = idx * ROW_HEIGHT + 6;
+      // Mid-bar Y. Bars render with `flex` filling lane height; vertical center
+      // ~= top + (ROW_HEIGHT - top-padding) / 2. Using 22 matches the rendered look.
+      const y = yOffset + top + 22;
+      positions.set(task.id, { left, right: left + width, y });
+    });
+
+    yOffset += rowHeight;
+  }
+  totalHeight = yOffset;
+
+  // Build edge list from each task's dependencyIds
+  const edges: Array<{ src: TaskPos; dst: TaskPos; key: string }> = [];
+  for (const row of rows) {
+    for (const task of row.tasks) {
+      const dst = positions.get(task.id);
+      if (!dst || !task.dependencyIds || task.dependencyIds.length === 0) continue;
+      for (const depId of task.dependencyIds) {
+        const src = positions.get(depId);
+        if (!src) continue;
+        edges.push({ src, dst, key: `${depId}->${task.id}` });
+      }
+    }
+  }
+
+  if (edges.length === 0 || totalHeight === 0) return null;
+
+  return (
+    <svg
+      className="absolute inset-0 pointer-events-none"
+      width={totalWidth}
+      height={totalHeight}
+      style={{ overflow: 'visible' }}
+      aria-hidden
+    >
+      <defs>
+        <marker
+          id="gantt-dep-arrow"
+          viewBox="0 0 10 10"
+          refX="8"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#8764B8" />
+        </marker>
+      </defs>
+      {edges.map(({ src, dst, key }) => {
+        // Anchor at src's right edge → dst's left edge.
+        const sx = src.right;
+        const sy = src.y;
+        const tx = dst.left;
+        const ty = dst.y;
+        // Curve control points push horizontally so the arrow loops cleanly
+        // even when the dependent is to the left of (or stacked above) the prereq.
+        const horizontalGap = Math.max(20, Math.abs(tx - sx) / 2);
+        const c1x = sx + horizontalGap;
+        const c2x = tx - horizontalGap;
+        const path = `M ${sx} ${sy} C ${c1x} ${sy}, ${c2x} ${ty}, ${tx} ${ty}`;
+        return (
+          <g key={key}>
+            <path
+              d={path}
+              fill="none"
+              stroke="#8764B8"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              markerEnd="url(#gantt-dep-arrow)"
+              opacity={0.85}
+            />
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 

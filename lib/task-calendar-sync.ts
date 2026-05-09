@@ -87,7 +87,9 @@ function buildEventFromTask(task: TaskForSync): TaskCalendarEvent | null {
   };
 }
 
-async function loadTask(taskId: string): Promise<TaskForSync | null> {
+type TaskForSyncWithFlag = TaskForSync & { addToCalendar: boolean };
+
+async function loadTask(taskId: string): Promise<TaskForSyncWithFlag | null> {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
     select: {
@@ -98,6 +100,7 @@ async function loadTask(taskId: string): Promise<TaskForSync | null> {
       dueDate: true,
       priority: true,
       outlookEventId: true,
+      addToCalendar: true,
       project: { select: { name: true, color: true } },
       creator: { select: { email: true, name: true, azureAdId: true } },
       assignees: {
@@ -126,6 +129,19 @@ export async function syncTaskCalendar(taskId: string): Promise<void> {
 
   const organizer = resolveOrganizer(task);
   if (!organizer) return;
+
+  // Flag turned off: if a stored event exists, remove it and clear the id; do nothing otherwise.
+  if (!task.addToCalendar) {
+    if (task.outlookEventId) {
+      try {
+        await deleteCalendarEvent(organizer, task.outlookEventId);
+      } catch (e) {
+        console.warn('[calendar sync] delete (flag off) failed', e);
+      }
+      await clearEventIdOnTask(task.id);
+    }
+    return;
+  }
 
   const event = buildEventFromTask(task);
 
