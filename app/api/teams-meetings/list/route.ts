@@ -76,6 +76,9 @@ export async function GET(req: NextRequest) {
 
     // Enrich each row with meeting metadata (subject, times). Done sequentially
     // to avoid Graph throttling; for tenants with many meetings consider batching.
+    // We surface ONE policy-error warning to the UI instead of N — the cause is
+    // the same for every meeting.
+    let policyWarning: string | null = null;
     for (const [meetingId, row] of rows) {
       try {
         const meta = await getOnlineMeetingById(organizer, meetingId);
@@ -84,8 +87,11 @@ export async function GET(req: NextRequest) {
         row.endDateTime = meta.endDateTime;
         row.joinWebUrl = meta.joinWebUrl;
       } catch (err) {
-        // Leave subject/times null if we can't fetch them — the row is still useful.
-        console.warn(`[teams-meetings] meta fetch failed for ${meetingId}:`, (err as Error).message);
+        const msg = (err as Error).message;
+        if (msg.includes('No application access policy')) {
+          policyWarning = msg;
+        }
+        console.warn(`[teams-meetings] meta fetch failed for ${meetingId}:`, msg);
       }
     }
 
@@ -118,6 +124,7 @@ export async function GET(req: NextRequest) {
       organizer,
       range: { start: start.toISOString(), end: end.toISOString() },
       counts: { total: result.length, transcripts: transcripts.length, recordings: recordings.length },
+      policyWarning,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

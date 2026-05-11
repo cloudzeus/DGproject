@@ -15,6 +15,7 @@ import {
   BuildingMultiple24Regular, BuildingMultiple24Filled,
   DataBarVertical24Regular, DataBarVertical24Filled,
   ChatBubblesQuestion24Regular, ChatBubblesQuestion24Filled,
+  Video24Regular, Video24Filled,
   ChevronRight16Regular,
   Add16Regular,
 } from '@fluentui/react-icons';
@@ -24,6 +25,7 @@ const nav = [
   { href: '/dashboard', label: 'Αρχική', Regular: Home24Regular, Filled: Home24Filled, badgeKey: undefined },
   { href: '/board', label: 'Οι εργασίες μου', Regular: Board24Regular, Filled: Board24Filled, badgeKey: undefined },
   { href: '/projects', label: 'Έργα', Regular: Folder24Regular, Filled: Folder24Filled, badgeKey: undefined },
+  { href: '/teams-meetings', label: 'Teams Συσκέψεις', Regular: Video24Regular, Filled: Video24Filled, badgeKey: undefined },
   { href: '/questions', label: 'Ερωτήσεις', Regular: ChatBubblesQuestion24Regular, Filled: ChatBubblesQuestion24Filled, badgeKey: 'questions' as const },
   { href: '/timeline', label: 'Χρονοδιάγραμμα', Regular: CalendarLtr24Regular, Filled: CalendarLtr24Filled, badgeKey: undefined },
   { href: '/calendar', label: 'Ημερολόγιο', Regular: Calendar24Regular, Filled: Calendar24Filled, badgeKey: undefined },

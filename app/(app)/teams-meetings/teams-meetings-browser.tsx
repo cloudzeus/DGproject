@@ -28,6 +28,7 @@ type ApiResponse = {
   organizer: string;
   range: { start: string; end: string };
   counts: { total: number; transcripts: number; recordings: number };
+  policyWarning?: string | null;
 };
 
 export function TeamsMeetingsBrowser({
@@ -184,6 +185,32 @@ export function TeamsMeetingsBrowser({
         </div>
       )}
 
+      {data?.policyWarning && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-4 text-sm">
+          <div className="font-semibold text-amber-900">
+            ⚠ Application Access Policy μη ενεργό
+          </div>
+          <p className="mt-1 text-amber-800">
+            Τα meetings εμφανίζονται αλλά <strong>δεν θα μπορούν να αποδελτιωθούν</strong> μέχρι
+            να εφαρμοστεί η Teams policy. Το Graph μπλοκάρει το access σε συγκεκριμένα meetings:
+          </p>
+          <pre className="mt-2 overflow-x-auto rounded bg-amber-100 px-3 py-2 text-[11px] text-amber-900">{`# Εκτέλεσε σε Microsoft Teams PowerShell:
+Connect-MicrosoftTeams
+
+New-CsApplicationAccessPolicy \`
+  -Identity "FluentPmPolicy" \`
+  -AppIds "4f369876-4591-4343-b713-21b43ee425cc" \`
+  -Description "fluent-pm meeting access"
+
+Grant-CsApplicationAccessPolicy \`
+  -PolicyName "FluentPmPolicy" \`
+  -Identity "${organizerUpn}"`}</pre>
+          <p className="mt-2 text-[11px] text-amber-700">
+            Η εφαρμογή του policy παίρνει 30-60 λεπτά να propagateθεί.
+          </p>
+        </div>
+      )}
+
       {data && (
         <div className="rounded-lg border border-gray-200 bg-white">
           <div className="border-b border-gray-200 px-4 py-2 text-xs text-gray-500">
@@ -221,8 +248,14 @@ export function TeamsMeetingsBrowser({
                 <li key={m.meetingId} className="space-y-2 p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{m.subject ?? '(no subject)'}</div>
-                      <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
+                      <div className="font-medium truncate">
+                        {m.subject ?? (
+                          <span className="text-gray-500">
+                            Σύσκεψη — {formatDate(m.transcriptCreatedAt ?? m.recordingCreatedAt)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                         <span>{formatDate(m.startDateTime ?? m.transcriptCreatedAt)}</span>
                         {m.startDateTime && m.endDateTime && (
                           <span>· {formatDuration(m.startDateTime, m.endDateTime)}</span>
@@ -233,6 +266,9 @@ export function TeamsMeetingsBrowser({
                         {m.hasRecording && (
                           <span className="rounded bg-purple-50 px-2 py-0.5 text-purple-700">recording</span>
                         )}
+                        <code className="rounded bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-400">
+                          {m.meetingId.slice(0, 24)}…
+                        </code>
                       </div>
                     </div>
 
