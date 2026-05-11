@@ -55,6 +55,14 @@ export default async function ProjectsPage() {
       avatarUrl: m.user.image ?? undefined,
     })),
     canEdit: isPrivileged || p.ownerId === currentUserId,
+    // SoftOne linkage — read-only metadata + the company id used as the
+    // tenant target when this project is pushed to PRJC via setData.
+    projectCode: p.projectCode,
+    softoneId: p.softoneId,
+    softoneCompany: p.softoneCompany,
+    softoneSyncStatus: p.softoneSyncStatus,
+    softoneSyncedAt: p.softoneSyncedAt,
+    softoneSyncError: p.softoneSyncError,
   }));
 
   return (

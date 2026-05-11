@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-11T05:05:14.058Z",
+  "timestamp": "2026-05-11T05:21:33.061Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -22,41 +22,25 @@
     },
     {
       "status": "M",
-      "path": "app/(app)/admin/users/actions.ts"
+      "path": "app/(app)/projects/actions.ts"
     },
     {
       "status": "M",
-      "path": "app/(app)/admin/users/page.tsx"
+      "path": "app/(app)/projects/page.tsx"
     },
     {
       "status": "M",
-      "path": "components/admin/user-management.tsx"
+      "path": "app/(app)/projects/project-form.tsx"
     },
     {
       "status": "M",
-      "path": "lib/microsoft-graph.ts"
+      "path": "app/(app)/projects/projects-grid.tsx"
     },
     {
-      "status": "??",
-      "path": "app/(app)/teams-meetings/"
-    },
-    {
-      "status": "??",
-      "path": "app/api/softone/"
-    },
-    {
-      "status": "??",
-      "path": "app/api/teams-meetings/"
-    },
-    {
-      "status": "??",
-      "path": "components/admin/softone-company-combobox.tsx"
-    },
-    {
-      "status": "??",
-      "path": "lib/softone-lookup.ts"
+      "status": "M",
+      "path": "app/(app)/teams-meetings/teams-meetings-browser.tsx"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\n05bddf1 main update huge new features\nc20d6c3 main update huge new features\n052ba4a new super features\n7bf9d4a new super features\n12093b2 New features questions files drag and drop customer view"
+  "context_notes": "Recent commits:\n4614da7 main update huge new features\n05bddf1 main update huge new features\nc20d6c3 main update huge new features\n052ba4a new super features\n7bf9d4a new super features"
 }

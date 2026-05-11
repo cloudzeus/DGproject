@@ -30,8 +30,6 @@ type ApiResponse = {
   counts: { total: number; transcripts: number; recordings: number };
 };
 
-const LS_ORGANIZER_KEY = 'teamsMeetings.organizerUpn';
-
 export function TeamsMeetingsBrowser({
   organizerEmail,
   projects,
@@ -40,20 +38,11 @@ export function TeamsMeetingsBrowser({
   projects: ProjectOption[];
 }) {
   const [daysBack, setDaysBack] = useState(30);
-  // The fluent-pm session email and the Azure AD UPN may differ (e.g. session
-  // email is on i4ria.com but AAD lives on dgsmart.gr). Remember the override
-  // in localStorage so we don't ask every time.
+  // Always start from the session email. If the session UPN doesn't match an
+  // AAD user (e.g. session is on i4ria.com but AAD lives on dgsmart.gr), the
+  // admin can override manually. We deliberately do NOT persist this in
+  // localStorage — stale values across logins were causing empty results.
   const [organizerUpn, setOrganizerUpn] = useState(organizerEmail);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const saved = window.localStorage.getItem(LS_ORGANIZER_KEY);
-    if (saved && saved !== organizerEmail) setOrganizerUpn(saved);
-  }, [organizerEmail]);
-  useEffect(() => {
-    if (typeof window !== 'undefined' && organizerUpn) {
-      window.localStorage.setItem(LS_ORGANIZER_KEY, organizerUpn);
-    }
-  }, [organizerUpn]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,10 +78,12 @@ export function TeamsMeetingsBrowser({
     }
   }, [daysBack, organizerEmail]);
 
+  // Auto-load on first mount and when filters change. organizerUpn changes
+  // trigger a reload on blur (see input), to avoid one request per keystroke.
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [daysBack]);
+  }, [daysBack, organizerEmail]);
 
   async function process(meetingId: string) {
     const projectId = selectedProject[meetingId];
@@ -166,9 +157,16 @@ export function TeamsMeetingsBrowser({
           {loading ? 'Φόρτωση…' : 'Ανανέωση'}
         </button>
         {organizerUpn !== organizerEmail && (
-          <span className="text-xs text-amber-700">
-            (session: {organizerEmail})
-          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setOrganizerUpn(organizerEmail);
+              load();
+            }}
+            className="text-xs text-amber-700 underline"
+          >
+            Reset σε: {organizerEmail}
+          </button>
         )}
       </div>
 
@@ -194,11 +192,27 @@ export function TeamsMeetingsBrowser({
           </div>
 
           {data.meetings.length === 0 ? (
-            <div className="p-8 text-center text-sm text-gray-500">
-              Καμία σύσκεψη με recording/transcript στο επιλεγμένο διάστημα.
-              <div className="mt-2 text-xs">
-                Σιγουρέψου ότι το transcription ήταν enabled κατά τη συνάντηση και ότι τα
-                Graph permissions έχουν admin consent + application access policy.
+            <div className="p-8 text-sm text-gray-600">
+              <div className="text-center font-medium">
+                Δεν βρέθηκαν meetings με transcript/recording για <code>{organizerUpn}</code>
+              </div>
+              <div className="mt-3 text-xs text-gray-500">
+                Πιθανές αιτίες:
+                <ul className="mt-2 ml-5 list-disc space-y-1">
+                  <li>
+                    Ο επιλεγμένος user δεν έχει meetings ως <strong>organizer</strong> στις
+                    τελευταίες {daysBack} ημέρες (αν συμμετείχες αλλά δεν διοργάνωσες, δεν
+                    εμφανίζεται).
+                  </li>
+                  <li>Το transcription δεν ήταν enabled κατά τη συνάντηση.</li>
+                  <li>
+                    Λείπει η <code>Application Access Policy</code> για τον user στο Teams
+                    PowerShell (αλλιώς θα ήταν 403 αντί για 0 results).
+                  </li>
+                  <li>Το UPN στο πεδίο πάνω αριστερά είναι λάθος — επιβεβαίωσε ότι ταιριάζει
+                    το Azure AD UPN, όχι το alias σου.
+                  </li>
+                </ul>
               </div>
             </div>
           ) : (

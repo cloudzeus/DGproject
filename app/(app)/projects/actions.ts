@@ -81,6 +81,16 @@ export async function updateProject(id: string, formData: FormData) {
   const input = parseFormData(formData);
   if (input.name.length < 2) return { ok: false, error: 'Το όνομα είναι πολύ σύντομο.' };
 
+  // SoftOne company combobox writes a hidden input "softoneCompanyId".
+  // Empty string → clear linkage. Numeric string → set company id.
+  const softoneCompanyRaw = String(formData.get('softoneCompanyId') ?? '').trim();
+  const softoneCompany =
+    softoneCompanyRaw === ''
+      ? null
+      : Number.isFinite(Number(softoneCompanyRaw))
+      ? Number(softoneCompanyRaw)
+      : undefined; // undefined → don't touch the field
+
   const data: {
     name: string;
     description: string | null;
@@ -88,6 +98,10 @@ export async function updateProject(id: string, formData: FormData) {
     status: Status;
     dueDate: Date | null;
     ownerId?: string;
+    softoneCompany?: number | null;
+    // If the target company changed, the existing softone row no longer matches —
+    // we drop sync status so admin re-syncs intentionally.
+    softoneSyncStatus?: 'unsynced';
   } = {
     name: input.name,
     description: input.description,
@@ -95,6 +109,18 @@ export async function updateProject(id: string, formData: FormData) {
     status: input.status,
     dueDate: input.dueDate,
   };
+
+  if (softoneCompany !== undefined) {
+    // Only mutate when the form explicitly provided a value.
+    const existing = await prisma.project.findUnique({
+      where: { id },
+      select: { softoneCompany: true },
+    });
+    if (existing && existing.softoneCompany !== softoneCompany) {
+      data.softoneCompany = softoneCompany;
+      data.softoneSyncStatus = 'unsynced';
+    }
+  }
 
   if (input.ownerId) {
     const ownerExists = await prisma.user.findUnique({ where: { id: input.ownerId }, select: { id: true } });

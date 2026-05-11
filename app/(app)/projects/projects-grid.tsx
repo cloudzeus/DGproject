@@ -42,6 +42,8 @@ import { updateProject, deleteProject, updateProjectStatus, reorderProjects } fr
 
 type Status = 'active' | 'planning' | 'on_hold' | 'completed' | 'archived';
 
+type SoftOneSyncStatus = 'unsynced' | 'syncing' | 'synced' | 'conflict' | 'error';
+
 type ProjectWithRelations = {
   id: string;
   name: string;
@@ -54,6 +56,13 @@ type ProjectWithRelations = {
   members: Array<{ name: string; avatarUrl?: string }>;
   tasks: Array<{ id: string; status: string }>;
   canEdit: boolean;
+  // SoftOne metadata (read-only from edit form perspective)
+  projectCode: string | null;
+  softoneId: number | null;
+  softoneCompany: number | null;
+  softoneSyncStatus: SoftOneSyncStatus;
+  softoneSyncedAt: Date | null;
+  softoneSyncError: string | null;
 };
 
 type StatusBucket = 'active' | 'completed' | 'archived' | 'all';
@@ -286,6 +295,13 @@ export function ProjectsGrid({
                 dueDate: editingProject.dueDate,
                 ownerId: editingProject.ownerId,
                 memberIds: editingProject.memberIds,
+                id: editingProject.id,
+                projectCode: editingProject.projectCode,
+                softoneId: editingProject.softoneId,
+                softoneCompany: editingProject.softoneCompany,
+                softoneSyncStatus: editingProject.softoneSyncStatus,
+                softoneSyncedAt: editingProject.softoneSyncedAt,
+                softoneSyncError: editingProject.softoneSyncError,
               }}
               submitLabel="Αποθήκευση"
               onCancel={() => setEditingProject(null)}

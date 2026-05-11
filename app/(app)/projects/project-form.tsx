@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { motion } from 'framer-motion';
 import { Dismiss20Regular } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
+import { SoftOneCompanyCombobox } from '@/components/admin/softone-company-combobox';
 
 type Status = 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
 
@@ -19,6 +20,8 @@ const PRESET_COLORS = ['#0078D4', '#6264A7', '#107C41', '#C43E1C', '#7719AA', '#
 
 export type UserOption = { id: string; name: string; email: string };
 
+type SoftOneSyncStatus = 'unsynced' | 'syncing' | 'synced' | 'conflict' | 'error';
+
 export type ProjectFormInitial = {
   name: string;
   description: string | null;
@@ -27,6 +30,14 @@ export type ProjectFormInitial = {
   dueDate: Date | null;
   ownerId: string;
   memberIds: string[];
+  // SoftOne / identity metadata — only present in edit mode.
+  id?: string;
+  projectCode?: string | null;
+  softoneId?: number | null;
+  softoneCompany?: number | null;
+  softoneSyncStatus?: SoftOneSyncStatus;
+  softoneSyncedAt?: Date | null;
+  softoneSyncError?: string | null;
 };
 
 export type ProjectFormResult = { ok: boolean; error?: string };
@@ -182,6 +193,54 @@ export function ProjectForm({ users, initial, onSubmit, onCancel, submitLabel }:
         ))}
       </div>
 
+      {/* ─── SoftOne linkage (edit mode only) ─── */}
+      <div className="rounded-lg border border-fluent-neutral-20 bg-fluent-neutral-2/50 p-3 space-y-3">
+        <div className="text-xs font-medium text-fluent-neutral-70">SoftOne</div>
+
+        {initial?.id && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            <div className="rounded bg-white border border-fluent-neutral-10 px-2.5 py-1.5">
+              <div className="text-[10px] uppercase tracking-wide text-fluent-neutral-60">Project id</div>
+              <div className="font-mono text-fluent-neutral-90 break-all">{initial.id}</div>
+            </div>
+            <div className="rounded bg-white border border-fluent-neutral-10 px-2.5 py-1.5">
+              <div className="text-[10px] uppercase tracking-wide text-fluent-neutral-60">Project code</div>
+              <div className="font-mono text-fluent-neutral-90">{initial.projectCode ?? '— (will be generated on first sync)'}</div>
+            </div>
+            <div className="rounded bg-white border border-fluent-neutral-10 px-2.5 py-1.5">
+              <div className="text-[10px] uppercase tracking-wide text-fluent-neutral-60">SoftOne PRJC id</div>
+              <div className="font-mono text-fluent-neutral-90">{initial.softoneId ?? '— (not synced yet)'}</div>
+            </div>
+            <div className="rounded bg-white border border-fluent-neutral-10 px-2.5 py-1.5">
+              <div className="text-[10px] uppercase tracking-wide text-fluent-neutral-60">Sync status</div>
+              <SyncBadge
+                status={initial.softoneSyncStatus ?? 'unsynced'}
+                syncedAt={initial.softoneSyncedAt ?? null}
+                error={initial.softoneSyncError ?? null}
+              />
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
+            Εταιρεία SoftOne (target για το PRJC insert)
+          </label>
+          <SoftOneCompanyCombobox
+            source="company"
+            fieldNamePrefix="softoneCompany"
+            initial={
+              initial?.softoneCompany
+                ? { id: initial.softoneCompany, name: '', afm: null, code: '' }
+                : null
+            }
+          />
+          <p className="mt-1 text-[10px] text-fluent-neutral-60">
+            Όταν συγχρονιστεί στο SoftOne, το PRJC θα δημιουργηθεί κάτω από αυτή τη εταιρεία.
+          </p>
+        </div>
+      </div>
+
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-md text-sm">{error}</div>}
 
       <div className="flex justify-end gap-2 pt-2">
@@ -191,6 +250,41 @@ export function ProjectForm({ users, initial, onSubmit, onCancel, submitLabel }:
         </Button>
       </div>
     </form>
+  );
+}
+
+function SyncBadge({
+  status,
+  syncedAt,
+  error,
+}: {
+  status: SoftOneSyncStatus;
+  syncedAt: Date | null;
+  error: string | null;
+}) {
+  const styles: Record<SoftOneSyncStatus, string> = {
+    unsynced: 'bg-gray-100 text-gray-700',
+    syncing: 'bg-blue-100 text-blue-700',
+    synced: 'bg-green-100 text-green-700',
+    conflict: 'bg-amber-100 text-amber-800',
+    error: 'bg-red-100 text-red-700',
+  };
+  const labels: Record<SoftOneSyncStatus, string> = {
+    unsynced: 'Δεν έχει συγχρονιστεί',
+    syncing: 'Συγχρονίζεται…',
+    synced: syncedAt ? `Synced ${new Date(syncedAt).toLocaleDateString('el-GR')}` : 'Synced',
+    conflict: 'Conflict',
+    error: 'Σφάλμα',
+  };
+  return (
+    <div>
+      <span className={`inline-block rounded px-2 py-0.5 text-[11px] ${styles[status]}`}>
+        {labels[status]}
+      </span>
+      {status === 'error' && error && (
+        <div className="mt-1 text-[10px] text-red-600 break-words">{error.slice(0, 200)}</div>
+      )}
+    </div>
   );
 }
 
