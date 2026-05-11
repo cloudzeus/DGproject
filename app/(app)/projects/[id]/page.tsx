@@ -309,6 +309,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             }}
             users={userOptions}
             canEdit={canEdit}
+            sessionEmail={session?.user?.email ?? ''}
           />
         </div>
         <MembersManager

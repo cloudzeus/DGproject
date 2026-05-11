@@ -21,6 +21,9 @@ type TeamsMeetingRow = {
   recordingCreatedAt: string | null;
   alreadyProcessedMeetingNoteId: string | null;
   alreadyProcessedProjectId: string | null;
+  scheduledMeetingNoteId: string | null;
+  linkedProjectId: string | null;
+  linkedProjectName: string | null;
 };
 
 type ApiResponse = {
@@ -87,7 +90,10 @@ export function TeamsMeetingsBrowser({
   }, [daysBack, organizerEmail]);
 
   async function process(meetingId: string) {
-    const projectId = selectedProject[meetingId];
+    // Use the explicit picker selection if any, else fall back to the project
+    // pre-linked at scheduling time.
+    const row = data?.meetings.find((m) => m.meetingId === meetingId);
+    const projectId = selectedProject[meetingId] || row?.linkedProjectId || '';
     if (!projectId) {
       setProcessResults((s) => ({ ...s, [meetingId]: { ok: false, error: 'Pick a project first' } }));
       return;
@@ -282,8 +288,20 @@ Grant-CsApplicationAccessPolicy \`
                         </Link>
                       ) : (
                         <div className="flex items-center gap-2">
+                          {m.scheduledMeetingNoteId && m.linkedProjectId && (
+                            <span
+                              className="rounded bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700"
+                              title="Pre-linked at scheduling time"
+                            >
+                              📌 {m.linkedProjectName}
+                            </span>
+                          )}
                           <select
-                            value={selectedProject[m.meetingId] ?? ''}
+                            value={
+                              selectedProject[m.meetingId] ??
+                              m.linkedProjectId ??
+                              ''
+                            }
                             onChange={(e) =>
                               setSelectedProject((s) => ({ ...s, [m.meetingId]: e.target.value }))
                             }
@@ -301,7 +319,7 @@ Grant-CsApplicationAccessPolicy \`
                             onClick={() => process(m.meetingId)}
                             disabled={
                               processing[m.meetingId] ||
-                              !selectedProject[m.meetingId] ||
+                              !(selectedProject[m.meetingId] ?? m.linkedProjectId) ||
                               !m.hasTranscript
                             }
                             title={!m.hasTranscript ? 'No transcript available' : ''}

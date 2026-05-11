@@ -47,6 +47,18 @@ export interface SendEmailOptions {
   cc?: string[];
   bcc?: string[];
   attachments?: unknown[];
+  /** Enable Mailgun open + click tracking. Default: false (privacy-respectful). */
+  tracking?: boolean;
+}
+
+/**
+ * Strip the angle brackets from a Mailgun Message-Id. Mailgun returns IDs like
+ * `<20231010120000.abcdef@mg.example.com>` but the events API expects the raw
+ * id without brackets in the `?message-id=` query param.
+ */
+export function normalizeMailgunMessageId(id: string | null | undefined): string | null {
+  if (!id) return null;
+  return id.replace(/^<|>$/g, '').trim();
 }
 
 export async function sendEmail(options: SendEmailOptions) {
@@ -56,7 +68,7 @@ export async function sendEmail(options: SendEmailOptions) {
     const fromAddr = options.from || from;
     if (!fromAddr) throw new Error('Mailgun from address not configured');
 
-    const message = {
+    const message: Record<string, unknown> = {
       from: fromAddr,
       to: options.to,
       subject: options.subject,
@@ -66,13 +78,61 @@ export async function sendEmail(options: SendEmailOptions) {
       bcc: options.bcc,
     };
 
-    const result = await client.messages.create(domain, message);
+    if (options.tracking) {
+      // Mailgun message-level overrides — see https://documentation.mailgun.com
+      message['o:tracking'] = 'yes';
+      message['o:tracking-opens'] = 'yes';
+      message['o:tracking-clicks'] = 'htmlonly';
+    }
+
+    // The Mailgun typings don't include the o:tracking-* override keys, so
+    // we cast through Parameters[1] of messages.create which is the canonical
+    // input shape. Mailgun's API accepts the extra keys silently.
+    type CreateInput = Parameters<typeof client.messages.create>[1];
+    const result = await client.messages.create(domain, message as unknown as CreateInput);
     console.log('✅ Email sent:', result.id);
     return result;
   } catch (error) {
     console.error('❌ Failed to send email:', error);
     throw error;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Events API — poll for opens/deliveries/failures.
+//
+// Docs: https://documentation.mailgun.com/docs/mailgun/api-reference/openapi-final/tag/Events/
+// Filters by message-id (without angle brackets) and event type.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type MailgunEvent = {
+  event: 'accepted' | 'delivered' | 'opened' | 'clicked' | 'failed' | 'unsubscribed' | 'complained';
+  timestamp: number;            // unix seconds (float)
+  recipient: string;
+  message: { headers?: { 'message-id'?: string } };
+  /** Raw event payload — kept opaque for forward compat. */
+  [k: string]: unknown;
+};
+
+export async function fetchMailgunEvents(args: {
+  messageId: string;            // without angle brackets
+  events?: Array<'opened' | 'delivered' | 'failed'>;
+  limit?: number;
+}): Promise<MailgunEvent[]> {
+  const { client, domain } = await getClient();
+  if (!domain) throw new Error('Mailgun domain not configured');
+
+  const filter: Record<string, string> = {
+    'message-id': args.messageId,
+    limit: String(args.limit ?? 25),
+  };
+  if (args.events?.length) filter.event = args.events.join(' OR ');
+
+  // mailgun.js v10 exposes `client.events.get(domain, filter)`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const res = await (client.events as any).get(domain, filter);
+  const items = (res?.items ?? []) as MailgunEvent[];
+  return items;
 }
 
 export async function sendEmailTemplate(

@@ -76,22 +76,52 @@ export async function processMeeting(input: ProcessMeetingInput): Promise<Proces
 
   const durationSec = Math.round(segments[segments.length - 1].endSec);
 
-  // 2. Create MeetingNote in processing state
-  const meetingNote = await prisma.meetingNote.create({
-    data: {
-      projectId: input.projectId,
-      organizerId: input.organizerId,
-      teamsMeetingId: input.teamsMeetingId ?? null,
-      teamsJoinUrl: input.teamsJoinUrl ?? null,
-      teamsTranscriptId: input.teamsTranscriptId ?? null,
-      subject: input.subject,
-      startedAt: input.startedAt,
-      endedAt: input.endedAt,
-      durationSec,
-      transcriptVtt: input.vtt,
-      status: 'processing',
-    },
-  });
+  // 2. Persist transcript intake. If a MeetingNote already exists in
+  //    `scheduled` status for this teamsMeetingId, upgrade it in-place so the
+  //    project linkage made at scheduling time isn't lost. Otherwise create new.
+  const existingScheduled = input.teamsMeetingId
+    ? await prisma.meetingNote.findFirst({
+        where: {
+          teamsMeetingId: input.teamsMeetingId,
+          status: 'scheduled',
+        },
+      })
+    : null;
+
+  const meetingNote = existingScheduled
+    ? await prisma.meetingNote.update({
+        where: { id: existingScheduled.id },
+        data: {
+          // Caller-provided projectId wins over the originally-scheduled one
+          // because the user may have switched projects on the /teams-meetings page.
+          projectId: input.projectId,
+          organizerId: input.organizerId,
+          teamsJoinUrl: input.teamsJoinUrl ?? existingScheduled.teamsJoinUrl,
+          teamsTranscriptId: input.teamsTranscriptId ?? null,
+          subject: input.subject,
+          startedAt: input.startedAt,
+          endedAt: input.endedAt,
+          durationSec,
+          transcriptVtt: input.vtt,
+          status: 'processing',
+          errorMessage: null,
+        },
+      })
+    : await prisma.meetingNote.create({
+        data: {
+          projectId: input.projectId,
+          organizerId: input.organizerId,
+          teamsMeetingId: input.teamsMeetingId ?? null,
+          teamsJoinUrl: input.teamsJoinUrl ?? null,
+          teamsTranscriptId: input.teamsTranscriptId ?? null,
+          subject: input.subject,
+          startedAt: input.startedAt,
+          endedAt: input.endedAt,
+          durationSec,
+          transcriptVtt: input.vtt,
+          status: 'processing',
+        },
+      });
 
   try {
     // 3. Run LLM extraction

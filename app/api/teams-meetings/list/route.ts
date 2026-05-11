@@ -45,19 +45,7 @@ export async function GET(req: NextRequest) {
     ]);
 
     // Group both into a map keyed by meetingId so each meeting shows once.
-    type Row = {
-      meetingId: string;
-      subject: string | null;
-      startDateTime: string | null;
-      endDateTime: string | null;
-      joinWebUrl: string | null;
-      hasTranscript: boolean;
-      hasRecording: boolean;
-      transcriptCreatedAt: string | null;
-      recordingCreatedAt: string | null;
-      alreadyProcessedMeetingNoteId: string | null;
-      alreadyProcessedProjectId: string | null;
-    };
+    type Row = ReturnType<typeof emptyRow>;
 
     const rows = new Map<string, Row>();
 
@@ -95,20 +83,33 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Annotate with any already-imported MeetingNote rows so the UI can route
-    // straight to the existing notes instead of re-processing.
+    // Annotate with any existing MeetingNote rows. Two kinds:
+    //  - `scheduled`: pre-linked from the project's Schedule Meeting flow. The
+    //    UI should auto-target this project on processing.
+    //  - `ready`/etc: already processed, UI shows "view notes".
     const meetingIds = Array.from(rows.keys());
     if (meetingIds.length > 0) {
       const existing = await prisma.meetingNote.findMany({
         where: { teamsMeetingId: { in: meetingIds } },
-        select: { id: true, teamsMeetingId: true, projectId: true },
+        select: {
+          id: true,
+          teamsMeetingId: true,
+          projectId: true,
+          status: true,
+          project: { select: { name: true } },
+        },
       });
       for (const e of existing) {
         if (!e.teamsMeetingId) continue;
         const row = rows.get(e.teamsMeetingId);
-        if (row) {
+        if (!row) continue;
+        row.linkedProjectId = e.projectId;
+        row.linkedProjectName = e.project.name;
+        if (e.status === 'ready') {
           row.alreadyProcessedMeetingNoteId = e.id;
           row.alreadyProcessedProjectId = e.projectId;
+        } else if (e.status === 'scheduled') {
+          row.scheduledMeetingNoteId = e.id;
         }
       }
     }
@@ -135,15 +136,20 @@ export async function GET(req: NextRequest) {
 function emptyRow(meetingId: string) {
   return {
     meetingId,
-    subject: null,
-    startDateTime: null,
-    endDateTime: null,
-    joinWebUrl: null,
+    subject: null as string | null,
+    startDateTime: null as string | null,
+    endDateTime: null as string | null,
+    joinWebUrl: null as string | null,
     hasTranscript: false,
     hasRecording: false,
-    transcriptCreatedAt: null,
-    recordingCreatedAt: null,
-    alreadyProcessedMeetingNoteId: null,
-    alreadyProcessedProjectId: null,
+    transcriptCreatedAt: null as string | null,
+    recordingCreatedAt: null as string | null,
+    alreadyProcessedMeetingNoteId: null as string | null,
+    alreadyProcessedProjectId: null as string | null,
+    // Pre-linked from the Schedule Meeting flow — the user picked the project
+    // up-front, so we should target it automatically when they hit Process.
+    scheduledMeetingNoteId: null as string | null,
+    linkedProjectId: null as string | null,
+    linkedProjectName: null as string | null,
   };
 }

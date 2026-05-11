@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import { ActionItemsList } from './action-items-list';
+import { MomPanel } from './mom-panel';
 
 type Decision = {
   text: string;
@@ -39,7 +40,14 @@ export default async function MeetingDetailPage({
       where: { id: meetingId },
       include: {
         organizer: { select: { name: true, email: true } },
-        project: { select: { id: true, name: true } },
+        project: {
+          select: {
+            id: true,
+            name: true,
+            members: { include: { user: { select: { name: true, email: true } } } },
+            owner: { select: { name: true, email: true } },
+          },
+        },
         generatedTasks: {
           orderBy: { createdAt: 'asc' },
           include: {
@@ -47,6 +55,7 @@ export default async function MeetingDetailPage({
             project: { select: { id: true, name: true } },
           },
         },
+        momDeliveries: { orderBy: { createdAt: 'desc' } },
       },
     }),
     // Projects the user can create tasks in. Privileged users see all; others
@@ -92,6 +101,30 @@ export default async function MeetingDetailPage({
           </div>
         )}
       </header>
+
+      <MomPanel
+        meetingId={meeting.id}
+        meetingSubject={meeting.subject}
+        suggestedRecipients={uniqByEmail([
+          { email: meeting.project.owner.email, name: meeting.project.owner.name },
+          ...meeting.project.members.map((m) => ({
+            email: m.user.email,
+            name: m.user.name,
+          })),
+        ])}
+        initialDeliveries={meeting.momDeliveries.map((d) => ({
+          id: d.id,
+          recipientEmail: d.recipientEmail,
+          recipientName: d.recipientName,
+          subject: d.subject,
+          status: d.status,
+          sentAt: d.sentAt ? d.sentAt.toISOString() : null,
+          deliveredAt: d.deliveredAt ? d.deliveredAt.toISOString() : null,
+          openedAt: d.openedAt ? d.openedAt.toISOString() : null,
+          openCount: d.openCount,
+          errorMessage: d.errorMessage,
+        }))}
+      />
 
       {meeting.summary && (
         <section className="rounded-lg border border-gray-200 bg-white p-5">
@@ -279,4 +312,16 @@ function formatSec(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function uniqByEmail<T extends { email: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const it of items) {
+    const k = it.email.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(it);
+  }
+  return out;
 }

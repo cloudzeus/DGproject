@@ -418,6 +418,91 @@ export type OnlineMeeting = {
   subject: string | null;
 };
 
+/**
+ * Schedule a Teams meeting via the calendar /events endpoint.
+ *
+ * Single Graph call creates:
+ *   1. A calendar event on the organizer's calendar
+ *   2. A Teams online meeting auto-attached (isOnlineMeeting=true)
+ *   3. Invite emails sent to all attendees
+ *
+ * This is the natural way to schedule meetings (matches the Outlook UI) and
+ * only requires `Calendars.ReadWrite.All` — which is already granted because
+ * `createCalendarEvent` uses the same scope.
+ *
+ * Returns the joinUrl + the AAD-encoded onlineMeeting id (so we can later
+ * fetch transcripts) and the event id (for updates/cancellations).
+ */
+export type ScheduledTeamsMeeting = {
+  eventId: string;
+  onlineMeetingId: string | null;
+  joinUrl: string | null;
+  webLink: string | null;
+};
+
+export async function scheduleTeamsMeeting(args: {
+  organizer: string;        // UPN or AAD object id
+  subject: string;
+  bodyHtml?: string;        // invite body (optional). Rendered as the event description.
+  startDateTime: Date;
+  endDateTime: Date;
+  attendees: Array<{ email: string; name?: string | null }>;
+  /** Toggle transcription/recording requirements. Default true for both — easier to
+   *  align with the MoM pipeline downstream. */
+  allowTranscription?: boolean;
+  recordAutomatically?: boolean;
+}): Promise<ScheduledTeamsMeeting> {
+  // /users/{id-or-upn}/events accepts UPN, but downstream onlineMeeting lookups
+  // need the GUID. We resolve up-front so we can return both id forms cleanly.
+  const organizerId = args.organizer.includes('@')
+    ? await getUserObjectId(args.organizer)
+    : args.organizer;
+
+  const body: Record<string, unknown> = {
+    subject: args.subject,
+    body: {
+      contentType: 'HTML',
+      content: args.bodyHtml ?? '',
+    },
+    start: {
+      dateTime: args.startDateTime.toISOString().replace('Z', ''),
+      timeZone: 'UTC',
+    },
+    end: {
+      dateTime: args.endDateTime.toISOString().replace('Z', ''),
+      timeZone: 'UTC',
+    },
+    attendees: args.attendees.map((a) => ({
+      emailAddress: { address: a.email, name: a.name ?? a.email },
+      type: 'required',
+    })),
+    isOnlineMeeting: true,
+    onlineMeetingProvider: 'teamsForBusiness',
+    allowNewTimeProposals: false,
+  };
+
+  // The Graph /events POST returns the event including its onlineMeeting block.
+  const path = `/users/${organizerId}/events`;
+  const res = await graphFetch(path, { method: 'POST', body });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new GraphError(`Graph scheduleTeamsMeeting failed (${res.status}): ${text}`, res.status);
+  }
+  const data = (await res.json()) as {
+    id: string;
+    webLink?: string;
+    onlineMeeting?: { joinUrl?: string };
+    onlineMeetingUrl?: string;
+  };
+
+  return {
+    eventId: data.id,
+    onlineMeetingId: null,                  // resolved lazily from joinUrl when needed
+    joinUrl: data.onlineMeeting?.joinUrl ?? data.onlineMeetingUrl ?? null,
+    webLink: data.webLink ?? null,
+  };
+}
+
 export async function createOnlineMeeting(input: OnlineMeetingInput): Promise<OnlineMeeting> {
   const organizerId = input.organizer.includes('@')
     ? await getUserObjectId(input.organizer)

@@ -7,6 +7,7 @@ import { Edit20Regular, Delete20Regular } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { ProjectForm, ProjectModal, type UserOption } from '../project-form';
 import { updateProject, deleteProject } from '../actions';
+import { ScheduleMeetingButton } from './schedule-meeting-button';
 
 type Status = 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
 
@@ -23,14 +24,33 @@ type Props = {
   };
   users: UserOption[];
   canEdit: boolean;
+  /** Logged-in user's email — used as default Teams meeting organizer. */
+  sessionEmail: string;
 };
 
-export function ProjectActionsBar({ project, users, canEdit }: Props) {
+export function ProjectActionsBar({ project, users, canEdit, sessionEmail }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  if (!canEdit) return null;
+  // The Schedule Meeting button is available to anyone with project access
+  // even if they can't edit the project itself.
+  const memberOptions = users
+    .filter((u) => project.memberIds.includes(u.id) || u.id === project.ownerId)
+    .map((u) => ({ id: u.id, name: u.name, email: u.email }));
+
+  if (!canEdit) {
+    return (
+      <div className="flex items-center gap-2">
+        <ScheduleMeetingButton
+          projectId={project.id}
+          projectName={project.name}
+          members={memberOptions}
+          sessionEmail={sessionEmail}
+        />
+      </div>
+    );
+  }
 
   function handleDelete() {
     if (!confirm(`Να διαγραφεί το έργο "${project.name}"; Αυτή η ενέργεια είναι μη αναστρέψιμη.`)) return;
@@ -42,6 +62,12 @@ export function ProjectActionsBar({ project, users, canEdit }: Props) {
   return (
     <>
       <div className="flex items-center gap-2">
+        <ScheduleMeetingButton
+          projectId={project.id}
+          projectName={project.name}
+          members={memberOptions}
+          sessionEmail={sessionEmail}
+        />
         <Button variant="secondary" size="sm" icon={<Edit20Regular />} onClick={() => setEditing(true)}>
           Επεξεργασία
         </Button>

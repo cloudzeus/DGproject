@@ -77,6 +77,16 @@ enum TaskQuestionAttachmentKind {
   answer
 }
 
+// Status of a single MoM email recipient — driven by Mailgun events polled
+// via /v3/{domain}/events.
+enum MomDeliveryStatus {
+  queued
+  sent
+  delivered
+  opened
+  failed
+}
+
 // Discriminator for the User table — every user is exactly one of:
 //   - employee : internal team member; linked to SoftOne USERS / PRSN
 //   - customer : a person representing a customer company; linked to SoftOne CUSTOMER (TRDR)
@@ -88,7 +98,8 @@ enum UserType {
 }
 
 enum MeetingProcessingStatus {
-  pending      // meeting created, transcript not yet pulled
+  scheduled    // calendar event + Teams meeting created from a project, transcript will exist after the meeting
+  pending      // legacy alias for "queued for processing" (manually-uploaded VTT path)
   processing   // pulling transcript / running LLM
   ready        // insights extracted successfully
   failed       // error during processing — see errorMessage
@@ -650,13 +661,44 @@ model MeetingNote {
   project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   organizer      User    @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
   generatedTasks Task[]  @relation("MeetingGeneratedTask")
+  momDeliveries  MomDelivery[]
 
   @@index([projectId])
   @@index([organizerId])
   @@index([status])
   @@index([createdAt])
   @@index([startedAt])
-  @@index([teamsMeetingId])
+}
+
+// One row per (MoM email, recipient). Created when admin sends Minutes-of-Meeting
+// from a MeetingNote. Updated by polling Mailgun events API for opened/delivered/failed.
+model MomDelivery {
+  id               String            @id @default(cuid())
+  meetingNoteId    String
+  recipientEmail   String
+  recipientName    String?
+  subject          String            @db.Text
+  // Mailgun message id returned on send — used to query the events API.
+  // Stored without angle brackets for direct use in `?message-id=` queries.
+  mailgunMessageId String?           @db.VarChar(500)
+  status           MomDeliveryStatus @default(queued)
+  sentAt           DateTime?
+  deliveredAt      DateTime?
+  openedAt         DateTime?
+  openCount        Int               @default(0)
+  lastOpenedAt     DateTime?
+  errorMessage     String?           @db.Text
+  // Snapshot of the last Mailgun event we processed (for debugging).
+  lastEventAt      DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  meetingNote      MeetingNote @relation(fields: [meetingNoteId], references: [id], onDelete: Cascade)
+
+  @@index([meetingNoteId])
+  @@index([recipientEmail])
+  @@index([status])
+  @@index([createdAt])
 }
 
 // Notifications
