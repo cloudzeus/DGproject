@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
+import { ActionItemsList } from './action-items-list';
 
 type Decision = {
   text: string;
@@ -31,19 +32,38 @@ export default async function MeetingDetailPage({
   const session = await auth();
   if (!session?.user?.email) redirect('/login');
 
-  const meeting = await prisma.meetingNote.findUnique({
-    where: { id: meetingId },
-    include: {
-      organizer: { select: { name: true, email: true } },
-      project: { select: { id: true, name: true } },
-      generatedTasks: {
-        orderBy: { createdAt: 'asc' },
-        include: {
-          assignees: { include: { user: { select: { name: true, email: true } } } },
+  const isPriv = session.user.role === 'admin' || session.user.role === 'manager';
+
+  const [meeting, projects] = await Promise.all([
+    prisma.meetingNote.findUnique({
+      where: { id: meetingId },
+      include: {
+        organizer: { select: { name: true, email: true } },
+        project: { select: { id: true, name: true } },
+        generatedTasks: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            assignees: { include: { user: { select: { name: true, email: true } } } },
+            project: { select: { id: true, name: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    // Projects the user can create tasks in. Privileged users see all; others
+    // see only the projects they own or are members of.
+    prisma.project.findMany({
+      where: isPriv
+        ? {}
+        : {
+            OR: [
+              { ownerId: session.user.id ?? undefined },
+              { members: { some: { user: { email: session.user.email } } } },
+            ],
+          },
+      select: { id: true, name: true, status: true },
+      orderBy: [{ status: 'asc' }, { name: 'asc' }],
+    }),
+  ]);
   if (!meeting || meeting.projectId !== projectId) notFound();
 
   const decisions = (meeting.decisions as Prisma.JsonValue as Decision[] | null) ?? [];
@@ -98,33 +118,17 @@ export default async function MeetingDetailPage({
 
       {actionItems.length > 0 && (
         <Section title={`Action items (${actionItems.length}) · ${meeting.autoTasksCreated} έγιναν tasks · ${meeting.autoTasksNeedReview} need review`}>
-          <ul className="space-y-3">
-            {actionItems.map((a, i) => (
-              <li key={i} className="rounded border border-gray-200 bg-white p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="font-medium">{a.title}</div>
-                    <p className="mt-1 text-sm text-gray-700">{a.description}</p>
-                    <blockquote className="mt-2 border-l-2 border-gray-300 pl-3 text-xs italic text-gray-500">
-                      "{a.sourceQuote}" — {formatSec(a.sourceTimestampSec)}
-                    </blockquote>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 text-xs">
-                    <ConfidenceBadge c={a.confidence} />
-                    <PriorityBadge p={a.priority} />
-                    {a.dueDate && (
-                      <span className="rounded bg-gray-100 px-2 py-0.5 text-gray-700">
-                        due {a.dueDate}
-                      </span>
-                    )}
-                    {a.assigneeEmail && (
-                      <span className="truncate text-gray-500">→ {a.assigneeEmail}</span>
-                    )}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <p className="mb-2 text-xs text-gray-500">
+            Κάθε action item έχει ήδη γίνει task στο πρωτεύον project ({meeting.project.name}).
+            Αν η σύσκεψη κάλυπτε και άλλα projects, μπορείς να δημιουργήσεις επιπλέον tasks
+            από την ίδια αναφορά σε διαφορετικό project.
+          </p>
+          <ActionItemsList
+            meetingId={meeting.id}
+            primaryProjectId={meeting.project.id}
+            actionItems={actionItems}
+            projects={projects}
+          />
         </Section>
       )}
 
@@ -171,8 +175,8 @@ export default async function MeetingDetailPage({
                 key={t.id}
                 className="flex items-center justify-between rounded border border-gray-200 bg-white p-3 text-sm"
               >
-                <div>
-                  <div className="font-medium">{t.title}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium truncate">{t.title}</div>
                   <div className="mt-0.5 text-xs text-gray-500">
                     {t.status} · {t.priority}
                     {t.dueDate && ` · due ${formatDate(t.dueDate)}`}
@@ -181,9 +185,17 @@ export default async function MeetingDetailPage({
                         needs review
                       </span>
                     )}
+                    {t.project && (
+                      <Link
+                        href={`/projects/${t.project.id}`}
+                        className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-blue-700 hover:bg-blue-100"
+                      >
+                        → {t.project.name}
+                      </Link>
+                    )}
                   </div>
                 </div>
-                <div className="text-xs text-gray-500">
+                <div className="ml-3 shrink-0 text-xs text-gray-500">
                   {t.assignees.length > 0
                     ? t.assignees.map((a) => a.user.name ?? a.user.email).join(', ')
                     : 'unassigned'}
@@ -237,25 +249,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       {children}
     </section>
   );
-}
-
-function ConfidenceBadge({ c }: { c: number }) {
-  const pct = Math.round(c * 100);
-  let cls = 'bg-gray-100 text-gray-700';
-  if (c >= 0.85) cls = 'bg-green-100 text-green-700';
-  else if (c >= 0.6) cls = 'bg-amber-100 text-amber-700';
-  else cls = 'bg-red-100 text-red-700';
-  return <span className={`rounded px-2 py-0.5 ${cls}`}>conf {pct}%</span>;
-}
-
-function PriorityBadge({ p }: { p: string }) {
-  const styles: Record<string, string> = {
-    urgent: 'bg-red-100 text-red-700',
-    high: 'bg-orange-100 text-orange-700',
-    medium: 'bg-blue-100 text-blue-700',
-    low: 'bg-gray-100 text-gray-700',
-  };
-  return <span className={`rounded px-2 py-0.5 ${styles[p] ?? styles.medium}`}>{p}</span>;
 }
 
 function SeverityBadge({ s }: { s: string }) {
