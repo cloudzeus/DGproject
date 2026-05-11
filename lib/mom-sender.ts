@@ -1,6 +1,6 @@
 import { prisma } from './prisma';
 import { sendEmail, normalizeMailgunMessageId, fetchMailgunEvents } from './mailgun';
-import { renderMom, type MomInput } from './meeting-mom';
+import { renderMom, type MomInput, type MomIncludeFilter } from './meeting-mom';
 import type { ActionItem, Decision, Risk, OpenQuestion } from './llm/types';
 
 /**
@@ -17,6 +17,8 @@ export type SendMomInput = {
   recipients: Array<{ email: string; name?: string | null }>;
   /** Override subject. Defaults to the auto-generated one from renderMom. */
   subjectOverride?: string;
+  /** Filter which sections + items are rendered into the email body. */
+  include?: MomIncludeFilter;
 };
 
 export type SendMomResult = {
@@ -60,7 +62,7 @@ async function loadMomInput(meetingNoteId: string): Promise<MomInput> {
 
 export async function sendMom(input: SendMomInput): Promise<SendMomResult> {
   const momInput = await loadMomInput(input.meetingNoteId);
-  const rendered = renderMom(momInput);
+  const rendered = renderMom(momInput, input.include);
   const subject = input.subjectOverride?.trim() || rendered.subject;
 
   const result: SendMomResult = { delivered: [], failed: [] };

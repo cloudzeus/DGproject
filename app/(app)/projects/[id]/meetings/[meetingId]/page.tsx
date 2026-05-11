@@ -112,6 +112,20 @@ export default async function MeetingDetailPage({
             name: m.user.name,
           })),
         ])}
+        // Pass the extracted insights so the modal can show editable section
+        // toggles + per-item delete icons (admin curates what goes to client).
+        insights={{
+          summary: meeting.summary,
+          decisions: decisions.map((d) => ({ text: d.text, timestampSec: d.timestampSec })),
+          actionItems: actionItems.map((a) => ({
+            title: a.title,
+            assigneeEmail: a.assigneeEmail,
+            priority: a.priority,
+            confidence: a.confidence,
+          })),
+          risks: risks.map((r) => ({ text: r.text, severity: r.severity })),
+          openQuestions: openQuestions.map((q) => ({ question: q.question })),
+        }}
         initialDeliveries={meeting.momDeliveries.map((d) => ({
           id: d.id,
           recipientEmail: d.recipientEmail,

@@ -42,17 +42,52 @@ export type MomInput = {
   openQuestions: OpenQuestion[];
 };
 
+/**
+ * Per-section inclusion filter. When a `*Indexes` array is provided, ONLY the
+ * items at those indexes are kept (in the order given). When the array is null
+ * or undefined, all items of that type are included. `summary` is a boolean
+ * toggle (no indexes — it's a single field).
+ *
+ * Example: include only decision #0 and #2, skip risks entirely, keep everything else
+ *   { decisionIndexes: [0, 2], riskIndexes: [] }
+ */
+export type MomIncludeFilter = {
+  summary?: boolean;
+  decisionIndexes?: number[];
+  actionItemIndexes?: number[];
+  riskIndexes?: number[];
+  openQuestionIndexes?: number[];
+};
+
 export type MomRendered = {
   subject: string;
   html: string;
   text: string;
 };
 
-export function renderMom(input: MomInput): MomRendered {
+export function renderMom(input: MomInput, filter?: MomIncludeFilter): MomRendered {
+  const filtered = applyFilter(input, filter);
   const subject = `Πρακτικά: ${input.subject} — ${input.startedAt.toLocaleDateString('el-GR')}`;
-  const html = buildHtml(input);
-  const text = buildText(input);
+  const html = buildHtml(filtered);
+  const text = buildText(filtered);
   return { subject, html, text };
+}
+
+function applyFilter(input: MomInput, filter?: MomIncludeFilter): MomInput {
+  if (!filter) return input;
+  return {
+    ...input,
+    summary: filter.summary === false ? null : input.summary,
+    decisions: pickByIndex(input.decisions, filter.decisionIndexes),
+    actionItems: pickByIndex(input.actionItems, filter.actionItemIndexes),
+    risks: pickByIndex(input.risks, filter.riskIndexes),
+    openQuestions: pickByIndex(input.openQuestions, filter.openQuestionIndexes),
+  };
+}
+
+function pickByIndex<T>(arr: T[], indexes: number[] | undefined): T[] {
+  if (!indexes) return arr;
+  return indexes.map((i) => arr[i]).filter((x): x is T => x !== undefined);
 }
 
 function buildHtml(input: MomInput): string {

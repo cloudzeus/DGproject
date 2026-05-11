@@ -25,6 +25,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const body = (await req.json()) as {
     recipients?: Array<{ email?: string; name?: string }>;
     subjectOverride?: string;
+    include?: {
+      summary?: boolean;
+      decisionIndexes?: number[];
+      actionItemIndexes?: number[];
+      riskIndexes?: number[];
+      openQuestionIndexes?: number[];
+    };
   };
 
   const recipients = (body.recipients ?? [])
@@ -43,6 +50,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       meetingNoteId,
       recipients,
       subjectOverride: body.subjectOverride,
+      include: body.include,
     });
     return NextResponse.json(result);
   } catch (err) {
