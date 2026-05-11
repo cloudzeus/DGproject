@@ -1,0 +1,18 @@
+# Nixpacks build config — installs mysql-client 8.0 alongside Node 22 so the
+# backup pipeline (lib/db-backup.ts) can spawn mysqldump inside the Coolify
+# container. Also installs `tsx` globally so the backup script runs without
+# requiring `npx` to download it on every cron invocation.
+
+[phases.setup]
+nixPkgs = ['nodejs_22', 'mysql80']
+
+[phases.install]
+cmds = [
+  'npm ci',
+  'npm install -g tsx@latest',
+]
+
+# Coolify reads NIXPACKS_NODE_VERSION from env; keep parity here just in case
+# anyone pulls this config standalone.
+[variables]
+NIXPACKS_NODE_VERSION = '22'

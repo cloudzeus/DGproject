@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-09T12:57:39.432Z",
+  "timestamp": "2026-05-11T04:24:08.794Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -22,29 +22,81 @@
     },
     {
       "status": "M",
-      "path": "app/(app)/projects/[id]/question-actions.ts"
+      "path": "lib/microsoft-graph.ts"
     },
     {
       "status": "M",
-      "path": "app/(app)/projects/[id]/task-actions.ts"
+      "path": "prisma/schema.prisma"
     },
     {
-      "status": "M",
-      "path": "app/(app)/settings/mailgun-actions.ts"
+      "status": "??",
+      "path": ".github/"
     },
     {
-      "status": "M",
-      "path": "lib/credentials-email.ts"
+      "status": "??",
+      "path": "BACKUP_SETUP.md"
     },
     {
-      "status": "M",
-      "path": "lib/email-templates.ts"
+      "status": "??",
+      "path": "MEETINGS_SOFTONE_SETUP.md"
     },
     {
-      "status": "M",
-      "path": "lib/project-report.ts"
+      "status": "??",
+      "path": "app/(app)/projects/[id]/meetings/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/admin/backup-database/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/admin/users/[id]/sync-softone/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/meetings/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/projects/[id]/meetings/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/projects/[id]/sync-softone/"
+    },
+    {
+      "status": "??",
+      "path": "lib/db-backup.ts"
+    },
+    {
+      "status": "??",
+      "path": "lib/llm/"
+    },
+    {
+      "status": "??",
+      "path": "lib/meeting-pipeline.ts"
+    },
+    {
+      "status": "??",
+      "path": "lib/softone-contacts.ts"
+    },
+    {
+      "status": "??",
+      "path": "nixpacks.toml"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/20260511_softone_user_types_and_meetings/"
+    },
+    {
+      "status": "??",
+      "path": "scripts/"
+    },
+    {
+      "status": "??",
+      "path": "test/"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\n7bf9d4a new super features\n12093b2 New features questions files drag and drop customer view\n8308149 feat: wire up board add-task buttons, assignee/priority/more filters\nff2ebeb feat: real notifications, M365 apps launcher, timeline zoom, projects list view\n12d170e feat: reports + exports, settings revamp, file attachments with titles, mobile sidebar, translations"
+  "context_notes": "Recent commits:\n052ba4a new super features\n7bf9d4a new super features\n12093b2 New features questions files drag and drop customer view\n8308149 feat: wire up board add-task buttons, assignee/priority/more filters\nff2ebeb feat: real notifications, M365 apps launcher, timeline zoom, projects list view"
 }

@@ -77,6 +77,32 @@ enum TaskQuestionAttachmentKind {
   answer
 }
 
+// Discriminator for the User table — every user is exactly one of:
+//   - employee : internal team member; linked to SoftOne USERS / PRSN
+//   - customer : a person representing a customer company; linked to SoftOne CUSTOMER (TRDR)
+//   - supplier : a person representing a supplier company; linked to SoftOne SUPPLIER (TRDR)
+enum UserType {
+  employee
+  customer
+  supplier
+}
+
+enum MeetingProcessingStatus {
+  pending      // meeting created, transcript not yet pulled
+  processing   // pulling transcript / running LLM
+  ready        // insights extracted successfully
+  failed       // error during processing — see errorMessage
+}
+
+// SoftOne sync status per record — set by softone-contacts.ts.
+enum SoftOneSyncStatus {
+  unsynced     // never synced
+  syncing      // sync in flight
+  synced       // ok, see softoneSyncedAt
+  conflict     // local change conflicts with SoftOne state — needs human decision
+  error        // sync failed — see softoneSyncError
+}
+
 // ───────────────────────── MODELS ────────────────────────────
 
 // Auth & User Management
@@ -91,6 +117,37 @@ model User {
   // When true, the user signed in with a temporary password issued by an admin
   // and must change it before accessing the rest of the app.
   mustChangePassword  Boolean   @default(false)
+
+  // ─── User type & company affiliation ───────────────────────────────
+  // Every user is one of three types, each mapping to a different SoftOne object.
+  userType            UserType  @default(employee)
+  // Display name of the company this user represents (works for all 3 types):
+  //   employee → "ΑΦΟΙ ΚΟΛΛΕΡΗ ΙΚΕ"  (their employer)
+  //   customer → "Acme Construction"  (the client company)
+  //   supplier → "Beta Materials Ltd" (the vendor company)
+  companyName         String?
+  // Greek tax id (Α.Φ.Μ.) of the affiliated company — required for SoftOne sync.
+  companyAfm          String?
+  // SoftOne tenant company id (the COMPANY value in the ERP — tenant-specific,
+  // configured per environment via S1_COMPANY env var).
+  softoneCompany      Int?
+
+  // ─── SoftOne primary keys per user type ────────────────────────────
+  // Employees: link to SoftOne USERS.USERID and PRSN.PRSN (the salesman/person record).
+  softoneUserId       Int?      @unique
+  softonePrsnId       Int?      @unique
+  // Customers: TRDR primary key in the CUSTOMER object.
+  softoneCustomerId   Int?      @unique
+  // Suppliers: TRDR primary key in the SUPPLIER object.
+  softoneSupplierId   Int?      @unique
+  // Optional contact/branch line numbers within their parent record.
+  softoneContactLine  Int?      // CUSCONT/SUPCONT LINENUM if we tracked the contact row
+
+  // ─── Sync metadata ─────────────────────────────────────────────────
+  softoneSyncStatus   SoftOneSyncStatus @default(unsynced)
+  softoneSyncedAt     DateTime?
+  softoneSyncError    String?   @db.Text
+
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -112,10 +169,16 @@ model User {
   questionsAddressed   TaskQuestion[]            @relation("QuestionAskee")
   taskQuestionFiles    TaskQuestionAttachment[]
   taskTemplates        TaskTemplate[]            @relation("TaskTemplateCreator")
+  organizedMeetings    MeetingNote[]             @relation("MeetingOrganizer")
 
   @@index([email])
   @@index([role])
   @@index([createdAt])
+  @@index([userType])
+  @@index([softoneCustomerId])
+  @@index([softoneSupplierId])
+  @@index([softoneUserId])
+  @@index([softoneSyncStatus])
 }
 
 model Account {
@@ -186,6 +249,25 @@ model Project {
   ownerId             String
   sharepointSiteUrl   String?
   teamsChannelId      String?
+
+  // ─── SoftOne PRJC mapping ──────────────────────────────────────────
+  // Local identifier readable in URLs / quick search. Format: "PRJ-YYYY-NNN".
+  // Generated on create; mirror of SoftOne's PRJC.CODE when synced.
+  projectCode         String?         @unique
+  // SoftOne PRJC.PRJC autoinc primary key. null until first sync.
+  softoneId           Int?            @unique
+  // SoftOne tenant company id (per S1_COMPANY env). Allows multi-company tenants
+  // to scope projects without hard-coding values.
+  softoneCompany      Int?
+  // Optional customer this project belongs to (PRJC.TRDR → CUSTOMER).
+  // Points to a User of type=customer whose softoneCustomerId is the TRDR.
+  customerUserId      String?
+  // Hash of last-known synced payload — used for optimistic concurrency.
+  softoneVersion      String?
+  softoneSyncStatus   SoftOneSyncStatus @default(unsynced)
+  softoneSyncedAt     DateTime?
+  softoneSyncError    String?         @db.Text
+
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
 
@@ -195,12 +277,16 @@ model Project {
   attachments         Attachment[]
   activities          Activity[]
   members             ProjectMember[]
+  meetings            MeetingNote[]
 
   @@index([workspaceId])
   @@index([ownerId])
   @@index([status])
   @@index([updatedAt])
   @@index([order])
+  @@index([projectCode])
+  @@index([softoneId])
+  @@index([softoneSyncStatus])
 }
 
 model ProjectMember {
@@ -240,12 +326,25 @@ model Task {
   addToCalendar   Boolean     @default(true)
   addToTeams      Boolean     @default(false)
   teamsMessageId  String?
+
+  // ─── AI-generated task provenance ──────────────────────────────────
+  // Set when this task was auto-created from a meeting transcript.
+  generatedFromMeetingId   String?
+  // LLM confidence (0-1) that this action item was actually committed in the meeting.
+  meetingSourceConfidence  Float?
+  // Verbatim quote from the transcript that supports this task.
+  meetingSourceQuote       String?  @db.Text
+  // True when confidence was middle-tier (0.6-0.85) and a human should review
+  // before this task is treated as authoritative.
+  meetingNeedsReview       Boolean  @default(false)
+
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   createdById     String
 
   project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   creator         User            @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  generatedFromMeeting MeetingNote? @relation("MeetingGeneratedTask", fields: [generatedFromMeetingId], references: [id], onDelete: SetNull)
   assignees       TaskAssignee[]
   comments        Comment[]
   attachments     Attachment[]
@@ -265,6 +364,8 @@ model Task {
   @@index([createdById])
   @@index([updatedAt])
   @@index([parentTaskId])
+  @@index([generatedFromMeetingId])
+  @@index([meetingNeedsReview])
 }
 
 model TaskAssignee {
@@ -495,6 +596,65 @@ model AppSetting {
   value     String   @db.Text
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
+}
+
+// Meeting transcript + LLM-extracted insights, tied to a project. Each MeetingNote
+// represents one Teams meeting whose transcript was processed through our
+// pseudonymization → LLM → de-pseudonymization pipeline.
+model MeetingNote {
+  id            String   @id @default(cuid())
+  projectId     String
+  organizerId   String   // the User who scheduled / owns the meeting
+
+  // Microsoft Teams identifiers (any of these may be null for manually-pasted VTT tests)
+  teamsMeetingId      String?  // Graph onlineMeeting.id
+  teamsJoinUrl        String?  @db.Text
+  teamsTranscriptId   String?
+
+  subject       String
+  startedAt     DateTime
+  endedAt       DateTime
+  durationSec   Int
+
+  // Raw VTT pulled from Graph (or pasted manually for POC).
+  // db.LongText so a 2-hour transcript still fits.
+  transcriptVtt String?  @db.LongText
+
+  // LLM-extracted insights
+  summary         String?  @db.Text
+  decisions       Json?    // Decision[] — see lib/llm/types.ts
+  actionItems     Json?    // ActionItem[]
+  risks           Json?    // Risk[]
+  openQuestions   Json?    // OpenQuestion[]
+
+  // LLM call metadata (cost/audit tracking)
+  llmProvider      String?   // e.g. "deepseek", "azure-openai"
+  llmModel         String?
+  llmInputTokens   Int?
+  llmOutputTokens  Int?
+  llmDurationMs    Int?
+
+  // Auto-task creation summary — counts of what we generated from this meeting.
+  autoTasksCreated     Int   @default(0)
+  autoTasksNeedReview  Int   @default(0)
+
+  status        MeetingProcessingStatus @default(pending)
+  errorMessage  String?  @db.Text
+  processedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organizer      User    @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
+  generatedTasks Task[]  @relation("MeetingGeneratedTask")
+
+  @@index([projectId])
+  @@index([organizerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([startedAt])
+  @@index([teamsMeetingId])
 }
 
 // Notifications

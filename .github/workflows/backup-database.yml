@@ -1,0 +1,52 @@
+name: Database Backup
+
+# Cron via GitHub Actions — runs daily at 03:00 UTC (≈ 06:00 EEST in summer).
+# Free for public repos; private repos consume minutes from your monthly quota
+# (a 30-second backup × 30 days = ~15 minutes/month, well within free tier).
+#
+# Required GitHub Actions secrets (Settings → Secrets and variables → Actions):
+#   DATABASE_URL                    — same string as .env
+#   BUNNY_ACCESS_KEY
+#   BUNNY_STORAGE_ZONE              — or BUNNY_BACKUP_STORAGE_ZONE for a separate zone
+#   BUNNY_BACKUP_STORAGE_ZONE       — RECOMMENDED: dedicated zone without Pull Zone
+#   BUNNY_STORAGE_API_HOST          — usually "storage.bunnycdn.com"
+#   BACKUP_ENCRYPTION_KEY           — strong passphrase for AES-256-GCM at-rest encryption
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch: # also allow manual runs from the Actions tab
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install MySQL client 8.0 (matches typical production servers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backup with 14-day retention
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BUNNY_ACCESS_KEY: ${{ secrets.BUNNY_ACCESS_KEY }}
+          BUNNY_STORAGE_ZONE: ${{ secrets.BUNNY_STORAGE_ZONE }}
+          BUNNY_BACKUP_STORAGE_ZONE: ${{ secrets.BUNNY_BACKUP_STORAGE_ZONE }}
+          BUNNY_STORAGE_API_HOST: ${{ secrets.BUNNY_STORAGE_API_HOST }}
+          BUNNY_CDN_HOSTNAME: ${{ secrets.BUNNY_CDN_HOSTNAME }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          NODE_ENV: production
+        run: npx tsx scripts/backup-database.ts --prune 14

@@ -386,3 +386,249 @@ export async function listUserCalendarEvents(
     categories: e.categories ?? [],
   }));
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Online meetings & transcripts
+//
+// These endpoints power the meeting-intelligence pipeline:
+//   1. Create a Teams meeting tied to a project (for scheduled team syncs)
+//   2. Pull transcripts after the meeting ends
+//
+// Required Graph application permissions (admin consent required):
+//   - OnlineMeetings.ReadWrite.All        (createOnlineMeeting)
+//   - OnlineMeetingTranscript.Read.All    (listTranscripts, getTranscriptContent)
+// ─────────────────────────────────────────────────────────────────────────
+
+export type OnlineMeetingInput = {
+  /** Organizer's user principal name or id (the meeting is created on their behalf). */
+  organizer: string;
+  subject: string;
+  startDateTime: Date;
+  endDateTime: Date;
+  /** Whether to record automatically (requires tenant policy + license). */
+  recordAutomatically?: boolean;
+  /** Whether transcription is allowed during the meeting. */
+  allowTranscription?: boolean;
+};
+
+export type OnlineMeeting = {
+  id: string;
+  joinUrl: string;
+  joinWebUrl: string | null;
+  subject: string | null;
+};
+
+export async function createOnlineMeeting(input: OnlineMeetingInput): Promise<OnlineMeeting> {
+  const body: Record<string, unknown> = {
+    subject: input.subject,
+    startDateTime: input.startDateTime.toISOString(),
+    endDateTime: input.endDateTime.toISOString(),
+    allowMeetingChat: 'enabled',
+    allowTeamworkReactions: true,
+  };
+  if (input.recordAutomatically) body.recordAutomatically = true;
+  if (input.allowTranscription) body.allowTranscription = true;
+
+  const res = await graphFetch(`/users/${encodeURIComponent(input.organizer)}/onlineMeetings`, {
+    method: 'POST',
+    body,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new GraphError(`Graph createOnlineMeeting failed (${res.status}): ${text}`, res.status);
+  }
+  const data = (await res.json()) as {
+    id: string;
+    joinUrl: string;
+    joinWebUrl?: string;
+    subject?: string;
+  };
+  return {
+    id: data.id,
+    joinUrl: data.joinUrl,
+    joinWebUrl: data.joinWebUrl ?? null,
+    subject: data.subject ?? null,
+  };
+}
+
+/** A transcript record returned by the Graph API. */
+export type MeetingTranscriptMeta = {
+  id: string;
+  meetingId: string;
+  createdDateTime: string;
+  /** URL to fetch the transcript content. */
+  transcriptContentUrl: string;
+};
+
+/**
+ * List all transcripts that exist for a given onlineMeeting.
+ * Most meetings will have one — but a long meeting may have several.
+ */
+export async function listMeetingTranscripts(
+  organizer: string,
+  meetingId: string,
+): Promise<MeetingTranscriptMeta[]> {
+  const res = await graphFetch(
+    `/users/${encodeURIComponent(organizer)}/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts`,
+    { method: 'GET' },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new GraphError(`Graph listTranscripts failed (${res.status}): ${text}`, res.status);
+  }
+  const data = (await res.json()) as {
+    value: Array<{ id: string; meetingId: string; createdDateTime: string; transcriptContentUrl: string }>;
+  };
+  return data.value;
+}
+
+/**
+ * Download transcript content as VTT text. Graph returns it as text/vtt by default
+ * but supports ?$format=text/vtt for explicitness.
+ */
+export async function getMeetingTranscriptVtt(
+  organizer: string,
+  meetingId: string,
+  transcriptId: string,
+): Promise<string> {
+  const token = await getAppToken();
+  const url = `${GRAPH}/users/${encodeURIComponent(organizer)}/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts/${encodeURIComponent(transcriptId)}/content?$format=text/vtt`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new GraphError(`Graph getTranscriptContent failed (${res.status}): ${text}`, res.status);
+  }
+  return await res.text();
+}
+
+/**
+ * Resolve a Teams join URL to its onlineMeeting id (so we can then fetch transcripts).
+ *
+ * Tries two strategies in order:
+ *   1. Direct $filter on JoinWebUrl  — works for canonical `teams.microsoft.com/l/meetup-join/…` URLs.
+ *   2. $filter on VideoTeleconferenceId — works for the new `teams.microsoft.com/meet/{id}?p=…`
+ *      "Teams Meet" instant-meeting URLs, where `{id}` is the numeric meeting code.
+ *
+ * NOTE: $filter on onlineMeetings requires the meeting to belong to the organizer
+ * whose userId we pass.
+ */
+export async function getOnlineMeetingByJoinUrl(
+  organizer: string,
+  joinWebUrl: string,
+): Promise<OnlineMeeting | null> {
+  // Strategy 1: direct JoinWebUrl match
+  const direct = await findOnlineMeeting(organizer, `JoinWebUrl eq '${joinWebUrl.replace(/'/g, "''")}'`);
+  if (direct) return direct;
+
+  // Strategy 2: parse the meet-link numeric id and filter by VideoTeleconferenceId
+  const meetCode = parseTeamsMeetCode(joinWebUrl);
+  if (meetCode) {
+    const byCode = await findOnlineMeeting(
+      organizer,
+      `VideoTeleconferenceId eq '${meetCode.replace(/'/g, "''")}'`,
+    );
+    if (byCode) return byCode;
+  }
+
+  return null;
+}
+
+/** Extract the numeric meeting id from a Teams Meet URL: `…/meet/379735249717224?p=…`. */
+function parseTeamsMeetCode(url: string): string | null {
+  const m = url.match(/teams\.microsoft\.com\/meet\/(\d+)/i);
+  return m ? m[1] : null;
+}
+
+async function findOnlineMeeting(
+  organizer: string,
+  filter: string,
+): Promise<OnlineMeeting | null> {
+  const path = `/users/${encodeURIComponent(organizer)}/onlineMeetings?$filter=${encodeURIComponent(filter)}`;
+  const res = await graphFetch(path, { method: 'GET' });
+  if (!res.ok) {
+    // 404 / 400 on a single strategy just means "no match here"; surface other errors.
+    if (res.status === 404 || res.status === 400) return null;
+    const text = await res.text().catch(() => '');
+    throw new GraphError(`Graph onlineMeetings $filter failed (${res.status}): ${text}`, res.status);
+  }
+  const data = (await res.json()) as {
+    value?: Array<{ id: string; joinUrl: string; joinWebUrl?: string; subject?: string }>;
+  };
+  const m = data.value?.[0];
+  if (!m) return null;
+  return {
+    id: m.id,
+    joinUrl: m.joinUrl,
+    joinWebUrl: m.joinWebUrl ?? null,
+    subject: m.subject ?? null,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTT parser
+// Teams transcripts come as WEBVTT with speaker tags. Format:
+//
+//     WEBVTT
+//
+//     00:00:01.520 --> 00:00:04.230
+//     <v Γιάννης Κοζύρης>Καλημέρα σε όλους</v>
+//
+//     00:00:04.500 --> 00:00:09.110
+//     <v Νίκος Μάλιακκας>Καλημέρα Γιάννη, ας ξεκινήσουμε με το report</v>
+// ─────────────────────────────────────────────────────────────────────────
+
+export type ParsedTranscriptSegment = {
+  speaker: string;
+  startSec: number;
+  endSec: number;
+  text: string;
+};
+
+const VTT_TIMESTAMP_RE =
+  /^(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s+-->\s+(\d{2}):(\d{2}):(\d{2})\.(\d{3})/;
+
+function vttTimeToSec(h: string, m: string, s: string, ms: string): number {
+  return Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms) / 1000;
+}
+
+export function parseVtt(vtt: string): ParsedTranscriptSegment[] {
+  const lines = vtt.split(/\r?\n/);
+  const segments: ParsedTranscriptSegment[] = [];
+
+  let i = 0;
+  while (i < lines.length) {
+    const m = lines[i].match(VTT_TIMESTAMP_RE);
+    if (!m) {
+      i++;
+      continue;
+    }
+    const startSec = vttTimeToSec(m[1], m[2], m[3], m[4]);
+    const endSec = vttTimeToSec(m[5], m[6], m[7], m[8]);
+
+    // Collect text lines until next blank line
+    const textLines: string[] = [];
+    i++;
+    while (i < lines.length && lines[i].trim() !== '') {
+      textLines.push(lines[i]);
+      i++;
+    }
+
+    const rawText = textLines.join(' ').trim();
+    const speakerMatch = rawText.match(/^<v\s+([^>]+)>([\s\S]*?)(?:<\/v>)?$/);
+
+    let speaker = 'Unknown';
+    let text = rawText;
+    if (speakerMatch) {
+      speaker = speakerMatch[1].trim();
+      text = speakerMatch[2].replace(/<\/?v[^>]*>/g, '').trim();
+    }
+
+    if (text) segments.push({ speaker, startSec, endSec, text });
+    i++;
+  }
+
+  return segments;
+}
