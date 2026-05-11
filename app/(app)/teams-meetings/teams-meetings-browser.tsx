@@ -318,14 +318,14 @@ Grant-CsApplicationAccessPolicy \`
                     <div className="text-xs">
                       {processResults[m.meetingId].ok ? (
                         <div className="rounded bg-green-50 px-3 py-1.5 text-green-700">
-                          ✓ Δημιουργήθηκαν notes —{' '}
+                          ✓ Αποδελτιώθηκε — επίλεξε action items και ανάθεσε σε projects:{' '}
                           <Link
                             href={`/projects/${selectedProject[m.meetingId]}/meetings/${
                               (processResults[m.meetingId] as { meetingNoteId: string }).meetingNoteId
                             }`}
-                            className="underline"
+                            className="underline font-medium"
                           >
-                            δες αποτελέσματα
+                            άνοιγμα συσκέψης →
                           </Link>
                         </div>
                       ) : (

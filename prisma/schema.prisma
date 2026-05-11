@@ -606,10 +606,12 @@ model MeetingNote {
   projectId     String
   organizerId   String   // the User who scheduled / owns the meeting
 
-  // Microsoft Teams identifiers (any of these may be null for manually-pasted VTT tests)
-  teamsMeetingId      String?  // Graph onlineMeeting.id
+  // Microsoft Teams identifiers (any of these may be null for manually-pasted VTT tests).
+  // Graph IDs can exceed the default VARCHAR(191). teamsMeetingId stays bounded
+  // so we can index it for duplicate detection; the other two use @db.Text.
+  teamsMeetingId      String?  @db.VarChar(500)
   teamsJoinUrl        String?  @db.Text
-  teamsTranscriptId   String?
+  teamsTranscriptId   String?  @db.Text
 
   subject       String
   startedAt     DateTime

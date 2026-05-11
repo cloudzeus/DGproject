@@ -50,7 +50,9 @@ export function ActionItemsList({
   const [errors, setErrors] = useState<Record<number, string>>({});
 
   async function createInProject(actionItemIndex: number) {
-    const projectId = picker[actionItemIndex];
+    // Fall back to the primary project when the admin hasn't explicitly changed
+    // the picker yet — same as the "current pick" rendered in the UI.
+    const projectId = picker[actionItemIndex] ?? primaryProjectId;
     if (!projectId) return;
     setPending((s) => ({ ...s, [actionItemIndex]: true }));
     setErrors((s) => ({ ...s, [actionItemIndex]: '' }));
@@ -89,8 +91,9 @@ export function ActionItemsList({
   return (
     <ul className="space-y-3">
       {actionItems.map((a, i) => {
-        const additionalProjects = projects.filter((p) => p.id !== primaryProjectId);
         const createdHere = createdAt[i] ?? [];
+        // Default the picker to the primary project — admin can change per item.
+        const currentPick = picker[i] ?? primaryProjectId;
         return (
           <li key={i} className="rounded border border-gray-200 bg-white p-3">
             <div className="flex items-start justify-between gap-3">
@@ -117,45 +120,43 @@ export function ActionItemsList({
               </div>
             </div>
 
-            {additionalProjects.length > 0 && (
-              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2">
-                <span className="text-xs text-gray-500">Δημιούργησε επιπλέον σε:</span>
-                <select
-                  value={picker[i] ?? ''}
-                  onChange={(e) => setPicker((s) => ({ ...s, [i]: e.target.value }))}
-                  disabled={pending[i]}
-                  className="rounded border border-gray-300 px-2 py-1 text-xs"
-                >
-                  <option value="">— επίλεξε project —</option>
-                  {additionalProjects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                      {p.status !== 'active' ? ` (${p.status})` : ''}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => createInProject(i)}
-                  disabled={pending[i] || !picker[i]}
-                  className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white disabled:bg-gray-300"
-                >
-                  {pending[i] ? 'Δημιουργία…' : 'Δημιουργία task'}
-                </button>
-
-                {createdHere.map((c) => (
-                  <a
-                    key={c.taskId}
-                    href={`/projects/${c.projectId}`}
-                    className="rounded bg-green-50 px-2 py-0.5 text-green-700 hover:bg-green-100"
-                  >
-                    ✓ {c.projectName}
-                  </a>
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2">
+              <span className="text-xs text-gray-500">Δημιούργησε task σε:</span>
+              <select
+                value={currentPick}
+                onChange={(e) => setPicker((s) => ({ ...s, [i]: e.target.value }))}
+                disabled={pending[i]}
+                className="rounded border border-gray-300 px-2 py-1 text-xs"
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.id === primaryProjectId ? ' · primary' : ''}
+                    {p.status !== 'active' ? ` (${p.status})` : ''}
+                  </option>
                 ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => createInProject(i)}
+                disabled={pending[i] || !currentPick}
+                className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white disabled:bg-gray-300"
+              >
+                {pending[i] ? 'Δημιουργία…' : 'Δημιουργία task'}
+              </button>
 
-                {errors[i] && <span className="text-red-600">{errors[i]}</span>}
-              </div>
-            )}
+              {createdHere.map((c) => (
+                <a
+                  key={c.taskId}
+                  href={`/projects/${c.projectId}`}
+                  className="rounded bg-green-50 px-2 py-0.5 text-green-700 hover:bg-green-100"
+                >
+                  ✓ {c.projectName}
+                </a>
+              ))}
+
+              {errors[i] && <span className="text-red-600">{errors[i]}</span>}
+            </div>
           </li>
         );
       })}

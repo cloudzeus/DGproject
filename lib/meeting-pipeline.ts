@@ -5,22 +5,25 @@ import type { ActionItem } from './llm/types';
 import type { Task, TaskPriority } from '@prisma/client';
 
 /**
- * Meeting processing pipeline — orchestrates the full flow:
+ * Meeting processing pipeline — extraction only, no task creation.
  *
  *   1. Persist initial MeetingNote (status: processing)
  *   2. Parse VTT, run pseudonymized LLM extraction
  *   3. Update MeetingNote with insights + status: ready
- *   4. Auto-create tasks based on confidence tiers:
- *        confidence ≥ 0.85  → Task status="todo", auto-assigned, no review flag
- *        0.6 ≤ conf < 0.85 → Task status="backlog", needsReview=true, owner = meeting organizer
- *        confidence < 0.6  → ignored (left only on MeetingNote.actionItems for human inspection)
+ *
+ * Tasks are NOT auto-created. The admin reviews the extracted action items
+ * on the meeting detail page and creates each task explicitly in the project
+ * of their choice (via /api/meetings/[id]/create-task).
+ *
+ * Rationale: a single Teams meeting often covers multiple projects, and the
+ * primary project picked at processing time is only one of them. Forcing
+ * tasks into that project meant the admin had to clean up duplicates and move
+ * tasks afterwards — which was strictly more work than just creating them
+ * directly in the right project.
  *
  * Caller is responsible for providing the VTT (either pulled from Graph or
  * pasted manually). This module knows nothing about Graph itself.
  */
-
-const HIGH_CONFIDENCE = 0.85;
-const MIN_CONFIDENCE = 0.6;
 
 export type ProcessMeetingInput = {
   projectId: string;
@@ -37,9 +40,6 @@ export type ProcessMeetingInput = {
 export type ProcessMeetingResult = {
   meetingNoteId: string;
   insights: MeetingInsights;
-  createdTaskIds: string[];
-  reviewTaskIds: string[];
-  skippedLowConfidenceCount: number;
 };
 
 export async function processMeeting(input: ProcessMeetingInput): Promise<ProcessMeetingResult> {
@@ -106,37 +106,8 @@ export async function processMeeting(input: ProcessMeetingInput): Promise<Proces
       meetingEndDate: input.endedAt,
     });
 
-    // 4. Decide which action items become tasks (by confidence tier)
-    const memberByEmail = new Map(members.map((m) => [m.email.toLowerCase(), m]));
-    const createdTaskIds: string[] = [];
-    const reviewTaskIds: string[] = [];
-    let skipped = 0;
-
-    for (const action of insights.actionItems) {
-      const tier = classifyConfidence(action.confidence);
-      if (tier === 'skip') {
-        skipped += 1;
-        continue;
-      }
-
-      const task = await createTaskFromAction({
-        action,
-        tier,
-        projectId: input.projectId,
-        organizerId: input.organizerId,
-        meetingNoteId: meetingNote.id,
-        memberByEmail,
-      });
-
-      if (tier === 'auto') createdTaskIds.push(task.id);
-      else reviewTaskIds.push(task.id);
-    }
-
-    // Open questions → TaskQuestion rows on the most-recently-created auto-task,
-    // OR as standalone notification when there's no matching task. For POC we
-    // only log them on the MeetingNote (they're stored in insights.openQuestions).
-
-    // 5. Finalize MeetingNote
+    // 4. Persist insights. Tasks are NOT auto-created — the admin picks per-item
+    // project assignments on the meeting detail page.
     await prisma.meetingNote.update({
       where: { id: meetingNote.id },
       data: {
@@ -150,8 +121,8 @@ export async function processMeeting(input: ProcessMeetingInput): Promise<Proces
         llmInputTokens: insights.meta.inputTokens,
         llmOutputTokens: insights.meta.outputTokens,
         llmDurationMs: insights.meta.durationMs,
-        autoTasksCreated: createdTaskIds.length,
-        autoTasksNeedReview: reviewTaskIds.length,
+        autoTasksCreated: 0,
+        autoTasksNeedReview: 0,
         status: 'ready',
         processedAt: new Date(),
       },
@@ -160,9 +131,6 @@ export async function processMeeting(input: ProcessMeetingInput): Promise<Proces
     return {
       meetingNoteId: meetingNote.id,
       insights,
-      createdTaskIds,
-      reviewTaskIds,
-      skippedLowConfidenceCount: skipped,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -172,67 +140,6 @@ export async function processMeeting(input: ProcessMeetingInput): Promise<Proces
     });
     throw err;
   }
-}
-
-type ConfidenceTier = 'auto' | 'review' | 'skip';
-
-function classifyConfidence(c: number): ConfidenceTier {
-  if (c >= HIGH_CONFIDENCE) return 'auto';
-  if (c >= MIN_CONFIDENCE) return 'review';
-  return 'skip';
-}
-
-async function createTaskFromAction(args: {
-  action: ActionItem;
-  tier: 'auto' | 'review';
-  projectId: string;
-  organizerId: string;
-  meetingNoteId: string;
-  memberByEmail: Map<string, { id: string; email: string; name: string }>;
-}): Promise<Task> {
-  const { action, tier, projectId, organizerId, meetingNoteId, memberByEmail } = args;
-
-  const assignee = action.assigneeEmail
-    ? memberByEmail.get(action.assigneeEmail.toLowerCase())
-    : null;
-
-  // Auto tier with assignee → todo. Review tier OR no assignee → backlog (organizer triages).
-  const status = tier === 'auto' && assignee ? 'todo' : 'backlog';
-  const dueDate = action.dueDate ? safeDate(action.dueDate) : null;
-  const priority = normalizePriority(action.priority);
-
-  const task = await prisma.task.create({
-    data: {
-      projectId,
-      title: action.title.slice(0, 255),
-      description: action.description,
-      status,
-      priority,
-      dueDate,
-      createdById: organizerId,
-      generatedFromMeetingId: meetingNoteId,
-      meetingSourceConfidence: action.confidence,
-      meetingSourceQuote: action.sourceQuote,
-      meetingNeedsReview: tier === 'review',
-      assignees: assignee
-        ? {
-            create: [{ userId: assignee.id }],
-          }
-        : undefined,
-    },
-  });
-
-  return task;
-}
-
-function normalizePriority(p: ActionItem['priority']): TaskPriority {
-  if (p === 'low' || p === 'medium' || p === 'high' || p === 'urgent') return p;
-  return 'medium';
-}
-
-function safeDate(iso: string): Date | null {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function uniqByEmail<T extends { email: string }>(items: T[]): T[] {

@@ -11,9 +11,7 @@ export function ProcessVttForm({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{
     meetingNoteId: string;
-    autoTasksCreated: number;
-    reviewTasksCreated: number;
-    skippedLowConfidence: number;
+    actionItemsExtracted: number;
   } | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
@@ -101,15 +99,14 @@ export function ProcessVttForm({ projectId }: { projectId: string }) {
 
       {success && (
         <div className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-          ✓ Δημιουργήθηκε MeetingNote{' '}
+          ✓ Αποδελτίωση ολοκληρώθηκε — {success.actionItemsExtracted} action items εντοπίστηκαν.{' '}
           <a
             href={`/projects/${projectId}/meetings/${success.meetingNoteId}`}
-            className="underline"
+            className="underline font-medium"
           >
-            (open)
+            Άνοιγμα →
           </a>{' '}
-          · auto tasks: {success.autoTasksCreated} · need review: {success.reviewTasksCreated} ·
-          ignored low-confidence: {success.skippedLowConfidence}
+          για να αναθέσεις τα tasks σε projects.
         </div>
       )}
     </form>

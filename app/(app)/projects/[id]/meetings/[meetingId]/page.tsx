@@ -117,11 +117,12 @@ export default async function MeetingDetailPage({
       )}
 
       {actionItems.length > 0 && (
-        <Section title={`Action items (${actionItems.length}) · ${meeting.autoTasksCreated} έγιναν tasks · ${meeting.autoTasksNeedReview} need review`}>
+        <Section title={`Action items (${actionItems.length})`}>
           <p className="mb-2 text-xs text-gray-500">
-            Κάθε action item έχει ήδη γίνει task στο πρωτεύον project ({meeting.project.name}).
-            Αν η σύσκεψη κάλυπτε και άλλα projects, μπορείς να δημιουργήσεις επιπλέον tasks
-            από την ίδια αναφορά σε διαφορετικό project.
+            Το LLM εντόπισε τα παρακάτω action items. Κάθε ένα μπορεί να γίνει task —
+            επίλεξε project (default: {meeting.project.name}) και πάτα «Δημιουργία task».
+            Μπορείς να δημιουργήσεις το ίδιο action item σε <strong>πολλαπλά projects</strong>
+            αν αφορά περισσότερα από ένα.
           </p>
           <ActionItemsList
             meetingId={meeting.id}

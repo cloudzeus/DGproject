@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-11T05:41:08.184Z",
+  "timestamp": "2026-05-11T06:07:40.175Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -22,17 +22,45 @@
     },
     {
       "status": "M",
-      "path": "app/(app)/projects/[id]/meetings/[meetingId]/page.tsx"
-    },
-    {
-      "status": "??",
       "path": "app/(app)/projects/[id]/meetings/[meetingId]/action-items-list.tsx"
     },
     {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/meetings/[meetingId]/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/meetings/process-vtt-form.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/teams-meetings/teams-meetings-browser.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/api/meetings/poc-vtt/route.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/api/meetings/poc/route.ts"
+    },
+    {
+      "status": "M",
+      "path": "lib/meeting-pipeline.ts"
+    },
+    {
+      "status": "M",
+      "path": "prisma/schema.prisma"
+    },
+    {
       "status": "??",
-      "path": "app/api/meetings/[id]/create-task/"
+      "path": "prisma/migrations/20260511_meeting_id_columns_longer/"
+    },
+    {
+      "status": "??",
+      "path": "scripts/check-policy.ts"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\nea2bb04 main update huge new features\nf386a37 main update huge new features\n4614da7 main update huge new features\n05bddf1 main update huge new features\nc20d6c3 main update huge new features"
+  "context_notes": "Recent commits:\n13f2db3 main update huge new features\nea2bb04 main update huge new features\nf386a37 main update huge new features\n4614da7 main update huge new features\n05bddf1 main update huge new features"
 }

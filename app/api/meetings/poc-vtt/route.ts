@@ -60,9 +60,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       meetingNoteId: result.meetingNoteId,
-      autoTasksCreated: result.createdTaskIds.length,
-      reviewTasksCreated: result.reviewTaskIds.length,
-      skippedLowConfidence: result.skippedLowConfidenceCount,
+      actionItemsExtracted: result.insights.actionItems.length,
       insights: result.insights,
     });
   } catch (err) {
