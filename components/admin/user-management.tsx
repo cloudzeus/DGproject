@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition, useRef } from 'react';
+import { SoftOneCompanyCombobox } from '@/components/admin/softone-company-combobox';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Delete20Regular, Edit20Regular, Add20Filled,
@@ -21,6 +22,8 @@ import {
 } from '@/app/(app)/admin/users/actions';
 
 type Role = 'admin' | 'manager' | 'member' | 'viewer';
+type UserType = 'employee' | 'customer' | 'supplier';
+type SyncStatus = 'unsynced' | 'syncing' | 'synced' | 'conflict' | 'error';
 
 type DepartmentOption = { id: string; name: string; color: string };
 
@@ -33,6 +36,14 @@ type UserRow = {
   hasMicrosoftAccount: boolean;
   createdAt: string;
   departmentIds: string[];
+  userType: UserType;
+  companyName: string | null;
+  companyAfm: string | null;
+  softoneCompany: number | null;
+  softoneUserId: number | null;
+  softoneCustomerId: number | null;
+  softoneSupplierId: number | null;
+  softoneSyncStatus: SyncStatus;
 };
 
 const roleVariant: Record<Role, 'red' | 'orange' | 'blue' | 'neutral'> = {
@@ -301,7 +312,24 @@ function UserForm({
 }) {
   const [selectedDepts, setSelectedDepts] = useState<string[]>(initial?.departmentIds ?? []);
   const [sendCredentials, setSendCredentials] = useState<boolean>(mode === 'create');
+  const [userType, setUserType] = useState<UserType>(initial?.userType ?? 'employee');
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Map user type → SoftOne lookup source + initial selection.
+  const softoneSource: 'customer' | 'supplier' | 'company' =
+    userType === 'customer' ? 'customer'
+    : userType === 'supplier' ? 'supplier'
+    : 'company';
+
+  // Pre-fill the combobox from whichever id matches the current type.
+  const initialSoftOneId =
+    userType === 'customer' ? initial?.softoneCustomerId
+    : userType === 'supplier' ? initial?.softoneSupplierId
+    : initial?.softoneCompany;
+
+  const initialSelection = initialSoftOneId
+    ? { id: initialSoftOneId, name: initial?.companyName ?? '', afm: initial?.companyAfm ?? null, code: '' }
+    : null;
 
   function toggleDept(id: string) {
     setSelectedDepts((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -357,6 +385,70 @@ function UserForm({
             <option value="member">Μέλος</option>
             <option value="viewer">Προβολή (πελάτης)</option>
           </select>
+        </div>
+      </div>
+
+      {/* ─── User type + SoftOne company linkage ─── */}
+      <div className="rounded-lg border border-fluent-neutral-20 bg-fluent-neutral-2/50 p-3 space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-fluent-neutral-70 mb-2">
+            Τύπος χρήστη
+          </label>
+          <div className="flex gap-3">
+            {([
+              { value: 'employee', label: 'Υπάλληλος', hint: 'εταιρεία' },
+              { value: 'customer', label: 'Πελάτης', hint: 'CUSTOMER' },
+              { value: 'supplier', label: 'Προμηθευτής', hint: 'SUPPLIER' },
+            ] as const).map((opt) => (
+              <label
+                key={opt.value}
+                className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-sm transition ${
+                  userType === opt.value
+                    ? 'border-fluent-blue-500 bg-fluent-blue-50 text-fluent-blue-700'
+                    : 'border-fluent-neutral-20 hover:bg-fluent-neutral-4'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="userType"
+                  value={opt.value}
+                  checked={userType === opt.value}
+                  onChange={() => setUserType(opt.value)}
+                  className="sr-only"
+                />
+                <div className="font-medium">{opt.label}</div>
+                <div className="text-[10px] text-fluent-neutral-60">{opt.hint}</div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
+            Εταιρεία (από SoftOne)
+          </label>
+          <SoftOneCompanyCombobox
+            source={softoneSource}
+            fieldNamePrefix="softoneCompany"
+            initial={initialSelection}
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
+            Α.Φ.Μ. εταιρείας (προαιρετικό override)
+          </label>
+          <input
+            name="companyAfm"
+            defaultValue={initial?.companyAfm ?? ''}
+            placeholder="9-ψήφιο ΑΦΜ"
+            pattern="\d{9}"
+            className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+          />
+          <p className="mt-1 text-[10px] text-fluent-neutral-60">
+            Αν επιλέξεις εταιρεία από το combobox, το ΑΦΜ συμπληρώνεται αυτόματα.
+            Συμπλήρωσε εδώ ΜΟΝΟ όταν θες override.
+          </p>
         </div>
       </div>
 

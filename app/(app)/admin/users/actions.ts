@@ -46,6 +46,55 @@ function parseDepartmentIds(formData: FormData): string[] {
   return formData.getAll('departmentIds').map((v) => String(v)).filter(Boolean);
 }
 
+type UserType = 'employee' | 'customer' | 'supplier';
+const USER_TYPES: UserType[] = ['employee', 'customer', 'supplier'];
+
+/**
+ * Parse userType + SoftOne company linkage from the form payload produced by
+ * the user form. The combobox writes 4 hidden inputs prefixed with
+ * "softoneCompany" (Id, Code, Name, Afm). companyAfm is a free input that the
+ * admin may type manually to override the combobox value.
+ *
+ * Routing by userType:
+ *   - employee  → softoneCompany       (the tenant org)
+ *   - customer  → softoneCustomerId    (a CUSTOMER record)
+ *   - supplier  → softoneSupplierId    (a SUPPLIER record)
+ *
+ * Returns a partial that can be spread into Prisma's create/update data.
+ */
+function parseUserTypeAndCompany(formData: FormData) {
+  const userType = (String(formData.get('userType') ?? 'employee') as UserType);
+  const safeType: UserType = USER_TYPES.includes(userType) ? userType : 'employee';
+
+  const idRaw = String(formData.get('softoneCompanyId') ?? '').trim();
+  const id = idRaw && Number.isFinite(Number(idRaw)) ? Number(idRaw) : null;
+  const companyName = String(formData.get('softoneCompanyName') ?? '').trim() || null;
+  const fromCombobox = String(formData.get('softoneCompanyAfm') ?? '').trim();
+  const fromOverride = String(formData.get('companyAfm') ?? '').trim();
+  const companyAfm = (fromOverride || fromCombobox) || null;
+
+  const data: {
+    userType: UserType;
+    companyName: string | null;
+    companyAfm: string | null;
+    softoneCompany: number | null;
+    softoneCustomerId: number | null;
+    softoneSupplierId: number | null;
+    softoneSyncStatus: 'unsynced';
+  } = {
+    userType: safeType,
+    companyName,
+    companyAfm,
+    softoneCompany: safeType === 'employee' ? id : null,
+    softoneCustomerId: safeType === 'customer' ? id : null,
+    softoneSupplierId: safeType === 'supplier' ? id : null,
+    // Reset sync state whenever the type or company changes — a stale "synced"
+    // status would be misleading after the linked record was swapped.
+    softoneSyncStatus: 'unsynced',
+  };
+  return data;
+}
+
 export async function createUser(formData: FormData) {
   const admin = await requireAdminUser();
   const name = String(formData.get('name') ?? '').trim();
@@ -75,6 +124,7 @@ export async function createUser(formData: FormData) {
   if (existing) return { ok: false, error: 'Υπάρχει ήδη χρήστης με αυτό το email.' };
 
   const hashed = await bcryptjs.hash(plainPassword, 10);
+  const typeAndCompany = parseUserTypeAndCompany(formData);
   await prisma.user.create({
     data: {
       name,
@@ -82,6 +132,7 @@ export async function createUser(formData: FormData) {
       password: hashed,
       role,
       mustChangePassword,
+      ...typeAndCompany,
       departments: departmentIds.length
         ? { create: departmentIds.map((departmentId) => ({ departmentId })) }
         : undefined,
@@ -164,7 +215,18 @@ export async function updateUser(id: string, formData: FormData) {
   const clash = await prisma.user.findFirst({ where: { email, NOT: { id } } });
   if (clash) return { ok: false, error: 'Υπάρχει ήδη άλλος χρήστης με αυτό το email.' };
 
-  const data: { name: string; email: string; role: Role; password?: string } = { name, email, role };
+  const typeAndCompany = parseUserTypeAndCompany(formData);
+  const data: {
+    name: string;
+    email: string;
+    role: Role;
+    password?: string;
+  } & ReturnType<typeof parseUserTypeAndCompany> = {
+    name,
+    email,
+    role,
+    ...typeAndCompany,
+  };
   if (newPassword) {
     if (newPassword.length < 8) return { ok: false, error: 'Ο νέος κωδικός πρέπει να έχει τουλάχιστον 8 χαρακτήρες.' };
     data.password = await bcryptjs.hash(newPassword, 10);

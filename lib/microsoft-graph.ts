@@ -419,6 +419,10 @@ export type OnlineMeeting = {
 };
 
 export async function createOnlineMeeting(input: OnlineMeetingInput): Promise<OnlineMeeting> {
+  const organizerId = input.organizer.includes('@')
+    ? await getUserObjectId(input.organizer)
+    : input.organizer;
+
   const body: Record<string, unknown> = {
     subject: input.subject,
     startDateTime: input.startDateTime.toISOString(),
@@ -429,7 +433,7 @@ export async function createOnlineMeeting(input: OnlineMeetingInput): Promise<On
   if (input.recordAutomatically) body.recordAutomatically = true;
   if (input.allowTranscription) body.allowTranscription = true;
 
-  const res = await graphFetch(`/users/${encodeURIComponent(input.organizer)}/onlineMeetings`, {
+  const res = await graphFetch(`/users/${organizerId}/onlineMeetings`, {
     method: 'POST',
     body,
   });
@@ -468,8 +472,9 @@ export async function listMeetingTranscripts(
   organizer: string,
   meetingId: string,
 ): Promise<MeetingTranscriptMeta[]> {
+  const organizerId = organizer.includes('@') ? await getUserObjectId(organizer) : organizer;
   const res = await graphFetch(
-    `/users/${encodeURIComponent(organizer)}/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts`,
+    `/users/${organizerId}/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts`,
     { method: 'GET' },
   );
   if (!res.ok) {
@@ -491,8 +496,9 @@ export async function getMeetingTranscriptVtt(
   meetingId: string,
   transcriptId: string,
 ): Promise<string> {
+  const organizerId = organizer.includes('@') ? await getUserObjectId(organizer) : organizer;
   const token = await getAppToken();
-  const url = `${GRAPH}/users/${encodeURIComponent(organizer)}/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts/${encodeURIComponent(transcriptId)}/content?$format=text/vtt`;
+  const url = `${GRAPH}/users/${organizerId}/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts/${encodeURIComponent(transcriptId)}/content?$format=text/vtt`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
@@ -546,7 +552,8 @@ async function findOnlineMeeting(
   organizer: string,
   filter: string,
 ): Promise<OnlineMeeting | null> {
-  const path = `/users/${encodeURIComponent(organizer)}/onlineMeetings?$filter=${encodeURIComponent(filter)}`;
+  const organizerId = organizer.includes('@') ? await getUserObjectId(organizer) : organizer;
+  const path = `/users/${organizerId}/onlineMeetings?$filter=${encodeURIComponent(filter)}`;
   const res = await graphFetch(path, { method: 'GET' });
   if (!res.ok) {
     // 404 / 400 on a single strategy just means "no match here"; surface other errors.
@@ -631,4 +638,215 @@ export function parseVtt(vtt: string): ParsedTranscriptSegment[] {
   }
 
   return segments;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tenant-wide discovery: list all recent transcripts and recordings.
+//
+// Graph exposes two "getAll" functions on /communications/onlineMeetings
+// that enumerate transcripts/recordings across an organizer's meetings:
+//
+//   GET /communications/onlineMeetings/getAllTranscripts(
+//         meetingOrganizerUserId='{userId}',
+//         startDateTime='{iso}',
+//         endDateTime='{iso}'
+//       )
+//
+// `userId` here MUST be the AAD object id (NOT a userPrincipalName / email).
+// We resolve email → id via /users/{upn}?$select=id first.
+//
+// Required permissions:
+//   - OnlineMeetingTranscript.Read.All  (transcripts)
+//   - OnlineMeetingRecording.Read.All   (recordings)
+// + per-organizer application access policy granted in Teams.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type RecentTranscriptInfo = {
+  transcriptId: string;
+  meetingId: string;
+  createdDateTime: string;
+  transcriptContentUrl: string;
+  meetingOrganizerUserId: string;
+};
+
+export type RecentRecordingInfo = {
+  recordingId: string;
+  meetingId: string;
+  createdDateTime: string;
+  recordingContentUrl: string;
+  meetingOrganizerUserId: string;
+};
+
+/**
+ * Resolve a userPrincipalName (email) to the AAD object id.
+ * The `getAllTranscripts` function requires an object id, not a UPN.
+ */
+export async function getUserObjectId(upn: string): Promise<string> {
+  const token = await getAppToken();
+  const res = await fetch(`${GRAPH}/users/${encodeURIComponent(upn)}?$select=id`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new GraphError(`Graph user lookup failed (${res.status}): ${body}`, res.status);
+  }
+  const data = (await res.json()) as { id: string };
+  return data.id;
+}
+
+export async function listAllTranscripts(
+  organizerUpnOrId: string,
+  startDateTime: Date,
+  endDateTime: Date,
+): Promise<RecentTranscriptInfo[]> {
+  const organizerId = organizerUpnOrId.includes('@')
+    ? await getUserObjectId(organizerUpnOrId)
+    : organizerUpnOrId;
+
+  // Graph v1.0 path: function lives under /users/{id}/onlineMeetings — NOT /communications.
+  // Date params must be wrapped in single quotes inside the function call.
+  const start = startDateTime.toISOString();
+  const end = endDateTime.toISOString();
+  // Note: dates are DateTimeOffset literals (no quotes), but userId IS a string literal (quoted).
+  const params = `meetingOrganizerUserId='${organizerId}',startDateTime=${start},endDateTime=${end}`;
+  const path = `/users/${organizerId}/onlineMeetings/getAllTranscripts(${params})`;
+
+  const all: RecentTranscriptInfo[] = [];
+  let url: string | null = `${GRAPH}${path}`;
+
+  while (url) {
+    const token = await getAppToken();
+    const res: Response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new GraphError(
+        `Graph getAllTranscripts failed (${res.status}): ${body}`,
+        res.status,
+      );
+    }
+    const data = (await res.json()) as {
+      value: Array<{
+        id: string;
+        meetingId: string;
+        createdDateTime: string;
+        transcriptContentUrl: string;
+        meetingOrganizer?: { user?: { id: string } };
+      }>;
+      '@odata.nextLink'?: string;
+    };
+    for (const t of data.value ?? []) {
+      all.push({
+        transcriptId: t.id,
+        meetingId: t.meetingId,
+        createdDateTime: t.createdDateTime,
+        transcriptContentUrl: t.transcriptContentUrl,
+        meetingOrganizerUserId: t.meetingOrganizer?.user?.id ?? organizerId,
+      });
+    }
+    url = data['@odata.nextLink'] ?? null;
+  }
+
+  return all;
+}
+
+export async function listAllRecordings(
+  organizerUpnOrId: string,
+  startDateTime: Date,
+  endDateTime: Date,
+): Promise<RecentRecordingInfo[]> {
+  const organizerId = organizerUpnOrId.includes('@')
+    ? await getUserObjectId(organizerUpnOrId)
+    : organizerUpnOrId;
+
+  const start = startDateTime.toISOString();
+  const end = endDateTime.toISOString();
+  // Note: dates are DateTimeOffset literals (no quotes), but userId IS a string literal (quoted).
+  const params = `meetingOrganizerUserId='${organizerId}',startDateTime=${start},endDateTime=${end}`;
+  const path = `/users/${organizerId}/onlineMeetings/getAllRecordings(${params})`;
+
+  const all: RecentRecordingInfo[] = [];
+  let url: string | null = `${GRAPH}${path}`;
+
+  while (url) {
+    const token = await getAppToken();
+    const res: Response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new GraphError(
+        `Graph getAllRecordings failed (${res.status}): ${body}`,
+        res.status,
+      );
+    }
+    const data = (await res.json()) as {
+      value: Array<{
+        id: string;
+        meetingId: string;
+        createdDateTime: string;
+        recordingContentUrl: string;
+        meetingOrganizer?: { user?: { id: string } };
+      }>;
+      '@odata.nextLink'?: string;
+    };
+    for (const r of data.value ?? []) {
+      all.push({
+        recordingId: r.id,
+        meetingId: r.meetingId,
+        createdDateTime: r.createdDateTime,
+        recordingContentUrl: r.recordingContentUrl,
+        meetingOrganizerUserId: r.meetingOrganizer?.user?.id ?? organizerId,
+      });
+    }
+    url = data['@odata.nextLink'] ?? null;
+  }
+
+  return all;
+}
+
+/**
+ * Get an onlineMeeting by its id — used to enrich transcript/recording rows
+ * with the meeting's subject, start/end times, and join URL.
+ *
+ * Accepts both userPrincipalName (email) and AAD object id as `organizerUpnOrId`.
+ */
+export async function getOnlineMeetingById(
+  organizerUpnOrId: string,
+  meetingId: string,
+): Promise<OnlineMeeting & { subject: string | null; startDateTime: string | null; endDateTime: string | null }> {
+  // Graph requires a GUID (not a UPN) in the /users/{id} segment for onlineMeetings.
+  const organizerId = organizerUpnOrId.includes('@')
+    ? await getUserObjectId(organizerUpnOrId)
+    : organizerUpnOrId;
+  const token = await getAppToken();
+  const url = `${GRAPH}/users/${organizerId}/onlineMeetings/${encodeURIComponent(meetingId)}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new GraphError(`Graph getOnlineMeetingById failed (${res.status}): ${body}`, res.status);
+  }
+  const m = (await res.json()) as {
+    id: string;
+    joinUrl: string;
+    joinWebUrl?: string;
+    subject?: string;
+    startDateTime?: string;
+    endDateTime?: string;
+  };
+  return {
+    id: m.id,
+    joinUrl: m.joinUrl,
+    joinWebUrl: m.joinWebUrl ?? null,
+    subject: m.subject ?? null,
+    startDateTime: m.startDateTime ?? null,
+    endDateTime: m.endDateTime ?? null,
+  };
 }

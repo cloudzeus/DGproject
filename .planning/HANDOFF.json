@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-11T04:43:27.157Z",
+  "timestamp": "2026-05-11T05:05:14.058Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -22,13 +22,41 @@
     },
     {
       "status": "M",
-      "path": "lib/softone.ts"
+      "path": "app/(app)/admin/users/actions.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/admin/users/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "components/admin/user-management.tsx"
+    },
+    {
+      "status": "M",
+      "path": "lib/microsoft-graph.ts"
     },
     {
       "status": "??",
-      "path": ".s1session.json"
+      "path": "app/(app)/teams-meetings/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/softone/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/teams-meetings/"
+    },
+    {
+      "status": "??",
+      "path": "components/admin/softone-company-combobox.tsx"
+    },
+    {
+      "status": "??",
+      "path": "lib/softone-lookup.ts"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\nc20d6c3 main update huge new features\n052ba4a new super features\n7bf9d4a new super features\n12093b2 New features questions files drag and drop customer view\n8308149 feat: wire up board add-task buttons, assignee/priority/more filters"
+  "context_notes": "Recent commits:\n05bddf1 main update huge new features\nc20d6c3 main update huge new features\n052ba4a new super features\n7bf9d4a new super features\n12093b2 New features questions files drag and drop customer view"
 }
