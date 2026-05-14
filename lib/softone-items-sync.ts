@@ -148,13 +148,23 @@ export async function syncSoftoneItems(): Promise<SyncResult> {
     durationMs: 0,
   };
 
+  // Optional explicit company filter — usually the auth COMPANY context is
+  // enough to scope ITEM data, but for tenants where the browser ignores the
+  // auth scope (e.g. global catalogs viewed cross-company) the operator can
+  // pin to a specific company id via S1_ITEM_COMPANY_FILTER, e.g. 900 for
+  // DGSMART.
+  const companyFilter = (process.env.S1_ITEM_COMPANY_FILTER ?? '').trim();
+  const filters = companyFilter
+    ? `ITEM.ISACTIVE=1&ITEM.COMPANY=${companyFilter}`
+    : 'ITEM.ISACTIVE=1';
+
   let info: { success?: boolean; reqID?: string; fields?: FieldDef[]; totalcount?: number; error?: string; errorcode?: number };
   try {
     info = await s1('getBrowserInfo', {
       object: 'ITEM',
-      // No explicit LIST → use default. ISACTIVE filter pulls live SKUs only.
-      // Operators always "=", per SoftOne filter syntax.
-      FILTERS: 'ITEM.ISACTIVE=1',
+      // No explicit LIST → use default. Operators always "=", per SoftOne
+      // filter syntax. Multiple clauses joined with "&".
+      FILTERS: filters,
     });
   } catch (e) {
     result.ok = false;
