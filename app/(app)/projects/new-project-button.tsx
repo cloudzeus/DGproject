@@ -40,7 +40,23 @@ export function NewProjectButton({ users, currentUserId, canCreate }: Props) {
               submitLabel="Δημιουργία"
               onCancel={() => setOpen(false)}
               onSubmit={async (fd) => {
-                await createProject(fd);
+                // createProject either returns { ok: false, error } on validation /
+                // permission failure or calls redirect() on success (which navigates
+                // away and never returns). Without forwarding the result, the form
+                // had no way to surface validation errors — the modal just sat there
+                // and the user saw nothing happen.
+                try {
+                  const res = await createProject(fd);
+                  return res ?? { ok: true };
+                } catch (err: unknown) {
+                  // Let Next.js handle redirect / not-found signals from server actions.
+                  const digest = (err as { digest?: string } | null)?.digest;
+                  if (typeof digest === 'string' && (digest.startsWith('NEXT_REDIRECT') || digest.startsWith('NEXT_NOT_FOUND'))) {
+                    throw err;
+                  }
+                  const message = err instanceof Error ? err.message : 'Σφάλμα δημιουργίας έργου.';
+                  return { ok: false, error: message };
+                }
               }}
             />
           </ProjectModal>

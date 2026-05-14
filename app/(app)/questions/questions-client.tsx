@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ChatBubblesQuestion24Regular,
+  ChatBubblesQuestion20Regular,
   Send20Regular,
   ArrowReply20Regular,
   Attach20Regular,
@@ -24,11 +25,13 @@ import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
+  askTaskQuestion,
   answerTaskQuestion,
   deleteTaskQuestion,
   uploadQuestionAttachment,
   deleteQuestionAttachment,
 } from '@/app/(app)/projects/[id]/question-actions';
+import type { ProjectMemberOption } from '@/app/(app)/projects/[id]/task-questions-panel';
 
 type UserMini = { id: string; name: string; email: string; avatarUrl?: string };
 type QuestionAttachment = {
@@ -44,6 +47,7 @@ type QuestionAttachment = {
 
 export type QuestionListItem = {
   id: string;
+  parentId: string | null;
   question: string;
   answer: string | null;
   createdAt: Date;
@@ -80,55 +84,118 @@ const PRIORITY_VARIANT: Record<QuestionListItem['task']['priority'], 'red' | 'or
   low: 'neutral',
 };
 
+type Thread = {
+  root: QuestionListItem;
+  // Flat sequence of all nodes in the thread including the root, ordered chronologically.
+  nodes: QuestionListItem[];
+  // parentId → ordered children. Used to render arbitrary depth.
+  childrenByParent: Map<string, QuestionListItem[]>;
+};
+
 export function QuestionsClient({
   currentUserId,
   isPrivileged,
   questions,
+  projectMembers,
 }: {
   currentUserId: string;
   isPrivileged: boolean;
   questions: QuestionListItem[];
+  projectMembers: Record<string, ProjectMemberOption[]>;
 }) {
   const [tab, setTab] = useState<Tab>('incoming');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'answered'>('all');
   const [search, setSearch] = useState('');
 
-  const incoming = useMemo(
-    () => questions.filter((q) => q.askedTo.id === currentUserId),
-    [questions, currentUserId],
-  );
-  const outgoing = useMemo(
-    () => questions.filter((q) => q.askedBy.id === currentUserId),
-    [questions, currentUserId],
-  );
-
-  const incomingPending = incoming.filter((q) => !q.answer).length;
-  const outgoingPending = outgoing.filter((q) => !q.answer).length;
-
-  const baseList = tab === 'incoming' ? incoming : tab === 'outgoing' ? outgoing : questions;
-  const filtered = useMemo(() => {
-    let list = baseList;
-    if (statusFilter === 'pending') list = list.filter((q) => !q.answer);
-    if (statusFilter === 'answered') list = list.filter((q) => !!q.answer);
-    if (search.trim()) {
-      const s = search.trim().toLowerCase();
-      list = list.filter(
-        (q) =>
-          q.question.toLowerCase().includes(s) ||
-          (q.answer ?? '').toLowerCase().includes(s) ||
-          q.task.title.toLowerCase().includes(s) ||
-          q.task.project.name.toLowerCase().includes(s) ||
-          q.askedBy.name.toLowerCase().includes(s) ||
-          q.askedTo.name.toLowerCase().includes(s),
-      );
+  // Build threads. Anything without a parent (or whose parent isn't in the set)
+  // becomes a root.
+  const threads: Thread[] = useMemo(() => {
+    const byId = new Map(questions.map((q) => [q.id, q]));
+    const childrenByParent = new Map<string, QuestionListItem[]>();
+    const roots: QuestionListItem[] = [];
+    for (const q of questions) {
+      if (q.parentId && byId.has(q.parentId)) {
+        if (!childrenByParent.has(q.parentId)) childrenByParent.set(q.parentId, []);
+        childrenByParent.get(q.parentId)!.push(q);
+      } else {
+        roots.push(q);
+      }
     }
-    // Pending first within each list
-    return [...list].sort((a, b) => {
-      if (!a.answer && b.answer) return -1;
-      if (a.answer && !b.answer) return 1;
-      return b.createdAt.getTime() - a.createdAt.getTime();
+    for (const list of childrenByParent.values()) {
+      list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    }
+    roots.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    return roots.map((root) => {
+      const nodes: QuestionListItem[] = [];
+      const stack: QuestionListItem[] = [root];
+      while (stack.length) {
+        const n = stack.shift()!;
+        nodes.push(n);
+        for (const c of childrenByParent.get(n.id) ?? []) stack.push(c);
+      }
+      return { root, nodes, childrenByParent };
     });
-  }, [baseList, statusFilter, search]);
+  }, [questions]);
+
+  // Filter threads: keep any thread where any node matches the current
+  // tab/status/search; the thread is shown in full so context isn't lost.
+  const visibleThreads = useMemo(() => {
+    const s = search.trim().toLowerCase();
+
+    function tabMatchesNode(q: QuestionListItem): boolean {
+      if (tab === 'incoming') return q.askedTo.id === currentUserId;
+      if (tab === 'outgoing') return q.askedBy.id === currentUserId;
+      return true;
+    }
+    function statusMatchesNode(q: QuestionListItem): boolean {
+      if (statusFilter === 'pending') return !q.answer;
+      if (statusFilter === 'answered') return !!q.answer;
+      return true;
+    }
+    function searchMatchesThread(t: Thread): boolean {
+      if (!s) return true;
+      if (t.root.task.title.toLowerCase().includes(s)) return true;
+      if (t.root.task.project.name.toLowerCase().includes(s)) return true;
+      for (const n of t.nodes) {
+        const hay =
+          (n.question + ' ' + (n.answer ?? '') +
+            ' ' + n.askedBy.name + ' ' + n.askedTo.name).toLowerCase();
+        if (hay.includes(s)) return true;
+      }
+      return false;
+    }
+
+    return threads
+      .filter((t) => t.nodes.some((n) => tabMatchesNode(n) && statusMatchesNode(n)))
+      .filter(searchMatchesThread)
+      .sort((a, b) => {
+        // Sort by latest activity descending; pending threads come first.
+        const aPending = a.nodes.some((n) => !n.answer);
+        const bPending = b.nodes.some((n) => !n.answer);
+        if (aPending && !bPending) return -1;
+        if (!aPending && bPending) return 1;
+        const aLast = Math.max(
+          ...a.nodes.map((n) => (n.answeredAt ?? n.createdAt).getTime()),
+        );
+        const bLast = Math.max(
+          ...b.nodes.map((n) => (n.answeredAt ?? n.createdAt).getTime()),
+        );
+        return bLast - aLast;
+      });
+  }, [threads, tab, statusFilter, search, currentUserId]);
+
+  // Counts: incoming/outgoing pending at the node level (matches inbox semantics).
+  const incomingPending = useMemo(
+    () =>
+      questions.filter((q) => q.askedTo.id === currentUserId && !q.answer).length,
+    [questions, currentUserId],
+  );
+  const outgoingPending = useMemo(
+    () =>
+      questions.filter((q) => q.askedBy.id === currentUserId && !q.answer).length,
+    [questions, currentUserId],
+  );
 
   const totalPending = incomingPending;
   const avgResponseMs = computeAvgResponseMs(questions);
@@ -207,16 +274,17 @@ export function QuestionsClient({
         </div>
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState tab={tab} statusFilter={statusFilter} hasAny={baseList.length > 0} totalPending={totalPending} />
+      {visibleThreads.length === 0 ? (
+        <EmptyState tab={tab} statusFilter={statusFilter} hasAny={threads.length > 0} totalPending={totalPending} />
       ) : (
         <div className="space-y-3">
-          {filtered.map((q) => (
-            <QuestionRow
-              key={q.id}
+          {visibleThreads.map((t) => (
+            <ThreadCard
+              key={t.root.id}
+              thread={t}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
-              question={q}
+              members={projectMembers[t.root.task.project.id] ?? []}
             />
           ))}
         </div>
@@ -337,41 +405,33 @@ function EmptyState({
   );
 }
 
-function QuestionRow({
+function ThreadCard({
+  thread,
   currentUserId,
   isPrivileged,
-  question,
+  members,
 }: {
+  thread: Thread;
   currentUserId: string;
   isPrivileged: boolean;
-  question: QuestionListItem;
+  members: ProjectMemberOption[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [answering, setAnswering] = useState(false);
-
-  const isAskee = question.askedTo.id === currentUserId;
-  const isAsker = question.askedBy.id === currentUserId;
-  const canAnswer = !question.answer && (isAskee || isPrivileged);
-  const canDelete = isAsker || isPrivileged;
-
-  const questionAttachments = question.attachments.filter((a) => a.kind === 'question');
-  const answerAttachments = question.attachments.filter((a) => a.kind === 'answer');
-
   const refresh = () => startTransition(() => router.refresh());
 
-  function handleDelete() {
-    if (!confirm('Να διαγραφεί η ερώτηση και η απάντηση;')) return;
+  const root = thread.root;
+  const isRootAsker = root.askedBy.id === currentUserId;
+  const rootCanDelete = isRootAsker || isPrivileged;
+
+  function handleDeleteRoot() {
+    if (!confirm('Να διαγραφεί ολόκληρο το νήμα (ερωτήσεις, απαντήσεις, follow-ups);'))
+      return;
     startTransition(async () => {
-      await deleteTaskQuestion(question.task.project.id, question.id);
+      await deleteTaskQuestion(root.task.project.id, root.id);
       router.refresh();
     });
   }
-
-  const responseMs = question.answeredAt
-    ? question.answeredAt.getTime() - question.createdAt.getTime()
-    : null;
-  const pendingMs = !question.answeredAt ? Date.now() - question.createdAt.getTime() : null;
 
   return (
     <motion.article
@@ -382,52 +442,60 @@ function QuestionRow({
       {/* Project accent stripe */}
       <span
         className="absolute left-0 top-0 bottom-0 w-1"
-        style={{ background: question.task.project.color }}
+        style={{ background: root.task.project.color }}
         aria-hidden
       />
 
-      {/* Top row: project + task + open link */}
+      {/* Task header (shared by the whole thread) */}
       <div className="pl-5 pr-4 pt-4 pb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <Link
-            href={`/projects/${question.task.project.id}`}
+            href={`/projects/${root.task.project.id}`}
             className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider hover:underline"
-            style={{ color: question.task.project.color }}
+            style={{ color: root.task.project.color }}
           >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: question.task.project.color }} />
-            {question.task.project.name}
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: root.task.project.color }}
+            />
+            {root.task.project.name}
           </Link>
           <h3 className="mt-1 font-display text-base font-semibold text-fluent-neutral-95 truncate">
-            {question.task.title}
+            {root.task.title}
           </h3>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <Badge variant={PRIORITY_VARIANT[question.task.priority]}>
-              {PRIORITY_LABEL[question.task.priority]}
+            <Badge variant={PRIORITY_VARIANT[root.task.priority]}>
+              {PRIORITY_LABEL[root.task.priority]}
             </Badge>
-            {question.task.dueDate && (
+            {root.task.dueDate && (
               <span className="inline-flex items-center text-[11px] text-fluent-neutral-60 px-2 py-0.5 rounded-full bg-fluent-neutral-4">
-                Λήξη {formatDate(question.task.dueDate)}
+                Λήξη {formatDate(root.task.dueDate)}
               </span>
             )}
-            <StatusPill answered={!!question.answer} />
+            {thread.nodes.length > 1 && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-fluent-blue-100 text-fluent-blue-700">
+                <ChatBubblesQuestion20Regular className="h-3 w-3" />
+                {thread.nodes.length} μηνύματα
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <Link
-            href={`/projects/${question.task.project.id}`}
+            href={`/projects/${root.task.project.id}`}
             className="h-8 w-8 rounded-md hover:bg-fluent-neutral-8 flex items-center justify-center text-fluent-neutral-60"
             aria-label="Άνοιγμα εργασίας"
             title="Άνοιγμα εργασίας"
           >
             <Open20Regular className="h-4 w-4" />
           </Link>
-          {canDelete && (
+          {rootCanDelete && (
             <button
               type="button"
-              onClick={handleDelete}
+              onClick={handleDeleteRoot}
               className="h-8 w-8 rounded-md hover:bg-fluent-accent-red hover:text-white flex items-center justify-center text-fluent-neutral-60"
               aria-label="Διαγραφή"
-              title="Διαγραφή"
+              title="Διαγραφή νήματος"
             >
               <Delete20Regular className="h-4 w-4" />
             </button>
@@ -435,33 +503,158 @@ function QuestionRow({
         </div>
       </div>
 
-      {/* Question */}
-      <div className="px-5 pb-3 pt-1">
+      <ThreadBody
+        node={root}
+        thread={thread}
+        currentUserId={currentUserId}
+        isPrivileged={isPrivileged}
+        members={members}
+        depth={0}
+        onChanged={refresh}
+      />
+    </motion.article>
+  );
+}
+
+function ThreadBody({
+  node,
+  thread,
+  currentUserId,
+  isPrivileged,
+  members,
+  depth,
+  onChanged,
+}: {
+  node: QuestionListItem;
+  thread: Thread;
+  currentUserId: string;
+  isPrivileged: boolean;
+  members: ProjectMemberOption[];
+  depth: number;
+  onChanged: () => void;
+}) {
+  const children = thread.childrenByParent.get(node.id) ?? [];
+  return (
+    <>
+      <QAExchange
+        node={node}
+        currentUserId={currentUserId}
+        isPrivileged={isPrivileged}
+        members={members}
+        depth={depth}
+        showDeleteForFollowUp={depth > 0}
+        onChanged={onChanged}
+      />
+      {children.length > 0 && (
+        <div className={depth === 0 ? '' : 'pl-3'}>
+          {children.map((child) => (
+            <ThreadBody
+              key={child.id}
+              node={child}
+              thread={thread}
+              currentUserId={currentUserId}
+              isPrivileged={isPrivileged}
+              members={members}
+              depth={depth + 1}
+              onChanged={onChanged}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function QAExchange({
+  node,
+  currentUserId,
+  isPrivileged,
+  members,
+  depth,
+  showDeleteForFollowUp,
+  onChanged,
+}: {
+  node: QuestionListItem;
+  currentUserId: string;
+  isPrivileged: boolean;
+  members: ProjectMemberOption[];
+  depth: number;
+  showDeleteForFollowUp: boolean;
+  onChanged: () => void;
+}) {
+  const [answering, setAnswering] = useState(false);
+  const [followingUp, setFollowingUp] = useState(false);
+  const [, startTransition] = useTransition();
+
+  const isAskee = node.askedTo.id === currentUserId;
+  const isAsker = node.askedBy.id === currentUserId;
+  const canAnswer = !node.answer && (isAskee || isPrivileged);
+  const canDelete = isAsker || isPrivileged;
+  const askable = members.filter((m) => m.id !== currentUserId);
+  const canFollowUp = !!node.answer && askable.length > 0;
+
+  const questionAttachments = node.attachments.filter((a) => a.kind === 'question');
+  const answerAttachments = node.attachments.filter((a) => a.kind === 'answer');
+
+  const responseMs = node.answeredAt
+    ? node.answeredAt.getTime() - node.createdAt.getTime()
+    : null;
+  const pendingMs = !node.answeredAt ? Date.now() - node.createdAt.getTime() : null;
+
+  function handleDeleteNode() {
+    if (!confirm('Να διαγραφεί αυτή η ερώτηση και τα follow-up της;')) return;
+    startTransition(async () => {
+      await deleteTaskQuestion(node.task.project.id, node.id);
+      onChanged();
+    });
+  }
+
+  const followUpIndicator = depth > 0 && (
+    <div
+      className="absolute left-3 top-0 bottom-0 w-px bg-fluent-blue-100"
+      aria-hidden
+    />
+  );
+
+  return (
+    <div
+      className={`relative ${
+        depth > 0
+          ? 'pl-6 ml-2 border-l-2 border-fluent-blue-100 bg-fluent-blue-50/10 mt-2'
+          : ''
+      }`}
+    >
+      {followUpIndicator}
+      {/* Question body */}
+      <div className={`px-5 ${depth > 0 ? 'pt-3' : 'pt-1'} pb-3`}>
         <div className="flex items-start gap-2.5">
           <Avatar
-            user={{ name: question.askedBy.name || question.askedBy.email, avatarUrl: question.askedBy.avatarUrl }}
+            user={{ name: node.askedBy.name || node.askedBy.email, avatarUrl: node.askedBy.avatarUrl }}
             size="sm"
           />
           <div className="flex-1 min-w-0">
             <div className="flex items-center flex-wrap gap-1.5 text-[11px]">
               <span className="font-semibold text-fluent-neutral-90 truncate max-w-[160px]">
-                {question.askedBy.name || question.askedBy.email}
+                {node.askedBy.name || node.askedBy.email}
               </span>
-              <span className="text-fluent-neutral-50">ρώτησε</span>
+              <span className="text-fluent-neutral-50">
+                {depth > 0 ? 'ξαναρώτησε' : 'ρώτησε'}
+              </span>
               <ArrowReply20Regular className="h-3.5 w-3.5 text-fluent-neutral-40 -rotate-180" />
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-fluent-blue-100 text-fluent-blue-700">
                 <Person20Regular className="h-3 w-3" />
                 <span className="font-semibold">
-                  {question.askedTo.name || question.askedTo.email}
+                  {node.askedTo.name || node.askedTo.email}
                 </span>
               </span>
               <span className="text-fluent-neutral-50">·</span>
               <time
-                title={formatDateTime(question.createdAt)}
+                title={formatDateTime(node.createdAt)}
                 className="text-fluent-neutral-60"
               >
-                {formatRelative(question.createdAt)}
+                {formatRelative(node.createdAt)}
               </time>
+              <StatusPill answered={!!node.answer} />
               {pendingMs !== null && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-fluent-accent-orange">
                   <ClockArrowDownload20Regular className="h-3 w-3" />
@@ -470,45 +663,57 @@ function QuestionRow({
               )}
             </div>
             <p className="mt-1 text-sm text-fluent-neutral-90 whitespace-pre-wrap break-words">
-              {question.question}
+              {node.question}
             </p>
             {questionAttachments.length > 0 && (
               <AttachmentList
-                projectId={question.task.project.id}
+                projectId={node.task.project.id}
                 attachments={questionAttachments}
                 currentUserId={currentUserId}
                 isPrivileged={isPrivileged}
-                onChanged={refresh}
+                onChanged={onChanged}
               />
             )}
           </div>
+          {showDeleteForFollowUp && canDelete && (
+            <button
+              type="button"
+              onClick={handleDeleteNode}
+              className="h-7 w-7 rounded-md hover:bg-fluent-accent-red hover:text-white flex items-center justify-center text-fluent-neutral-60 shrink-0"
+              aria-label="Διαγραφή"
+              title="Διαγραφή follow-up"
+            >
+              <Delete20Regular className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Answer area */}
-      {question.answer ? (
-        <div className="px-5 py-3 bg-fluent-neutral-2 border-t border-black/5">
+      {node.answer ? (
+        <div
+          className={`px-5 py-3 ${
+            depth > 0 ? 'bg-white' : 'bg-fluent-neutral-2'
+          } border-t border-black/5`}
+        >
           <div className="flex items-start gap-2.5 pl-5 relative">
-            <span
-              className="absolute left-0 top-3 h-px w-4 bg-fluent-neutral-20"
-              aria-hidden
-            />
+            <span className="absolute left-0 top-3 h-px w-4 bg-fluent-neutral-20" aria-hidden />
             <Avatar
-              user={{ name: question.askedTo.name || question.askedTo.email, avatarUrl: question.askedTo.avatarUrl }}
+              user={{ name: node.askedTo.name || node.askedTo.email, avatarUrl: node.askedTo.avatarUrl }}
               size="sm"
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center flex-wrap gap-1.5 text-[11px]">
                 <span className="font-semibold text-fluent-neutral-90 truncate max-w-[160px]">
-                  {question.askedTo.name || question.askedTo.email}
+                  {node.askedTo.name || node.askedTo.email}
                 </span>
                 <span className="text-fluent-neutral-50">απάντησε</span>
                 <span className="text-fluent-neutral-50">·</span>
                 <time
-                  title={question.answeredAt ? formatDateTime(question.answeredAt) : ''}
+                  title={node.answeredAt ? formatDateTime(node.answeredAt) : ''}
                   className="text-fluent-neutral-60"
                 >
-                  {question.answeredAt ? formatRelative(question.answeredAt) : ''}
+                  {node.answeredAt ? formatRelative(node.answeredAt) : ''}
                 </time>
                 {responseMs !== null && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-fluent-accent-green">
@@ -518,23 +723,60 @@ function QuestionRow({
                 )}
               </div>
               <p className="mt-1 text-sm text-fluent-neutral-90 whitespace-pre-wrap break-words">
-                {question.answer}
+                {node.answer}
               </p>
               {answerAttachments.length > 0 && (
                 <AttachmentList
-                  projectId={question.task.project.id}
+                  projectId={node.task.project.id}
                   attachments={answerAttachments}
                   currentUserId={currentUserId}
                   isPrivileged={isPrivileged}
-                  onChanged={refresh}
+                  onChanged={onChanged}
                 />
               )}
               {(isAskee || isPrivileged) && (
                 <AnswerAttachmentUploader
-                  projectId={question.task.project.id}
-                  questionId={question.id}
-                  onUploaded={refresh}
+                  projectId={node.task.project.id}
+                  questionId={node.id}
+                  onUploaded={onChanged}
                 />
+              )}
+              {canFollowUp && (
+                <div className="mt-3">
+                  <AnimatePresence initial={false}>
+                    {followingUp ? (
+                      <motion.div
+                        key="followup-composer"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.18 }}
+                        className="overflow-hidden"
+                      >
+                        <FollowUpComposer
+                          projectId={node.task.project.id}
+                          taskId={node.task.id}
+                          parentId={node.id}
+                          members={askable}
+                          onCancel={() => setFollowingUp(false)}
+                          onCreated={() => {
+                            setFollowingUp(false);
+                            onChanged();
+                          }}
+                        />
+                      </motion.div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setFollowingUp(true)}
+                        className="text-xs text-fluent-blue-700 hover:text-fluent-blue-800 font-semibold inline-flex items-center gap-1.5"
+                      >
+                        <ArrowReply20Regular className="h-4 w-4" />
+                        Νέα ερώτηση σε αυτή την απάντηση
+                      </button>
+                    )}
+                  </AnimatePresence>
+                </div>
               )}
             </div>
           </div>
@@ -551,12 +793,12 @@ function QuestionRow({
               className="overflow-hidden"
             >
               <AnswerComposer
-                projectId={question.task.project.id}
-                questionId={question.id}
+                projectId={node.task.project.id}
+                questionId={node.id}
                 onCancel={() => setAnswering(false)}
                 onAnswered={() => {
                   setAnswering(false);
-                  refresh();
+                  onChanged();
                 }}
               />
             </motion.div>
@@ -574,10 +816,10 @@ function QuestionRow({
       ) : (
         <div className="px-5 py-3 text-xs text-fluent-neutral-60 bg-fluent-neutral-2 border-t border-black/5 inline-flex items-center gap-1.5 w-full">
           <ClockArrowDownload20Regular className="h-4 w-4" />
-          Σε αναμονή απάντησης από τον/την {question.askedTo.name || question.askedTo.email}
+          Σε αναμονή απάντησης από τον/την {node.askedTo.name || node.askedTo.email}
         </div>
       )}
-    </motion.article>
+    </div>
   );
 }
 
@@ -726,6 +968,191 @@ function AnswerComposer({
           disabled={pending}
         >
           {pending ? 'Αποστολή…' : 'Αποστολή απάντησης'}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function FollowUpComposer({
+  projectId,
+  taskId,
+  parentId,
+  members,
+  onCancel,
+  onCreated,
+}: {
+  projectId: string;
+  taskId: string;
+  parentId: string;
+  members: ProjectMemberOption[];
+  onCancel: () => void;
+  onCreated: () => void;
+}) {
+  const [askedToId, setAskedToId] = useState<string>(members[0]?.id ?? '');
+  const [question, setQuestion] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [fileTitle, setFileTitle] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!askedToId) {
+      setError('Επίλεξε παραλήπτη.');
+      return;
+    }
+    if (question.trim().length < 2) {
+      setError('Γράψε την ερώτησή σου.');
+      return;
+    }
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set('askedToId', askedToId);
+      fd.set('question', question.trim());
+      fd.set('parentId', parentId);
+      const res = await askTaskQuestion(projectId, taskId, fd);
+      if (!res.ok) {
+        setError(res.error ?? 'Σφάλμα.');
+        return;
+      }
+      if (pendingFile && res.id) {
+        const upload = new FormData();
+        upload.set('file', pendingFile);
+        if (fileTitle.trim()) upload.set('title', fileTitle.trim());
+        const upRes = await uploadQuestionAttachment(projectId, res.id, 'question', upload);
+        if (!upRes.ok) {
+          setError(upRes.error ?? 'Δημιουργήθηκε η ερώτηση, αλλά απέτυχε το αρχείο.');
+          onCreated();
+          return;
+        }
+      }
+      onCreated();
+    });
+  }
+
+  const target = members.find((m) => m.id === askedToId);
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="bg-fluent-blue-50 border border-fluent-blue-200 rounded-xl p-3 space-y-3"
+    >
+      <div>
+        <label className="block text-[11px] font-semibold uppercase tracking-wider text-fluent-blue-700 mb-1.5">
+          Προς
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {members.map((m) => {
+            const active = m.id === askedToId;
+            return (
+              <button
+                type="button"
+                key={m.id}
+                onClick={() => setAskedToId(m.id)}
+                className={`text-xs pl-1 pr-2.5 py-0.5 rounded-full border transition-all inline-flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-fluent-blue-600 text-white border-transparent shadow-fluent-2'
+                    : 'bg-white border-fluent-neutral-20 text-fluent-neutral-80 hover:border-fluent-blue-300'
+                }`}
+              >
+                <Avatar
+                  user={{ name: m.name || m.email, avatarUrl: m.avatarUrl }}
+                  size="xs"
+                />
+                {m.name || m.email}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold uppercase tracking-wider text-fluent-blue-700 mb-1.5">
+          Συνέχεια της συζήτησης{target ? ` προς ${target.name || target.email}` : ''}
+        </label>
+        <textarea
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          rows={3}
+          placeholder="π.χ. Μπορείς να μου εξηγήσεις πιο αναλυτικά το X;"
+          className="w-full px-3 py-2 rounded-md border border-fluent-blue-200 bg-white text-sm focus:border-fluent-blue-500 focus:outline-none resize-none"
+          autoFocus
+          maxLength={4000}
+        />
+      </div>
+
+      {pendingFile ? (
+        <div className="bg-white border border-fluent-blue-200 rounded-md p-2.5 space-y-2">
+          <div className="flex items-center gap-2 text-sm">
+            <FileIcon mimeType={pendingFile.type} />
+            <span className="flex-1 min-w-0 truncate font-medium text-fluent-neutral-90">
+              {pendingFile.name}
+            </span>
+            <span className="text-[11px] text-fluent-neutral-60 tabular-nums">
+              {formatBytes(pendingFile.size)}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingFile(null);
+                setFileTitle('');
+                if (inputRef.current) inputRef.current.value = '';
+              }}
+              className="h-6 w-6 rounded hover:bg-fluent-neutral-8 flex items-center justify-center text-fluent-neutral-60"
+              aria-label="Αφαίρεση"
+            >
+              <Dismiss20Regular className="h-4 w-4" />
+            </button>
+          </div>
+          <input
+            type="text"
+            value={fileTitle}
+            onChange={(e) => setFileTitle(e.target.value)}
+            placeholder="Περιγραφή αρχείου (προαιρ.)"
+            className="w-full h-8 px-2 rounded-md border border-fluent-neutral-20 text-xs focus:border-fluent-blue-500 focus:outline-none"
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="text-xs text-fluent-blue-700 hover:text-fluent-blue-800 font-medium inline-flex items-center gap-1.5"
+        >
+          <Attach20Regular className="h-4 w-4" />
+          Επισύναψη αρχείου (προαιρ.)
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) setPendingFile(f);
+        }}
+      />
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-md px-3 py-1.5">
+          {error}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={pending}>
+          Ακύρωση
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          size="sm"
+          icon={<Send20Regular className="h-4 w-4" />}
+          disabled={pending}
+        >
+          {pending ? 'Αποστολή…' : 'Αποστολή ερώτησης'}
         </Button>
       </div>
     </form>
