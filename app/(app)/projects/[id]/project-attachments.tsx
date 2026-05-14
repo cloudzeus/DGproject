@@ -10,7 +10,8 @@ import {
   Document20Regular,
 } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
-import { uploadProjectAttachment, deleteProjectAttachment } from './task-actions';
+import { deleteProjectAttachment } from './task-actions';
+import { uploadFileWithProgress, type UploadProgress } from '@/lib/upload-client';
 
 export type ProjectAttachmentInfo = {
   id: string;
@@ -48,6 +49,7 @@ export function ProjectAttachments({ projectId, attachments, canEdit }: Props) {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
@@ -56,28 +58,32 @@ export function ProjectAttachments({ projectId, attachments, canEdit }: Props) {
     if (!file) return;
     setPendingFile(file);
     setError(null);
+    setProgress(null);
   }
 
   async function handleUpload() {
     if (!pendingFile) return;
     setUploading(true);
     setError(null);
-    try {
-      const fd = new FormData();
-      fd.append('file', pendingFile);
-      if (title.trim()) fd.append('title', title.trim());
-      const res = await uploadProjectAttachment(projectId, fd);
-      if (res && !res.ok && res.error) {
-        setError(res.error);
-      } else {
-        setPendingFile(null);
-        setTitle('');
-        if (inputRef.current) inputRef.current.value = '';
-        startTransition(() => router.refresh());
-      }
-    } finally {
-      setUploading(false);
+    setProgress({ loaded: 0, total: pendingFile.size, pct: 0 });
+
+    const res = await uploadFileWithProgress<{ ok: boolean; error?: string }>({
+      url: `/api/upload/project-attachment/${projectId}`,
+      file: pendingFile,
+      fields: title.trim() ? { title: title.trim() } : {},
+      onProgress: (p) => setProgress(p),
+    });
+    setUploading(false);
+
+    if (!res.ok) {
+      setError(res.data?.error ?? res.error ?? 'Σφάλμα μεταφόρτωσης.');
+      return;
     }
+    setPendingFile(null);
+    setTitle('');
+    setProgress(null);
+    if (inputRef.current) inputRef.current.value = '';
+    startTransition(() => router.refresh());
   }
 
   function handleCancel() {
@@ -133,6 +139,22 @@ export function ProjectAttachments({ projectId, attachments, canEdit }: Props) {
                 className="w-full h-9 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none bg-white"
               />
             </div>
+            {uploading && progress && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px] text-fluent-neutral-70 tabular-nums">
+                  <span>{progress.pct}%</span>
+                  <span>
+                    {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-fluent-neutral-10 overflow-hidden">
+                  <div
+                    className="h-full bg-fluent-blue-500 transition-all duration-200"
+                    style={{ width: `${progress.pct}%` }}
+                  />
+                </div>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
@@ -150,7 +172,7 @@ export function ProjectAttachments({ projectId, attachments, canEdit }: Props) {
                 onClick={handleUpload}
                 disabled={uploading}
               >
-                {uploading ? 'Μεταφόρτωση…' : 'Ανέβασμα'}
+                {uploading ? `Μεταφόρτωση… ${progress?.pct ?? 0}%` : 'Ανέβασμα'}
               </Button>
             </div>
           </div>
