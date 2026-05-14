@@ -9,7 +9,7 @@ import type { ProjectFileItem } from './project-files';
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [session, project, allUsers, taskAttachments, questionAttachments] = await Promise.all([
+  const [session, project, allUsers, taskAttachments, questionAttachments, meetings, regressionCount] = await Promise.all([
     auth(),
     prisma.project.findUnique({
       where: { id },
@@ -87,6 +87,49 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         },
       },
       orderBy: { createdAt: 'desc' },
+    }),
+    prisma.meetingNote.findMany({
+      where: { projectId: id },
+      orderBy: { startedAt: 'desc' },
+      select: {
+        id: true,
+        subject: true,
+        startedAt: true,
+        endedAt: true,
+        durationSec: true,
+        summary: true,
+        decisions: true,
+        actionItems: true,
+        risks: true,
+        openQuestions: true,
+        status: true,
+        autoTasksCreated: true,
+        autoTasksNeedReview: true,
+        llmProvider: true,
+        llmModel: true,
+        llmDurationMs: true,
+        teamsJoinUrl: true,
+        transcriptVtt: true,
+        processedAt: true,
+        createdAt: true,
+        organizer: { select: { id: true, name: true, email: true, image: true } },
+        momDeliveries: {
+          select: { id: true, status: true, recipientEmail: true, openedAt: true, deliveredAt: true },
+        },
+      },
+    }),
+    // Regressions: tasks that moved from review back to in_progress. Signal of
+    // rework / quality issues — surfaced in the project Reports tab.
+    // MySQL JSON paths use the `$.field` string format (Postgres would use ['field']).
+    prisma.activity.count({
+      where: {
+        projectId: id,
+        action: 'moved',
+        AND: [
+          { metadata: { path: '$.from', equals: 'review' } },
+          { metadata: { path: '$.to', equals: 'in_progress' } },
+        ],
+      },
     }),
   ]);
 
@@ -287,6 +330,45 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   const userOptions = allUsers.map((u) => ({ id: u.id, name: u.name ?? '', email: u.email }));
 
+  // Normalize meetings for the new "Συναντήσεις" tab. We keep the raw Json
+  // arrays (decisions/actionItems/risks/openQuestions) as the inner type since
+  // they were stored by the LLM pipeline and the tab only counts/displays them.
+  const meetingsForClient = meetings.map((m) => ({
+    id: m.id,
+    subject: m.subject,
+    startedAt: m.startedAt,
+    endedAt: m.endedAt,
+    durationSec: m.durationSec,
+    summary: m.summary,
+    decisions: m.decisions as unknown[] | null,
+    actionItems: m.actionItems as unknown[] | null,
+    risks: m.risks as unknown[] | null,
+    openQuestions: m.openQuestions as unknown[] | null,
+    status: m.status,
+    autoTasksCreated: m.autoTasksCreated,
+    autoTasksNeedReview: m.autoTasksNeedReview,
+    llmProvider: m.llmProvider,
+    llmModel: m.llmModel,
+    llmDurationMs: m.llmDurationMs,
+    teamsJoinUrl: m.teamsJoinUrl,
+    hasTranscript: !!m.transcriptVtt && m.transcriptVtt.length > 0,
+    processedAt: m.processedAt,
+    createdAt: m.createdAt,
+    organizer: {
+      id: m.organizer.id,
+      name: m.organizer.name ?? m.organizer.email,
+      email: m.organizer.email,
+      avatarUrl: m.organizer.image ?? undefined,
+    },
+    momDeliveries: m.momDeliveries.map((d) => ({
+      id: d.id,
+      status: d.status,
+      recipientEmail: d.recipientEmail,
+      openedAt: d.openedAt,
+      deliveredAt: d.deliveredAt,
+    })),
+  }));
+
   return (
     <>
       <ProjectDetail
@@ -298,6 +380,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         canEdit={canEdit}
         projectAttachments={projectAttachments}
         aggregatedFiles={aggregatedFiles}
+        meetings={meetingsForClient}
+        regressionCount={regressionCount}
       />
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-4">
         <div className="flex items-center justify-end">

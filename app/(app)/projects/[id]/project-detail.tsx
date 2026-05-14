@@ -9,6 +9,7 @@ import {
   ArrowDownload20Regular, Open20Regular, CheckmarkCircle20Filled,
   DocumentMultiple20Regular, Mail20Regular,
   ChatBubblesQuestion20Regular,
+  CalendarLtr20Regular,
 } from '@fluentui/react-icons';
 import { ReportModal } from './report-modal';
 import { AvatarStack } from '@/components/ui/avatar';
@@ -20,6 +21,7 @@ import type { ProjectMemberOption } from './task-questions-panel';
 import { ProjectAttachments, type ProjectAttachmentInfo } from './project-attachments';
 import { ProjectFiles, type ProjectFileItem } from './project-files';
 import { ProjectQuestionsTab } from './project-questions-tab';
+import { ProjectMeetingsTab, type ProjectMeeting } from './project-meetings-tab';
 
 type AvatarUser = { name: string; avatarUrl?: string };
 
@@ -41,9 +43,11 @@ type ProjectDetailProps = {
   canEdit: boolean;
   projectAttachments: ProjectAttachmentInfo[];
   aggregatedFiles: ProjectFileItem[];
+  meetings: ProjectMeeting[];
+  regressionCount: number;
 };
 
-type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'reports';
+type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'reports';
 
 function MenuItem({
   icon,
@@ -73,6 +77,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Board20Regular }[] = [
   { id: 'timeline', label: 'Χρονοδιάγραμμα', Icon: Calendar20Regular },
   { id: 'files', label: 'Αρχεία', Icon: DocumentMultiple20Regular },
   { id: 'questions', label: 'Ερωτήσεις', Icon: ChatBubblesQuestion20Regular },
+  { id: 'meetings', label: 'Συναντήσεις', Icon: CalendarLtr20Regular },
   { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular },
 ];
 
@@ -85,6 +90,8 @@ export function ProjectDetail({
   canEdit,
   projectAttachments,
   aggregatedFiles,
+  meetings,
+  regressionCount,
 }: ProjectDetailProps) {
   const [tab, setTab] = useState<Tab>('board');
   const [shareCopied, setShareCopied] = useState(false);
@@ -276,6 +283,8 @@ export function ProjectDetail({
                 ? aggregatedFiles.length
                 : t.id === 'questions'
                 ? questionsCount
+                : t.id === 'meetings'
+                ? meetings.length
                 : null;
             return (
               <button
@@ -329,7 +338,16 @@ export function ProjectDetail({
             isPrivileged={isPrivileged}
           />
         )}
-        {tab === 'reports' && <ReportsView tasks={project.tasks} />}
+        {tab === 'meetings' && (
+          <ProjectMeetingsTab projectId={project.id} meetings={meetings} />
+        )}
+        {tab === 'reports' && (
+          <ReportsView
+            tasks={project.tasks}
+            members={projectMembers}
+            regressionCount={regressionCount}
+          />
+        )}
       </div>
 
       <AnimatePresence>

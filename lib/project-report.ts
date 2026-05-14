@@ -15,6 +15,7 @@ import {
   infoCard,
   type ActionButton,
 } from './email-templates';
+import { computeSpentMs, formatSpent } from './task-in-progress-timer';
 
 const STATUS_LABEL: Record<string, string> = {
   backlog: 'Backlog',
@@ -58,6 +59,31 @@ export async function loadProjectForReport(projectId: string) {
           assignees: {
             include: { user: { select: { id: true, name: true, email: true } } },
           },
+          // Pending Q&A counts per task — surfaces blockers in the report.
+          questions: {
+            where: { answer: null },
+            select: {
+              id: true,
+              question: true,
+              createdAt: true,
+              askedBy: { select: { name: true, email: true } },
+              askedTo: { select: { name: true, email: true } },
+            },
+          },
+        },
+      },
+      // Recent meetings & their LLM-extracted risks/openQuestions for the report.
+      meetings: {
+        orderBy: { startedAt: 'desc' },
+        take: 5,
+        where: { status: 'ready' },
+        select: {
+          id: true,
+          subject: true,
+          startedAt: true,
+          summary: true,
+          risks: true,
+          openQuestions: true,
         },
       },
     },
@@ -240,6 +266,203 @@ export function buildProjectReportHtml({
     </div>`
     : '';
 
+  // ─── Estimated vs Actual ─────────────────────────────────────────
+  // Sum estimated and actual (wall-clock in_progress) across all tasks.
+  const now = new Date();
+  const estimatedMs = tasks.reduce(
+    (acc, t) => acc + (t.estimatedHours ? t.estimatedHours * 3_600_000 : 0),
+    0,
+  );
+  const spentMs = tasks.reduce(
+    (acc, t) =>
+      acc + computeSpentMs(t.status, t.inProgressStartedAt, t.inProgressAccumulatedMs, now),
+    0,
+  );
+  const pctOfEstimate = estimatedMs > 0 ? Math.round((spentMs / estimatedMs) * 100) : null;
+
+  const timeBlock =
+    spentMs > 0 || estimatedMs > 0
+      ? `
+        ${sectionHeader({ label: 'Χρόνος εργασίας', color: BRAND.primary })}
+        ${statRow([
+          {
+            label: 'Εκτίμηση',
+            value: estimatedMs > 0 ? formatSpent(estimatedMs) : '—',
+            tone: 'default',
+          },
+          {
+            label: 'Πραγματικός',
+            value: spentMs > 0 ? formatSpent(spentMs) : '—',
+            tone: 'info',
+          },
+          ...(pctOfEstimate !== null
+            ? [
+                {
+                  label: '% εκτίμησης',
+                  value: `${pctOfEstimate}%`,
+                  tone: pctOfEstimate > 100 ? ('danger' as const) : ('success' as const),
+                },
+              ]
+            : []),
+        ])}
+      `
+      : '';
+
+  // ─── Next 7 days focus list ──────────────────────────────────────
+  const sevenDaysFromNow = new Date(now.getTime() + 7 * 86400000);
+  const upcoming = tasks
+    .filter(
+      (t) =>
+        t.status !== 'done' &&
+        t.dueDate &&
+        t.dueDate.getTime() >= now.getTime() &&
+        t.dueDate.getTime() <= sevenDaysFromNow.getTime(),
+    )
+    .sort((a, b) => (a.dueDate!.getTime() - b.dueDate!.getTime()))
+    .slice(0, 8);
+
+  const upcomingBlock =
+    upcoming.length > 0
+      ? `
+        ${sectionHeader({ label: 'Επόμενες 7 ημέρες', color: BRAND.warning, count: upcoming.length })}
+        <table role="presentation" style="border-collapse:collapse;width:100%;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:10px;overflow:hidden;margin-bottom:18px;">
+          <tbody>
+            ${upcoming.map(taskRowHtml).join('')}
+          </tbody>
+        </table>
+      `
+      : '';
+
+  // ─── Recently completed (last 7 days) ────────────────────────────
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000);
+  const recentlyDone = tasks
+    .filter((t) => t.status === 'done' && t.completedAt && t.completedAt.getTime() >= sevenDaysAgo.getTime())
+    .sort((a, b) => (b.completedAt!.getTime() - a.completedAt!.getTime()))
+    .slice(0, 8);
+
+  const recentlyDoneBlock =
+    recentlyDone.length > 0
+      ? `
+        ${sectionHeader({
+          label: 'Πρόσφατα ολοκληρωμένα',
+          color: BRAND.success,
+          count: recentlyDone.length,
+        })}
+        <table role="presentation" style="border-collapse:collapse;width:100%;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:10px;overflow:hidden;margin-bottom:18px;">
+          <tbody>
+            ${recentlyDone.map(taskRowHtml).join('')}
+          </tbody>
+        </table>
+      `
+      : '';
+
+  // ─── Pending Q&A blockers ────────────────────────────────────────
+  const pendingQuestions: Array<{
+    taskTitle: string;
+    questionText: string;
+    askedByName: string;
+    askedToName: string;
+    daysOpen: number;
+  }> = [];
+  for (const t of tasks) {
+    for (const q of t.questions) {
+      const days = Math.max(0, Math.floor((now.getTime() - q.createdAt.getTime()) / 86400000));
+      pendingQuestions.push({
+        taskTitle: t.title,
+        questionText: q.question,
+        askedByName: q.askedBy.name ?? q.askedBy.email,
+        askedToName: q.askedTo.name ?? q.askedTo.email,
+        daysOpen: days,
+      });
+    }
+  }
+  pendingQuestions.sort((a, b) => b.daysOpen - a.daysOpen);
+  const blockersBlock =
+    pendingQuestions.length > 0
+      ? `
+        ${sectionHeader({
+          label: 'Εκκρεμείς ερωτήσεις',
+          color: BRAND.warning,
+          count: pendingQuestions.length,
+        })}
+        <table role="presentation" style="border-collapse:collapse;width:100%;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:10px;overflow:hidden;margin-bottom:18px;">
+          <tbody>
+            ${pendingQuestions
+              .slice(0, 8)
+              .map((q) => {
+                const ageChip = q.daysOpen > 0
+                  ? `<span style="display:inline-block;font-size:10px;font-weight:700;color:${q.daysOpen > 3 ? 'white' : BRAND.warning};background:${q.daysOpen > 3 ? BRAND.warning : 'transparent'};padding:2px 8px;border-radius:999px;margin-left:6px;${q.daysOpen > 3 ? '' : `border:1px solid ${BRAND.warning};`}">${q.daysOpen}d</span>`
+                  : '';
+                return `
+                  <tr>
+                    <td style="padding:10px 14px;border-bottom:1px solid ${BRAND.border};vertical-align:top;">
+                      <div style="font-size:11px;color:${BRAND.textDim};margin-bottom:4px;">
+                        ${escapeHtml(q.taskTitle)}${ageChip}
+                      </div>
+                      <div style="font-size:13px;color:${BRAND.text};line-height:1.45;">
+                        ${escapeHtml(truncate(q.questionText, 220))}
+                      </div>
+                      <div style="font-size:11px;color:${BRAND.textSoft};margin-top:6px;">
+                        ${escapeHtml(q.askedByName)} → ${escapeHtml(q.askedToName)}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join('')}
+          </tbody>
+        </table>
+      `
+      : '';
+
+  // ─── Risks and open questions from recent meetings ──────────────
+  type RiskItem = { text: string; severity?: 'low' | 'medium' | 'high'; ownerEmail?: string | null };
+  const meetingRisks: RiskItem[] = [];
+  for (const m of project.meetings ?? []) {
+    if (Array.isArray(m.risks)) {
+      for (const r of m.risks as RiskItem[]) {
+        if (r && typeof r === 'object' && typeof r.text === 'string') meetingRisks.push(r);
+      }
+    }
+  }
+  const riskOrder = { high: 0, medium: 1, low: 2 } as const;
+  meetingRisks.sort(
+    (a, b) => (riskOrder[a.severity ?? 'low'] ?? 3) - (riskOrder[b.severity ?? 'low'] ?? 3),
+  );
+
+  const risksBlock =
+    meetingRisks.length > 0
+      ? `
+        ${sectionHeader({ label: 'Κίνδυνοι από συσκέψεις', color: BRAND.danger, count: meetingRisks.length })}
+        <table role="presentation" style="border-collapse:collapse;width:100%;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:10px;overflow:hidden;margin-bottom:18px;">
+          <tbody>
+            ${meetingRisks
+              .slice(0, 6)
+              .map((r) => {
+                const sev = r.severity ?? 'low';
+                const sevColor = sev === 'high' ? BRAND.danger : sev === 'medium' ? BRAND.warning : BRAND.textDim;
+                const sevPill = pill(sev.toUpperCase(), {
+                  color: 'white',
+                  bg: sevColor,
+                  bold: true,
+                });
+                return `
+                  <tr>
+                    <td style="padding:10px 14px;border-bottom:1px solid ${BRAND.border};vertical-align:top;">
+                      <div style="margin-bottom:4px;">${sevPill}</div>
+                      <div style="font-size:13px;color:${BRAND.text};line-height:1.45;">
+                        ${escapeHtml(r.text)}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join('')}
+          </tbody>
+        </table>
+      `
+      : '';
+
   const sections = STATUS_ORDER.map((s) => statusSection(s, tasks)).join('');
 
   const statusPill = pill(PROJECT_STATUS_LABEL[project.status] ?? project.status, {
@@ -259,6 +482,11 @@ export function buildProjectReportHtml({
     ${progressBar(pct, project.color)}
     ${statsRow}
     ${hoursRow}
+    ${timeBlock}
+    ${upcomingBlock}
+    ${blockersBlock}
+    ${risksBlock}
+    ${recentlyDoneBlock}
     ${metaTable(meta)}
     ${membersBlock(project)}
     ${

@@ -605,7 +605,15 @@ export function TimelineView({
   );
 }
 
-export function ReportsView({ tasks }: { tasks: TaskRow[] }) {
+export function ReportsView({
+  tasks,
+  members,
+  regressionCount,
+}: {
+  tasks: TaskRow[];
+  members?: TaskAssigneeOption[];
+  regressionCount?: number;
+}) {
   const stats = useMemo(() => computeStats(tasks), [tasks]);
 
   // Live "now" so the spent totals advance for any task currently running.
@@ -813,8 +821,297 @@ export function ReportsView({ tasks }: { tasks: TaskRow[] }) {
           })}
         </div>
       </div>
+
+      {/* ─── Member-focused panels ───────────────────────────────────── */}
+      <MemberPanels
+        tasks={tasks}
+        members={members ?? []}
+        now={now}
+        regressionCount={regressionCount ?? 0}
+      />
     </div>
   );
+}
+
+function MemberPanels({
+  tasks,
+  members,
+  now,
+  regressionCount,
+}: {
+  tasks: TaskRow[];
+  members: TaskAssigneeOption[];
+  now: Date;
+  regressionCount: number;
+}) {
+  // Workload per member: open task count, total estimated, total spent.
+  // "Open" = not done. Unassigned tasks bucket into __unassigned for visibility.
+  const workload = useMemo(() => {
+    const map = new Map<
+      string,
+      { name: string; open: number; done: number; estimatedMs: number; spentMs: number; pendingQuestions: number }
+    >();
+    function ensure(id: string, name: string) {
+      if (!map.has(id)) {
+        map.set(id, { name, open: 0, done: 0, estimatedMs: 0, spentMs: 0, pendingQuestions: 0 });
+      }
+      return map.get(id)!;
+    }
+    for (const m of members) ensure(m.id, m.name || m.email);
+    for (const t of tasks) {
+      const taskSpent = computeSpentMs(
+        t.status,
+        t.inProgressStartedAt,
+        t.inProgressAccumulatedMs,
+        now,
+      );
+      const taskEstimate = t.estimatedHours ? t.estimatedHours * 3_600_000 : 0;
+      const assignees = t.assignees.length > 0 ? t.assignees : [{ id: '__unassigned', name: 'Χωρίς ανάθεση' }];
+      for (const a of assignees) {
+        const row = ensure(a.id, a.name);
+        if (t.status === 'done') row.done += 1;
+        else row.open += 1;
+        row.estimatedMs += taskEstimate;
+        row.spentMs += taskSpent;
+      }
+      // Pending Q&A: count by askedTo person
+      for (const q of t.questions) {
+        if (!q.answer) {
+          const target = q.askedTo;
+          const row = ensure(target.id, target.name);
+          row.pendingQuestions += 1;
+        }
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, v]) => ({ id, ...v, total: v.open + v.done }))
+      .filter((r) => r.total > 0 || r.pendingQuestions > 0)
+      .sort((a, b) => b.spentMs - a.spentMs || b.open - a.open);
+  }, [tasks, members, now]);
+
+  // Velocity: tasks completed grouped by ISO week (last 6 weeks).
+  const velocity = useMemo(() => {
+    const weeks: { label: string; key: string; count: number; start: Date }[] = [];
+    const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+    const startOfThisWeek = startOfWeek(now);
+    for (let i = 5; i >= 0; i -= 1) {
+      const start = new Date(startOfThisWeek.getTime() - i * oneWeekMs);
+      weeks.push({
+        label: formatWeekLabel(start),
+        key: start.toISOString().slice(0, 10),
+        start,
+        count: 0,
+      });
+    }
+    for (const t of tasks) {
+      if (!t.completedAt) continue;
+      const compStart = startOfWeek(t.completedAt);
+      const bucket = weeks.find((w) => w.start.getTime() === compStart.getTime());
+      if (bucket) bucket.count += 1;
+    }
+    const max = Math.max(1, ...weeks.map((w) => w.count));
+    return { weeks, max };
+  }, [tasks, now]);
+
+  // Stale tasks: in_progress with inProgressStartedAt older than 7 days, or
+  // any open task with dueDate already past. Surfaces things sitting too long.
+  const stale = useMemo(() => {
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const overdueDue: TaskRow[] = [];
+    const stuckInProgress: TaskRow[] = [];
+    for (const t of tasks) {
+      if (t.status === 'done') continue;
+      if (t.dueDate && t.dueDate.getTime() < now.getTime()) overdueDue.push(t);
+      if (
+        t.status === 'in_progress' &&
+        t.inProgressStartedAt &&
+        now.getTime() - t.inProgressStartedAt.getTime() > sevenDaysMs
+      ) {
+        stuckInProgress.push(t);
+      }
+    }
+    return { overdueDue, stuckInProgress };
+  }, [tasks, now]);
+
+  if (workload.length === 0) {
+    return (
+      <div className="lg:col-span-3 rounded-xl border border-fluent-neutral-10 bg-white p-5 text-center text-sm text-fluent-neutral-60">
+        Δεν υπάρχουν ακόμη μέλη με tasks σε αυτό το έργο.
+      </div>
+    );
+  }
+
+  const maxSpent = Math.max(1, ...workload.map((w) => w.spentMs));
+  const totalRegression = regressionCount;
+
+  return (
+    <>
+      {/* Workload distribution */}
+      <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-5 lg:col-span-3">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h3 className="font-display text-sm font-semibold text-fluent-neutral-90">
+            Κατανομή φόρτου ανά μέλος
+          </h3>
+          <span className="text-[11px] text-fluent-neutral-60">
+            Ταξινόμηση κατά πραγματικό χρόνο που δαπανήθηκε
+          </span>
+        </div>
+        <div className="space-y-2">
+          {workload.map((w) => {
+            const pct = (w.spentMs / maxSpent) * 100;
+            const overEstimate = w.estimatedMs > 0 && w.spentMs > w.estimatedMs;
+            return (
+              <div key={w.id} className="flex items-center gap-3 text-xs">
+                <span className="w-44 truncate font-medium text-fluent-neutral-90">{w.name}</span>
+                <div className="w-14 text-fluent-neutral-60 tabular-nums">
+                  {w.open}/{w.total}
+                </div>
+                <div className="flex-1 h-2 rounded-full bg-fluent-neutral-8 overflow-hidden">
+                  <div
+                    className={`h-full ${
+                      overEstimate ? 'bg-fluent-accent-red' : 'bg-fluent-blue-500'
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <div className="w-28 text-right tabular-nums text-fluent-neutral-70">
+                  {formatSpent(w.spentMs)}
+                  {w.estimatedMs > 0 && (
+                    <span className="opacity-60"> / {formatSpent(w.estimatedMs)}</span>
+                  )}
+                </div>
+                {w.pendingQuestions > 0 && (
+                  <span
+                    className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-fluent-accent-orange/10 text-fluent-accent-orange text-[10px] font-semibold tabular-nums"
+                    title={`Εκκρεμούν ${w.pendingQuestions} ερωτήσεις προς αυτόν/αυτή`}
+                  >
+                    ?{w.pendingQuestions}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-[10px] text-fluent-neutral-60 flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1">
+            <span className="h-1.5 w-3 rounded-full bg-fluent-blue-500" /> εντός εκτίμησης
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-1.5 w-3 rounded-full bg-fluent-accent-red" /> πάνω από εκτίμηση
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="px-1 rounded bg-fluent-accent-orange/10 text-fluent-accent-orange">?N</span>{' '}
+            εκκρεμή Q&amp;A προς το μέλος
+          </span>
+        </p>
+      </div>
+
+      {/* Velocity */}
+      <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-5 lg:col-span-2">
+        <h3 className="font-display text-sm font-semibold text-fluent-neutral-90 mb-3">
+          Ολοκληρωμένα tasks ανά εβδομάδα (τελευταίες 6)
+        </h3>
+        <div className="flex items-end gap-2 h-32">
+          {velocity.weeks.map((w) => {
+            const heightPct = (w.count / velocity.max) * 100;
+            return (
+              <div key={w.key} className="flex-1 flex flex-col items-center gap-1.5">
+                <div className="text-[10px] text-fluent-neutral-60 tabular-nums">
+                  {w.count}
+                </div>
+                <div className="w-full bg-fluent-neutral-4 rounded-md relative flex-1 flex items-end overflow-hidden">
+                  <motion.div
+                    initial={{ height: 0 }}
+                    animate={{ height: `${heightPct}%` }}
+                    transition={{ duration: 0.4 }}
+                    className="w-full bg-fluent-blue-500 rounded-md"
+                  />
+                </div>
+                <div className="text-[10px] text-fluent-neutral-50">{w.label}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Quality signals */}
+      <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-5">
+        <h3 className="font-display text-sm font-semibold text-fluent-neutral-90 mb-3">
+          Ποιοτικά σήματα
+        </h3>
+        <div className="space-y-3">
+          <QualityTile
+            label="Επιστροφές από review"
+            value={totalRegression}
+            help="tasks που γύρισαν από review πίσω σε in_progress"
+            tone={totalRegression > 0 ? 'warn' : 'good'}
+          />
+          <QualityTile
+            label="Stuck in progress > 7d"
+            value={stale.stuckInProgress.length}
+            help="ενεργά in_progress για περισσότερο από 7 ημέρες"
+            tone={stale.stuckInProgress.length > 0 ? 'warn' : 'good'}
+          />
+          <QualityTile
+            label="Υπερβαίνουν προθεσμία"
+            value={stale.overdueDue.length}
+            help="open tasks με ημερομηνία λήξης στο παρελθόν"
+            tone={stale.overdueDue.length > 0 ? 'warn' : 'good'}
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function QualityTile({
+  label,
+  value,
+  help,
+  tone,
+}: {
+  label: string;
+  value: number;
+  help: string;
+  tone: 'good' | 'warn';
+}) {
+  return (
+    <div
+      className={`rounded-lg px-3 py-2.5 border ${
+        tone === 'warn'
+          ? 'bg-fluent-accent-orange/8 border-fluent-accent-orange/30'
+          : 'bg-fluent-accent-green/8 border-fluent-accent-green/30'
+      }`}
+    >
+      <div className="flex items-baseline justify-between">
+        <div className="text-[11px] uppercase tracking-wider text-fluent-neutral-70 font-semibold">
+          {label}
+        </div>
+        <div
+          className={`text-xl font-semibold font-display tabular-nums ${
+            tone === 'warn' ? 'text-fluent-accent-orange' : 'text-fluent-accent-green'
+          }`}
+        >
+          {value}
+        </div>
+      </div>
+      <p className="text-[10px] text-fluent-neutral-60 mt-0.5">{help}</p>
+    </div>
+  );
+}
+
+function startOfWeek(d: Date): Date {
+  // ISO week: Monday-start.
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  out.setDate(out.getDate() + diff);
+  return out;
+}
+
+function formatWeekLabel(d: Date): string {
+  return d.toLocaleDateString('el-GR', { day: '2-digit', month: 'short' });
 }
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
