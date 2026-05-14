@@ -5,6 +5,15 @@ const nextConfig = {
       // No app-level cap on attachment uploads; this is the Next.js framework
       // limit on the entire server-action payload (file + form fields).
       bodySizeLimit: '2gb',
+      // Reverse-proxy hosts that must pass the Server Action CSRF Origin check.
+      // Without these listed, Next.js 16 rejects POSTs whose Origin doesn't
+      // match the request Host — a common silent-failure mode when running
+      // behind Coolify/Caddy. Add every public hostname the app is served on.
+      allowedOrigins: [
+        'project.dgsmart.gr',
+        '*.dgsmart.gr',
+        'localhost:3000',
+      ],
     },
   },
   images: {
