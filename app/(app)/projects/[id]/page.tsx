@@ -160,6 +160,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       completedAt: t.completedAt,
       addToCalendar: t.addToCalendar,
       addToTeams: t.addToTeams,
+      inProgressStartedAt: t.inProgressStartedAt,
+      // BigInt is non-serializable across the RSC boundary — convert to a
+      // plain number. Safe up to ~285k years of accumulated time.
+      inProgressAccumulatedMs: Number(t.inProgressAccumulatedMs),
       dependencyIds: t.dependencies.map((d) => d.dependsOnId),
       assignees: t.assignees.map((a) => ({
         id: a.user.id,

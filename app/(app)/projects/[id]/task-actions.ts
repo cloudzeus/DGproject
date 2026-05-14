@@ -27,6 +27,7 @@ import {
 } from '@/lib/business-hours';
 import { sendEmail } from '@/lib/mailgun';
 import { notifyTaskAssignment, notifyTaskCompleted } from '@/lib/notifications';
+import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
 
 
 type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
@@ -472,6 +473,10 @@ export async function createTask(projectId: string, formData: FormData) {
   const maxOrder = await prisma.task.aggregate({ where: { projectId }, _max: { order: true } });
   const nextOrder = (maxOrder._max.order ?? -1) + 1;
 
+  // Start the in_progress wall-clock immediately if the task is created
+  // already in that state. No prior status, no accumulated time yet.
+  const timerFields = computeInProgressTimerUpdate(null, input.status, null, 0n);
+
   const created = await prisma.task.create({
     data: {
       projectId,
@@ -487,6 +492,7 @@ export async function createTask(projectId: string, formData: FormData) {
       completedAt: input.status === 'done' ? new Date() : null,
       addToCalendar: input.addToCalendar,
       addToTeams: input.addToTeams,
+      ...timerFields,
       assignees: {
         create: input.assigneeIds.map((userId) => ({ userId })),
       },
@@ -521,7 +527,13 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
 
   const previous = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { status: true, createdById: true, assignees: { select: { userId: true } } },
+    select: {
+      status: true,
+      createdById: true,
+      inProgressStartedAt: true,
+      inProgressAccumulatedMs: true,
+      assignees: { select: { userId: true } },
+    },
   });
   const previousAssigneeIds = new Set(previous?.assignees.map((a) => a.userId) ?? []);
 
@@ -559,6 +571,13 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
     };
   }
 
+  const updateTimerFields = computeInProgressTimerUpdate(
+    previous?.status ?? null,
+    input.status,
+    previous?.inProgressStartedAt ?? null,
+    previous?.inProgressAccumulatedMs ?? 0n,
+  );
+
   await prisma.$transaction([
     prisma.task.update({
       where: { id: taskId },
@@ -578,6 +597,7 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
             : input.status !== 'done'
             ? null
             : undefined,
+        ...updateTimerFields,
       },
     }),
     prisma.taskAssignee.deleteMany({ where: { taskId } }),
@@ -639,7 +659,20 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
   const actorId = await requireProjectEditor(projectId);
   if (!STATUSES.includes(status)) return { ok: false, error: 'Μη έγκυρη κατάσταση.' };
 
-  const previous = await prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
+  const previous = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      status: true,
+      inProgressStartedAt: true,
+      inProgressAccumulatedMs: true,
+    },
+  });
+  const timerFields = computeInProgressTimerUpdate(
+    previous?.status ?? null,
+    status,
+    previous?.inProgressStartedAt ?? null,
+    previous?.inProgressAccumulatedMs ?? 0n,
+  );
   await prisma.task.update({
     where: { id: taskId },
     data: {
@@ -650,6 +683,7 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
           : status !== 'done'
           ? null
           : undefined,
+      ...timerFields,
     },
   });
 

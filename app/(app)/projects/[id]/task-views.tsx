@@ -32,6 +32,8 @@ import type { TaskQuestionInfo, ProjectMemberOption } from './task-questions-pan
 import { createTask, updateTask, deleteTask, updateTaskStatus, updateTaskDates } from './task-actions';
 import { Gantt, type GanttTask, type GanttZoom } from '@/components/gantt/gantt';
 import { ChevronLeft20Regular, ChevronRight20Regular } from '@fluentui/react-icons';
+import { SpentTimeBadge } from './spent-time-badge';
+import { computeSpentMs, formatSpent } from '@/lib/task-in-progress-timer';
 
 export type TaskAttachment = {
   id: string;
@@ -59,6 +61,10 @@ export type TaskRow = {
   addToCalendar: boolean;
   addToTeams: boolean;
   dependencyIds: string[];
+  // In-progress wall-clock tracking: spent time is accumulated while the task
+  // sits in status=in_progress.
+  inProgressStartedAt: Date | null;
+  inProgressAccumulatedMs: number;
 };
 
 const STATUS_ORDER: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done'];
@@ -167,6 +173,13 @@ export function ListView({ projectId, tasks, members, canEdit, questionMembers, 
             <Badge variant={t.status === 'done' ? 'green' : 'blue'}>{statusLabel(t.status)}</Badge>
             <Badge variant={PRIORITY_VARIANT[t.priority]}>{PRIORITY_LABEL[t.priority]}</Badge>
             <span className="flex-1 text-sm font-medium text-fluent-neutral-90 truncate">{t.title}</span>
+            <SpentTimeBadge
+              status={t.status}
+              inProgressStartedAt={t.inProgressStartedAt}
+              inProgressAccumulatedMs={t.inProgressAccumulatedMs}
+              estimatedHours={t.estimatedHours}
+              size="xs"
+            />
             {t.estimatedHours !== null && (
               <span className="text-xs text-fluent-neutral-60 w-16 text-right tabular-nums">{t.estimatedHours}h</span>
             )}
@@ -595,6 +608,46 @@ export function TimelineView({
 export function ReportsView({ tasks }: { tasks: TaskRow[] }) {
   const stats = useMemo(() => computeStats(tasks), [tasks]);
 
+  // Live "now" so the spent totals advance for any task currently running.
+  // Re-renders once per minute, same cadence as SpentTimeBadge.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Estimated vs Actual: estimate is the sum of estimatedHours (in ms), actual
+  // is the wall-clock time tasks have spent in status=in_progress.
+  const timeStats = useMemo(() => {
+    const estimatedMs = tasks.reduce(
+      (acc, t) => acc + (t.estimatedHours ? t.estimatedHours * 3_600_000 : 0),
+      0,
+    );
+    const spentMs = tasks.reduce(
+      (acc, t) =>
+        acc +
+        computeSpentMs(t.status, t.inProgressStartedAt, t.inProgressAccumulatedMs, now),
+      0,
+    );
+    // Per-task spent rows, sorted by spent desc, only those with any spent time.
+    const perTask = tasks
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        estimatedMs: t.estimatedHours ? t.estimatedHours * 3_600_000 : 0,
+        spentMs: computeSpentMs(t.status, t.inProgressStartedAt, t.inProgressAccumulatedMs, now),
+      }))
+      .filter((t) => t.spentMs > 0)
+      .sort((a, b) => b.spentMs - a.spentMs);
+    return { estimatedMs, spentMs, perTask };
+  }, [tasks, now]);
+
+  const pctOfEstimate =
+    timeStats.estimatedMs > 0
+      ? Math.round((timeStats.spentMs / timeStats.estimatedMs) * 100)
+      : null;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <StatCard label="Σύνολο εργασιών" value={String(stats.total)} />
@@ -604,6 +657,112 @@ export function ReportsView({ tasks }: { tasks: TaskRow[] }) {
       <StatCard label="Συνολικές εκτιμώμενες ώρες" value={formatHours(stats.totalHours)} />
       <StatCard label="Ώρες ολοκληρωμένες" value={formatHours(stats.doneHours)} />
       <StatCard label="Ώρες που απομένουν" value={formatHours(stats.remainingHours)} sub={`~${stats.daysRemaining} εργάσιμες ημέρες (8h/ημ.)`} />
+
+      {/* Estimated vs Actual (wall-clock time in_progress) */}
+      <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-5 lg:col-span-3">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-display text-sm font-semibold text-fluent-neutral-90">
+            Εκτιμώμενος vs Πραγματικός χρόνος
+          </h3>
+          {pctOfEstimate !== null && (
+            <span
+              className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                pctOfEstimate > 100
+                  ? 'bg-fluent-accent-red/10 text-fluent-accent-red'
+                  : pctOfEstimate > 80
+                  ? 'bg-fluent-accent-orange/10 text-fluent-accent-orange'
+                  : 'bg-fluent-accent-green/10 text-fluent-accent-green'
+              }`}
+            >
+              {pctOfEstimate}% της εκτίμησης
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="rounded-lg bg-fluent-neutral-4 px-3 py-2.5">
+            <div className="text-[11px] uppercase tracking-wider text-fluent-neutral-60">
+              Εκτίμηση
+            </div>
+            <div className="text-xl font-semibold font-display tabular-nums">
+              {timeStats.estimatedMs > 0 ? formatSpent(timeStats.estimatedMs) : '—'}
+            </div>
+          </div>
+          <div className="rounded-lg bg-fluent-blue-50 px-3 py-2.5">
+            <div className="text-[11px] uppercase tracking-wider text-fluent-blue-700">
+              Πραγματικός
+            </div>
+            <div className="text-xl font-semibold font-display tabular-nums text-fluent-blue-700">
+              {timeStats.spentMs > 0 ? formatSpent(timeStats.spentMs) : '—'}
+            </div>
+          </div>
+          <div
+            className={`rounded-lg px-3 py-2.5 ${
+              timeStats.estimatedMs > 0 && timeStats.spentMs > timeStats.estimatedMs
+                ? 'bg-fluent-accent-red/10'
+                : 'bg-fluent-neutral-4'
+            }`}
+          >
+            <div className="text-[11px] uppercase tracking-wider text-fluent-neutral-60">
+              Διαφορά
+            </div>
+            <div className="text-xl font-semibold font-display tabular-nums">
+              {timeStats.estimatedMs > 0
+                ? formatSpent(Math.abs(timeStats.spentMs - timeStats.estimatedMs))
+                : '—'}
+              {timeStats.estimatedMs > 0 && (
+                <span className="text-[11px] font-normal text-fluent-neutral-60 ml-1">
+                  {timeStats.spentMs > timeStats.estimatedMs ? 'πάνω' : 'κάτω'}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {timeStats.perTask.length > 0 ? (
+          <div className="space-y-1.5">
+            <div className="text-[11px] uppercase tracking-wider text-fluent-neutral-50 mb-1">
+              Ανά εργασία ({timeStats.perTask.length})
+            </div>
+            {timeStats.perTask.slice(0, 8).map((t) => {
+              const pct =
+                t.estimatedMs > 0 ? Math.min(200, (t.spentMs / t.estimatedMs) * 100) : null;
+              const over = pct !== null && pct > 100;
+              return (
+                <div key={t.id} className="flex items-center gap-3 text-xs">
+                  <span className="flex-1 truncate text-fluent-neutral-90">{t.title}</span>
+                  <div className="w-40 h-1.5 rounded-full bg-fluent-neutral-8 overflow-hidden relative">
+                    {pct !== null && (
+                      <div
+                        className={`h-full rounded-full ${
+                          over ? 'bg-fluent-accent-red' : 'bg-fluent-blue-500'
+                        }`}
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                      />
+                    )}
+                  </div>
+                  <span className="w-24 text-right tabular-nums text-fluent-neutral-70">
+                    {formatSpent(t.spentMs)}
+                    {t.estimatedMs > 0 && (
+                      <span className="opacity-60"> / {formatSpent(t.estimatedMs)}</span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+            {timeStats.perTask.length > 8 && (
+              <p className="text-[11px] text-fluent-neutral-60 mt-1.5">
+                +{timeStats.perTask.length - 8} ακόμη εργασίες
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-fluent-neutral-60">
+            Καμία εργασία δεν έχει μπει σε επεξεργασία ακόμη — ο χρόνος μετράει αυτόματα όταν μια
+            εργασία αλλάξει κατάσταση σε «Σε εξέλιξη».
+          </p>
+        )}
+      </div>
 
       <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-5 lg:col-span-2">
         <h3 className="font-display text-sm font-semibold text-fluent-neutral-90 mb-3">Κατανομή ανά κατάσταση</h3>
@@ -871,6 +1030,15 @@ function StaticBoardCard({
           {task.estimatedHours !== null && <span className="tabular-nums">{task.estimatedHours}h</span>}
         </div>
         <AvatarStack users={task.assignees} max={2} size="xs" />
+      </div>
+      <div className="mt-2">
+        <SpentTimeBadge
+          status={task.status}
+          inProgressStartedAt={task.inProgressStartedAt}
+          inProgressAccumulatedMs={task.inProgressAccumulatedMs}
+          estimatedHours={task.estimatedHours}
+          size="xs"
+        />
       </div>
     </motion.div>
   );

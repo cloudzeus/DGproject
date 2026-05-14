@@ -349,6 +349,14 @@ model Task {
   // before this task is treated as authoritative.
   meetingNeedsReview       Boolean  @default(false)
 
+  // ─── In-progress time tracking ─────────────────────────────────────
+  // Wall-clock duration the task has spent in status=in_progress. The clock
+  // ticks while inProgressStartedAt is non-null; when status leaves in_progress
+  // the elapsed delta is added to inProgressAccumulatedMs and the start cleared.
+  // Spent time = inProgressAccumulatedMs + (status=in_progress ? now - inProgressStartedAt : 0)
+  inProgressStartedAt     DateTime?
+  inProgressAccumulatedMs BigInt    @default(0)
+
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   createdById     String

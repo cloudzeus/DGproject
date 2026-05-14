@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/mailgun';
+import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
 import type { TaskStatus } from '@prisma/client';
 
 const STATUSES: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done'];
@@ -41,11 +42,27 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   if (!STATUSES.includes(status)) return { ok: false, error: 'Invalid status.' };
   const userId = await requireTaskEditor(taskId);
 
+  const previous = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      status: true,
+      inProgressStartedAt: true,
+      inProgressAccumulatedMs: true,
+    },
+  });
+  const timerFields = computeInProgressTimerUpdate(
+    previous?.status ?? null,
+    status,
+    previous?.inProgressStartedAt ?? null,
+    previous?.inProgressAccumulatedMs ?? 0n,
+  );
+
   const task = await prisma.task.update({
     where: { id: taskId },
     data: {
       status,
       completedAt: status === 'done' ? new Date() : null,
+      ...timerFields,
     },
     select: { projectId: true, project: { select: { workspaceId: true } } },
   });
