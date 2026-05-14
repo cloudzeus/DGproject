@@ -1,14 +1,43 @@
 // SoftOne ITEM (products + services) catalog sync.
 //
-// We pull the active ITEM list via `getBrowserInfo` + paginated `getBrowserData`,
-// then upsert into the local `SoftoneItem` cache. Anything not seen in the latest
-// sync is soft-deactivated (isActive=false) so it remains FK-valid for historical
-// ProjectCostLine references but no longer shows up in pickers.
+// Powered by SoftOne's `SqlData` service: a SQL query saved on the ERP side
+// returns the catalog scoped to whichever DGSOFT subsidiary we care about
+// (DGSMART = company 900). The query name lives in env var
+// `S1_ITEMS_SQL_NAME` — defaults to `FLUENT_GET_ITEMS` if unset.
 //
-// MTRTYPE → kind discriminator (kept loose because exact values vary per tenant):
-//   - 1, 11, 12, 13, 14 → product  (Είδος)
-//   - 51, 52, 53, 54, 55 → service (Υπηρεσία)
-//   - anything else falls back to product so nothing is silently dropped.
+// Why `SqlData` instead of `getBrowserInfo`: the web service login user has
+// access across all DGSOFT subsidiaries, but `getData`/`getBrowserInfo` calls
+// pin to the COMPANY used at authenticate-time. The cleanest cross-company
+// read is via a saved SQL query that scopes by `MTRL.COMPANY` (or whatever
+// linkage the SoftOne DB uses) inside the SQL itself.
+//
+// The SQL **must** return these columns (case-sensitive, plain SQL aliases):
+//   - MTRL       INTEGER, primary key
+//   - CODE       VARCHAR
+//   - NAME       VARCHAR
+//   - MTRTYPE    INTEGER     (used to split product/service — 51-59 = service)
+//   - PRICEW     FLOAT       (χονδρικής — used as default unitPrice)
+//   - PRICER     FLOAT       (λιανικής)
+//   - VATRATE    FLOAT       (the actual percentage, joined from VAT)
+//   - ISACTIVE   INTEGER     (1 = ενεργό)
+// Optional but recommended:
+//   - CODE1      VARCHAR     (barcode)
+//   - CODE2      VARCHAR     (factory code)
+//   - NAME1      VARCHAR     (secondary description)
+//   - VATID      INTEGER
+//   - UNITID     INTEGER
+//   - UNITNAME   VARCHAR
+//   - GROUPID    INTEGER
+//   - GROUPNAME  VARCHAR
+//   - BRANDID    INTEGER
+//   - BRANDNAME  VARCHAR
+//   - MFGID      INTEGER
+//   - MFGNAME    VARCHAR
+//   - REMARKS    VARCHAR
+//
+// Items not returned in a successful run are soft-deactivated (isActive=false)
+// — they stay in the DB so historical ProjectCostLine FKs remain valid, but
+// disappear from the pickers.
 
 import { prisma } from './prisma';
 import { s1 } from './softone';
@@ -22,24 +51,7 @@ export type SyncResult = {
   durationMs: number;
 };
 
-type FieldDef = { name: string; type?: string; caption?: string };
-
-function buildColumnIndex(fields: FieldDef[]): Map<string, number> {
-  const map = new Map<string, number>();
-  fields.forEach((f, i) => {
-    // ITEM.CODE → store under both "ITEM.CODE" and "CODE"
-    map.set(f.name, i);
-    const dot = f.name.indexOf('.');
-    if (dot >= 0) map.set(f.name.slice(dot + 1), i);
-  });
-  return map;
-}
-
-function getCell(row: unknown[] | Record<string, unknown>, idx: number | undefined): unknown {
-  if (idx == null || idx < 0) return undefined;
-  if (Array.isArray(row)) return row[idx];
-  return row[String(idx)];
-}
+type Row = Record<string, unknown>;
 
 function toStr(v: unknown): string | null {
   if (v == null) return null;
@@ -60,15 +72,11 @@ function toFloat(v: unknown): number | null {
 }
 
 /**
- * Map raw SoftOne MTRTYPE → our local kind. Conservative — anything we don't
- * recognise stays a product so the row isn't silently dropped from the catalog.
+ * SoftOne MTRTYPE → our local kind. Conservative — anything we don't recognise
+ * stays a product so the row isn't silently dropped.
  */
 function mtrTypeToKind(mtrType: number | null): 'product' | 'service' {
   if (mtrType == null) return 'product';
-  // SoftOne convention seen in the wild:
-  //   1   = Είδος (commodity stock item) — product
-  //   51  = Υπηρεσία (service)
-  //   Other values exist (raw material, asset, etc.) — treat as product.
   if (mtrType >= 51 && mtrType <= 59) return 'service';
   return 'product';
 }
@@ -97,45 +105,53 @@ type SoftoneItemRow = {
   remarks: string | null;
 };
 
-function parseRow(row: unknown[] | Record<string, unknown>, cols: Map<string, number>): SoftoneItemRow | null {
-  const mtrl = toInt(getCell(row, cols.get('MTRL')));
+/** Read a column from a SqlData row using any of several aliases (defensive
+ * — SoftOne SQL output can vary in casing/naming across saved queries). */
+function pick(row: Row, ...keys: string[]): unknown {
+  for (const k of keys) {
+    if (row[k] !== undefined) return row[k];
+    const upper = k.toUpperCase();
+    if (row[upper] !== undefined) return row[upper];
+    const lower = k.toLowerCase();
+    if (row[lower] !== undefined) return row[lower];
+  }
+  return undefined;
+}
+
+function parseRow(row: Row): SoftoneItemRow | null {
+  const mtrl = toInt(pick(row, 'MTRL'));
   if (mtrl == null || mtrl <= 0) return null;
-  const code = toStr(getCell(row, cols.get('CODE'))) ?? '';
-  const name = toStr(getCell(row, cols.get('NAME'))) ?? '';
+  const code = toStr(pick(row, 'CODE')) ?? '';
+  const name = toStr(pick(row, 'NAME')) ?? '';
   if (!code && !name) return null;
 
-  const mtrType = toInt(getCell(row, cols.get('MTRTYPE'))) ?? 1;
-  const isActiveRaw = toInt(getCell(row, cols.get('ISACTIVE')));
+  const mtrType = toInt(pick(row, 'MTRTYPE')) ?? 1;
+  const isActiveRaw = toInt(pick(row, 'ISACTIVE'));
 
   return {
     mtrl,
     code,
     name,
-    code1: toStr(getCell(row, cols.get('CODE1'))),
-    code2: toStr(getCell(row, cols.get('CODE2'))),
-    name1: toStr(getCell(row, cols.get('NAME1'))),
+    code1: toStr(pick(row, 'CODE1')),
+    code2: toStr(pick(row, 'CODE2')),
+    name1: toStr(pick(row, 'NAME1')),
     mtrType,
     isActive: isActiveRaw == null ? true : isActiveRaw !== 0,
-    retailPrice: toFloat(getCell(row, cols.get('PRICER'))),
-    wholesalePrice: toFloat(getCell(row, cols.get('PRICEW'))),
-    vatRate: toFloat(getCell(row, cols.get('VATPRC'))) ?? toFloat(getCell(row, cols.get('VATRATE'))),
-    vatId: toInt(getCell(row, cols.get('VAT'))),
-    unitId: toInt(getCell(row, cols.get('MTRUNIT1'))),
-    unitName: toStr(getCell(row, cols.get('MTRUNIT1.NAME'))) ?? toStr(getCell(row, cols.get('UNITNAME'))),
-    groupId: toInt(getCell(row, cols.get('MTRGROUP'))),
-    groupName: toStr(getCell(row, cols.get('MTRGROUP.NAME'))) ?? toStr(getCell(row, cols.get('GROUPNAME'))),
-    brandId: toInt(getCell(row, cols.get('MTRMARK'))),
-    brandName: toStr(getCell(row, cols.get('MTRMARK.NAME'))) ?? toStr(getCell(row, cols.get('BRANDNAME'))),
-    manufacturerId: toInt(getCell(row, cols.get('MTRMANFCTR'))),
-    manufacturerName:
-      toStr(getCell(row, cols.get('MTRMANFCTR.NAME'))) ??
-      toStr(getCell(row, cols.get('MANUFACTURERNAME'))),
-    remarks: toStr(getCell(row, cols.get('REMARKS'))),
+    retailPrice: toFloat(pick(row, 'PRICER', 'RETAILPRICE')),
+    wholesalePrice: toFloat(pick(row, 'PRICEW', 'WHOLESALEPRICE')),
+    vatRate: toFloat(pick(row, 'VATRATE', 'VATPRC')),
+    vatId: toInt(pick(row, 'VATID', 'VAT')),
+    unitId: toInt(pick(row, 'UNITID', 'MTRUNIT1')),
+    unitName: toStr(pick(row, 'UNITNAME', 'UNITSHORT')),
+    groupId: toInt(pick(row, 'GROUPID', 'MTRGROUP')),
+    groupName: toStr(pick(row, 'GROUPNAME')),
+    brandId: toInt(pick(row, 'BRANDID', 'MTRMARK')),
+    brandName: toStr(pick(row, 'BRANDNAME', 'MARKNAME')),
+    manufacturerId: toInt(pick(row, 'MFGID', 'MTRMANFCTR', 'MANUFACTURERID')),
+    manufacturerName: toStr(pick(row, 'MFGNAME', 'MANUFACTURERNAME')),
+    remarks: toStr(pick(row, 'REMARKS')),
   };
 }
-
-const PAGE_SIZE = 500;
-const MAX_PAGES = 200; // hard cap so a misconfigured browser can't loop forever
 
 export async function syncSoftoneItems(): Promise<SyncResult> {
   const t0 = Date.now();
@@ -148,96 +164,53 @@ export async function syncSoftoneItems(): Promise<SyncResult> {
     durationMs: 0,
   };
 
-  // Optional explicit company filter — usually the auth COMPANY context is
-  // enough to scope ITEM data, but for tenants where the browser ignores the
-  // auth scope (e.g. global catalogs viewed cross-company) the operator can
-  // pin to a specific company id via S1_ITEM_COMPANY_FILTER, e.g. 900 for
-  // DGSMART.
-  const companyFilter = (process.env.S1_ITEM_COMPANY_FILTER ?? '').trim();
-  const filters = companyFilter
-    ? `ITEM.ISACTIVE=1&ITEM.COMPANY=${companyFilter}`
-    : 'ITEM.ISACTIVE=1';
+  const sqlName = (process.env.S1_ITEMS_SQL_NAME ?? 'FLUENT_GET_ITEMS').trim();
+  if (!sqlName) {
+    result.ok = false;
+    result.errors.push('S1_ITEMS_SQL_NAME is empty');
+    result.durationMs = Date.now() - t0;
+    return result;
+  }
 
-  let info: { success?: boolean; reqID?: string; fields?: FieldDef[]; totalcount?: number; error?: string; errorcode?: number };
+  let response: { success?: boolean; rows?: Row[]; error?: string; errorcode?: number };
   try {
-    info = await s1('getBrowserInfo', {
-      object: 'ITEM',
-      // No explicit LIST → use default. Operators always "=", per SoftOne
-      // filter syntax. Multiple clauses joined with "&".
-      FILTERS: filters,
+    response = await s1('SqlData', {
+      // Some SoftOne installations expect uppercase keys here. Send both casings
+      // so the saved query is found regardless of the server-side handler.
+      SQLNAME: sqlName,
+      sqlname: sqlName,
     });
   } catch (e) {
     result.ok = false;
-    result.errors.push(`getBrowserInfo failed: ${e instanceof Error ? e.message : String(e)}`);
+    result.errors.push(`SqlData failed: ${e instanceof Error ? e.message : String(e)}`);
     result.durationMs = Date.now() - t0;
     return result;
   }
 
-  if (!info.success) {
+  if (!response.success) {
     result.ok = false;
-    result.errors.push(`getBrowserInfo error (code ${info.errorcode ?? '-'}): ${info.error ?? 'unknown'}`);
+    result.errors.push(
+      `SqlData error (code ${response.errorcode ?? '-'}): ${response.error ?? 'unknown'}`,
+    );
     result.durationMs = Date.now() - t0;
     return result;
   }
-  if (!info.reqID) {
-    // Empty catalog — treat as success but deactivate everything currently active.
-    result.errors.push('SoftOne returned no reqID (empty catalog?)');
-  }
 
-  const fields = info.fields ?? [];
-  const cols = buildColumnIndex(fields);
-  const reqId = info.reqID;
-  const totalCount = info.totalcount ?? 0;
-
+  const rows = response.rows ?? [];
   const seenMtrls = new Set<number>();
   const parsed: SoftoneItemRow[] = [];
 
-  if (reqId && totalCount > 0) {
-    for (let page = 0; page < MAX_PAGES; page += 1) {
-      const start = page * PAGE_SIZE;
-      if (start >= totalCount) break;
-
-      let data: { success?: boolean; rows?: unknown[]; error?: string; errorcode?: number };
-      try {
-        data = await s1('getBrowserData', {
-          reqID: reqId,
-          START: start,
-          LIMIT: PAGE_SIZE,
-        });
-      } catch (e) {
-        result.errors.push(`page ${page} failed: ${e instanceof Error ? e.message : String(e)}`);
-        result.ok = false;
-        break;
-      }
-
-      if (!data.success) {
-        result.errors.push(
-          `getBrowserData error on page ${page} (code ${data.errorcode ?? '-'}): ${data.error ?? 'unknown'}`,
-        );
-        result.ok = false;
-        break;
-      }
-
-      const rows = (data.rows ?? []) as Array<unknown[] | Record<string, unknown>>;
-      if (rows.length === 0) break;
-
-      for (const row of rows) {
-        const r = parseRow(row, cols);
-        if (!r) continue;
-        seenMtrls.add(r.mtrl);
-        parsed.push(r);
-      }
-
-      // Last page was short — we're done.
-      if (rows.length < PAGE_SIZE) break;
-    }
+  for (const row of rows) {
+    const r = parseRow(row);
+    if (!r) continue;
+    seenMtrls.add(r.mtrl);
+    parsed.push(r);
   }
 
   result.totalSeen = parsed.length;
 
-  // Upsert each row. Done in batches via $transaction to keep DB roundtrips
-  // reasonable. We don't try too hard at parallelism — SoftOne sync is a
-  // batch background job, not latency-sensitive.
+  // Upsert in batches of 50. SoftOne sync is a background job — not
+  // latency-sensitive, so we keep concurrency low to spare the DB.
   const BATCH = 50;
   for (let i = 0; i < parsed.length; i += BATCH) {
     const slice = parsed.slice(i, i + BATCH);
@@ -245,6 +218,8 @@ export async function syncSoftoneItems(): Promise<SyncResult> {
       await prisma.$transaction(
         slice.map((r) => {
           const kind = mtrTypeToKind(r.mtrType);
+          // Default unitPrice = wholesale (per user preference); fall back to
+          // retail, then 0 if neither is present.
           const unitPrice = r.wholesalePrice ?? r.retailPrice ?? 0;
           return prisma.softoneItem.upsert({
             where: { mtrl: r.mtrl },
@@ -309,16 +284,13 @@ export async function syncSoftoneItems(): Promise<SyncResult> {
     }
   }
 
-  // Soft-deactivate anything we didn't see this run, but only if the API call
-  // itself succeeded — otherwise we'd nuke the catalog on a transient outage.
+  // Soft-deactivate items we didn't see this run, but only when the API call
+  // itself succeeded — otherwise a transient outage would nuke the catalog.
   if (result.ok && seenMtrls.size > 0) {
     const seenArr = Array.from(seenMtrls);
     try {
       const deactivated = await prisma.softoneItem.updateMany({
-        where: {
-          isActive: true,
-          mtrl: { notIn: seenArr },
-        },
+        where: { isActive: true, mtrl: { notIn: seenArr } },
         data: { isActive: false, lastSyncedAt: new Date() },
       });
       result.deactivated = deactivated.count;
