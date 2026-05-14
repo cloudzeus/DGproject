@@ -139,6 +139,35 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const sessionUserId = session?.user?.id ?? '';
   const isPrivileged = role === 'admin' || role === 'manager';
 
+  // Costing data fetched only for admin/manager — viewers/members never see
+  // the tab and never get the catalog payload (which can be large).
+  const costLinesRaw = isPrivileged
+    ? await prisma.projectCostLine.findMany({
+        where: { projectId: id },
+        orderBy: [{ kind: 'asc' }, { createdAt: 'asc' }],
+        include: {
+          item: { select: { code: true, name: true, unitName: true } },
+          createdBy: { select: { name: true, email: true } },
+        },
+      })
+    : [];
+  const catalogItems = isPrivileged
+    ? await prisma.softoneItem.findMany({
+        where: { isActive: true },
+        orderBy: [{ kind: 'asc' }, { name: 'asc' }],
+        select: {
+          mtrl: true,
+          code: true,
+          name: true,
+          unitPrice: true,
+          vatRate: true,
+          unitName: true,
+          groupName: true,
+          kind: true,
+        },
+      })
+    : [];
+
   // Members + viewers (clients) may only access projects where they are the owner or an
   // explicit member. Show 404 (not 403) so we don't leak existence of foreign projects.
   if (!isPrivileged) {
@@ -369,6 +398,46 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     })),
   }));
 
+  const costLines = costLinesRaw.map((l) => ({
+    id: l.id,
+    softoneItemMtrl: l.softoneItemMtrl,
+    kind: l.kind,
+    quantity: l.quantity,
+    unitPriceSnapshot: l.unitPriceSnapshot,
+    vatRateSnapshot: l.vatRateSnapshot,
+    notes: l.notes,
+    itemCode: l.item.code,
+    itemName: l.item.name,
+    itemUnitName: l.item.unitName,
+    createdByName: l.createdBy.name ?? l.createdBy.email,
+    createdAt: l.createdAt,
+  }));
+
+  const catalogProducts = catalogItems
+    .filter((i) => i.kind === 'product')
+    .map((i) => ({
+      mtrl: i.mtrl,
+      code: i.code,
+      name: i.name,
+      unitPrice: i.unitPrice,
+      vatRate: i.vatRate,
+      unitName: i.unitName,
+      groupName: i.groupName,
+      kind: i.kind,
+    }));
+  const catalogServices = catalogItems
+    .filter((i) => i.kind === 'service')
+    .map((i) => ({
+      mtrl: i.mtrl,
+      code: i.code,
+      name: i.name,
+      unitPrice: i.unitPrice,
+      vatRate: i.vatRate,
+      unitName: i.unitName,
+      groupName: i.groupName,
+      kind: i.kind,
+    }));
+
   return (
     <>
       <ProjectDetail
@@ -382,6 +451,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         aggregatedFiles={aggregatedFiles}
         meetings={meetingsForClient}
         regressionCount={regressionCount}
+        costLines={costLines}
+        catalogProducts={catalogProducts}
+        catalogServices={catalogServices}
       />
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-4">
         <div className="flex items-center justify-end">

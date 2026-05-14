@@ -10,6 +10,7 @@ import {
   DocumentMultiple20Regular, Mail20Regular,
   ChatBubblesQuestion20Regular,
   CalendarLtr20Regular,
+  Money20Regular,
 } from '@fluentui/react-icons';
 import { ReportModal } from './report-modal';
 import { AvatarStack } from '@/components/ui/avatar';
@@ -22,6 +23,11 @@ import { ProjectAttachments, type ProjectAttachmentInfo } from './project-attach
 import { ProjectFiles, type ProjectFileItem } from './project-files';
 import { ProjectQuestionsTab } from './project-questions-tab';
 import { ProjectMeetingsTab, type ProjectMeeting } from './project-meetings-tab';
+import {
+  ProjectCostingTab,
+  type CatalogPickerItem,
+  type CostLine,
+} from './project-costing-tab';
 
 type AvatarUser = { name: string; avatarUrl?: string };
 
@@ -45,9 +51,12 @@ type ProjectDetailProps = {
   aggregatedFiles: ProjectFileItem[];
   meetings: ProjectMeeting[];
   regressionCount: number;
+  costLines: CostLine[];
+  catalogProducts: CatalogPickerItem[];
+  catalogServices: CatalogPickerItem[];
 };
 
-type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'reports';
+type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'costing' | 'reports';
 
 function MenuItem({
   icon,
@@ -71,13 +80,15 @@ function MenuItem({
   );
 }
 
-const TABS: { id: Tab; label: string; Icon: typeof Board20Regular }[] = [
+// Tabs shown to everyone; costing is filtered out below for non-privileged users.
+const TABS: { id: Tab; label: string; Icon: typeof Board20Regular; privilegedOnly?: boolean }[] = [
   { id: 'board', label: 'Board', Icon: Board20Regular },
   { id: 'list', label: 'Λίστα', Icon: List20Regular },
   { id: 'timeline', label: 'Χρονοδιάγραμμα', Icon: Calendar20Regular },
   { id: 'files', label: 'Αρχεία', Icon: DocumentMultiple20Regular },
   { id: 'questions', label: 'Ερωτήσεις', Icon: ChatBubblesQuestion20Regular },
   { id: 'meetings', label: 'Συναντήσεις', Icon: CalendarLtr20Regular },
+  { id: 'costing', label: 'Κοστολόγηση', Icon: Money20Regular, privilegedOnly: true },
   { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular },
 ];
 
@@ -92,6 +103,9 @@ export function ProjectDetail({
   aggregatedFiles,
   meetings,
   regressionCount,
+  costLines,
+  catalogProducts,
+  catalogServices,
 }: ProjectDetailProps) {
   const [tab, setTab] = useState<Tab>('board');
   const [shareCopied, setShareCopied] = useState(false);
@@ -272,7 +286,7 @@ export function ProjectDetail({
 
       <div className="bg-white border-b border-black/5 px-6 lg:px-8">
         <div className="max-w-[1600px] mx-auto flex gap-1">
-          {TABS.map((t) => {
+          {TABS.filter((t) => !t.privilegedOnly || isPrivileged).map((t) => {
             const active = tab === t.id;
             const questionsCount = project.tasks.reduce(
               (sum, task) => sum + task.questions.length,
@@ -285,6 +299,8 @@ export function ProjectDetail({
                 ? questionsCount
                 : t.id === 'meetings'
                 ? meetings.length
+                : t.id === 'costing'
+                ? costLines.length
                 : null;
             return (
               <button
@@ -340,6 +356,14 @@ export function ProjectDetail({
         )}
         {tab === 'meetings' && (
           <ProjectMeetingsTab projectId={project.id} meetings={meetings} />
+        )}
+        {tab === 'costing' && isPrivileged && (
+          <ProjectCostingTab
+            projectId={project.id}
+            costLines={costLines}
+            products={catalogProducts}
+            services={catalogServices}
+          />
         )}
         {tab === 'reports' && (
           <ReportsView

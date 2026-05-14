@@ -16,6 +16,8 @@ import {
   DataBarVertical24Regular, DataBarVertical24Filled,
   ChatBubblesQuestion24Regular, ChatBubblesQuestion24Filled,
   Video24Regular, Video24Filled,
+  Tag24Regular, Tag24Filled,
+  Wrench24Regular, Wrench24Filled,
   ChevronRight16Regular,
   Add16Regular,
 } from '@fluentui/react-icons';
@@ -51,6 +53,7 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const isAdmin = userRole === 'admin';
+  const isManagerOrAdmin = userRole === 'admin' || userRole === 'manager';
 
   return (
     <aside className="mica w-64 flex flex-col border-r border-black/5 h-screen sticky top-0">
@@ -139,6 +142,47 @@ export function Sidebar({
             })}
           </div>
         </div>
+
+        {isManagerOrAdmin && (
+          <div className="mt-6">
+            <div className="px-3 mb-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-fluent-neutral-50">
+                Κατάλογος SoftOne
+              </span>
+            </div>
+            <div className="space-y-0.5">
+              {[
+                { href: '/catalog/products', label: 'Προϊόντα', Regular: Tag24Regular, Filled: Tag24Filled },
+                { href: '/catalog/services', label: 'Υπηρεσίες', Regular: Wrench24Regular, Filled: Wrench24Filled },
+              ].map((item) => {
+                const active = pathname === item.href || pathname.startsWith(item.href + '/');
+                const Icon = active ? item.Filled : item.Regular;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'group flex items-center gap-3 px-3 h-9 rounded-md text-sm font-medium transition-all relative',
+                      active
+                        ? 'bg-fluent-blue-50 text-fluent-blue-700'
+                        : 'text-fluent-neutral-80 hover:bg-black/5',
+                    )}
+                  >
+                    {active && (
+                      <motion.div
+                        layoutId="nav-indicator"
+                        className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-fluent-blue-600 rounded-r-full"
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                    <Icon className={cn('h-5 w-5', active ? 'text-fluent-blue-600' : 'text-fluent-neutral-60')} />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {isAdmin && (
           <div className="mt-6">

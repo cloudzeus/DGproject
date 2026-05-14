@@ -181,6 +181,7 @@ model User {
   taskQuestionFiles    TaskQuestionAttachment[]
   taskTemplates        TaskTemplate[]            @relation("TaskTemplateCreator")
   organizedMeetings    MeetingNote[]             @relation("MeetingOrganizer")
+  createdCostLines     ProjectCostLine[]         @relation("CostLineCreator")
 
   @@index([email])
   @@index([role])
@@ -289,6 +290,7 @@ model Project {
   activities          Activity[]
   members             ProjectMember[]
   meetings            MeetingNote[]
+  costLines           ProjectCostLine[]
 
   @@index([workspaceId])
   @@index([ownerId])
@@ -731,4 +733,100 @@ model Notification {
   @@index([read])
   @@index([createdAt])
   @@index([type])
+}
+
+// ─── SoftOne catalog (products + services) ──────────────────────────────
+// Local cache of SoftOne ITEM/MTRL records, synced periodically. Drives the
+// admin /products + /services data tables and the per-project costing tab.
+//
+// Kind discriminator is derived from SoftOne's MTRTYPE smallint:
+//   - 1  → product  (Είδος)
+//   - 51 → service  (Υπηρεσία)
+//   - anything else falls back to product so nothing is dropped from the catalog.
+
+enum SoftoneItemKind {
+  product
+  service
+}
+
+model SoftoneItem {
+  // Primary key mirrors SoftOne's MTRL autoinc so syncs are idempotent.
+  mtrl              Int             @id
+
+  code              String
+  code1             String?         // barcode (MTRL.CODE1)
+  code2             String?         // factory code (MTRL.CODE2)
+  name              String          @db.Text
+  name1             String?         @db.Text
+
+  kind              SoftoneItemKind
+  mtrType           Int             // raw MTRTYPE for reference / debugging
+
+  // Default unit price used in the cost calculator. PRICEW (χονδρικής) per user
+  // preference; we also keep retail for visibility.
+  unitPrice         Float           @default(0)
+  retailPrice       Float?
+  wholesalePrice    Float?
+
+  vatRate           Float?          // resolved VAT % at sync time
+  vatId             Int?            // FK in SoftOne (VAT object)
+
+  unitId            Int?            // MTRUNIT1
+  unitName          String?         // e.g. "ΤΕΜ"
+
+  groupId           Int?            // MTRGROUP
+  groupName         String?
+
+  brandId           Int?            // MTRMARK
+  brandName         String?
+
+  manufacturerId    Int?            // MTRMANFCTR
+  manufacturerName  String?
+
+  isActive          Boolean         @default(true)
+  remarks           String?         @db.Text
+
+  lastSyncedAt      DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  costLines         ProjectCostLine[]
+
+  @@index([kind])
+  @@index([isActive])
+  @@index([code])
+  @@index([groupId])
+  @@index([brandId])
+  @@index([lastSyncedAt])
+}
+
+model ProjectCostLine {
+  id                String          @id @default(cuid())
+  projectId         String
+  softoneItemMtrl   Int
+  kind              SoftoneItemKind // denormalized for fast filter/sum
+
+  quantity          Float           @default(1)
+
+  // Price snapshot at the time the line was created. Frozen so future SoftOne
+  // price changes don't retroactively alter the project cost. Editable in UI
+  // to allow per-project negotiation.
+  unitPriceSnapshot Float
+  vatRateSnapshot   Float?
+
+  notes             String?         @db.Text
+
+  createdById       String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  project           Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  item              SoftoneItem     @relation(fields: [softoneItemMtrl], references: [mtrl], onDelete: Restrict)
+  createdBy         User            @relation("CostLineCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([softoneItemMtrl])
+  @@index([kind])
+  @@index([createdById])
+  @@index([createdAt])
 }
