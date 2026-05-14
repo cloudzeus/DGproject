@@ -63,7 +63,7 @@ export function Sidebar({
           <div className="h-8 w-8 rounded-md bg-gradient-to-br from-fluent-blue-500 to-fluent-blue-700 flex items-center justify-center shadow-fluent-2 p-1.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="https://dgsoft.b-cdn.net/company/sisyphusIconWhite.svg"
+              src="/sisyphus-icon.svg"
               alt="A-Sisyphus"
               className="h-full w-full object-contain"
             />

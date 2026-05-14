@@ -4,10 +4,12 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'A-Sisyphus — Modern Project Management',
   description: 'Premium project management with Microsoft 365 integration',
+  // Local /public asset — avoids server-side fetch of an external CDN that
+  // can fail with ENOTFOUND inside locked-down containers.
   icons: {
-    icon: [{ url: 'https://dgsoft.b-cdn.net/company/sisyphusIconWhite.svg', type: 'image/svg+xml' }],
-    shortcut: 'https://dgsoft.b-cdn.net/company/sisyphusIconWhite.svg',
-    apple: 'https://dgsoft.b-cdn.net/company/sisyphusIconWhite.svg',
+    icon: [{ url: '/sisyphus-icon.svg', type: 'image/svg+xml' }],
+    shortcut: '/sisyphus-icon.svg',
+    apple: '/sisyphus-icon.svg',
   },
 };
 
