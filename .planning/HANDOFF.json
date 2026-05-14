@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-14T06:29:52.061Z",
+  "timestamp": "2026-05-14T06:47:05.519Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -15,40 +15,7 @@
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [],
-  "uncommitted_files": [
-    {
-      "status": "M",
-      "path": ".planning/HANDOFF.json"
-    },
-    {
-      "status": "M",
-      "path": "app/(app)/projects/[id]/page.tsx"
-    },
-    {
-      "status": "M",
-      "path": "app/(app)/projects/[id]/project-detail.tsx"
-    },
-    {
-      "status": "M",
-      "path": "app/(app)/projects/[id]/question-actions.ts"
-    },
-    {
-      "status": "M",
-      "path": "app/(app)/projects/[id]/task-questions-panel.tsx"
-    },
-    {
-      "status": "M",
-      "path": "prisma/schema.prisma"
-    },
-    {
-      "status": "??",
-      "path": "app/(app)/projects/[id]/project-questions-tab.tsx"
-    },
-    {
-      "status": "??",
-      "path": "prisma/migrations/20260514_task_question_followups/"
-    }
-  ],
+  "uncommitted_files": [],
   "next_action": null,
-  "context_notes": "Recent commits:\n9dbce9b sync corrections\n2dabb46 sync corrections\nd4589af sync corrections\n13f2db3 main update huge new features\nea2bb04 main update huge new features"
+  "context_notes": "Recent commits:\n7b5641f new questions feature\n9dbce9b sync corrections\n2dabb46 sync corrections\nd4589af sync corrections\n13f2db3 main update huge new features"
 }
