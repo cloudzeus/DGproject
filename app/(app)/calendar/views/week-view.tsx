@@ -42,18 +42,33 @@ export function WeekView({ anchorDate, tasks, events, onCellClick, canCreate, si
         <div className="border-r border-black/5" />
         {days.map((d) => {
           const isToday = sameDay(d, today);
+          const dow = d.getDay();
+          const isSat = dow === 6;
+          const isSun = dow === 0;
           return (
             <div
               key={d.toISOString()}
-              className="px-3 py-2 border-r border-black/5 text-center"
+              className={cn(
+                'px-3 py-2 border-r border-black/5 text-center',
+                isSat && 'bg-amber-50',
+                isSun && 'bg-rose-50',
+              )}
             >
-              <div className="text-[11px] uppercase tracking-wider text-fluent-neutral-60">
+              <div
+                className={cn(
+                  'text-[11px] uppercase tracking-wider',
+                  isSat ? 'text-amber-700' : isSun ? 'text-rose-700' : 'text-fluent-neutral-60',
+                )}
+              >
                 {d.toLocaleDateString('el-GR', { weekday: 'short' })}
               </div>
               <div
                 className={cn(
                   'inline-flex items-center justify-center h-7 w-7 rounded-full text-sm font-semibold mt-1',
-                  isToday ? 'bg-fluent-blue-500 text-white' : 'text-fluent-neutral-90',
+                  isToday && 'bg-fluent-blue-500 text-white',
+                  !isToday && isSat && 'text-amber-800',
+                  !isToday && isSun && 'text-rose-800',
+                  !isToday && !isSat && !isSun && 'text-fluent-neutral-90',
                 )}
               >
                 {d.getDate()}
@@ -74,13 +89,20 @@ export function WeekView({ anchorDate, tasks, events, onCellClick, canCreate, si
         {days.map((d) => {
           const tasksHere = tasksOnDay(tasks, d);
           const allDayEvents = eventsOnDay(events, d).filter((e) => e.isAllDay);
+          const dow = d.getDay();
+          const isSat = dow === 6;
+          const isSun = dow === 0;
           return (
             <div
               key={d.toISOString()}
               onClick={() => onCellClick(d)}
               className={cn(
                 'px-1.5 py-1.5 border-r border-black/5 space-y-1 min-h-[32px]',
-                canCreate && 'cursor-pointer hover:bg-fluent-neutral-4',
+                isSat && 'bg-amber-50/60',
+                isSun && 'bg-rose-50/60',
+                canCreate && !isSat && !isSun && 'cursor-pointer hover:bg-fluent-neutral-4',
+                canCreate && isSat && 'cursor-pointer hover:bg-amber-50',
+                canCreate && isSun && 'cursor-pointer hover:bg-rose-50',
               )}
             >
               {tasksHere.map((t) => (
@@ -137,10 +159,17 @@ export function WeekView({ anchorDate, tasks, events, onCellClick, canCreate, si
           {days.map((d) => {
             const positioned = layoutTimedEvents(events, d);
             const isToday = sameDay(d, today);
+            const dow = d.getDay();
+            const isSat = dow === 6;
+            const isSun = dow === 0;
             return (
               <div
                 key={d.toISOString()}
-                className="relative border-r border-black/5"
+                className={cn(
+                  'relative border-r border-black/5',
+                  isSat && 'bg-amber-50/40',
+                  isSun && 'bg-rose-50/40',
+                )}
                 onClick={(ev) => {
                   if (!canCreate) return;
                   const rect = ev.currentTarget.getBoundingClientRect();

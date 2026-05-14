@@ -60,13 +60,26 @@ export function AgendaView({ tasks, events, onCreate, canCreate }: Props) {
       <div className="max-w-3xl mx-auto px-4 py-4 space-y-6">
         {grouped.map((g) => {
           const isToday = sameDay(g.day, today);
+          const dow = g.day.getDay();
+          const isSat = dow === 6;
+          const isSun = dow === 0;
           return (
             <Fragment key={toISODate(g.day)}>
-              <div className="flex items-baseline gap-3 border-b border-black/5 pb-2">
+              <div
+                className={cn(
+                  'flex items-baseline gap-3 border-b pb-2 px-2 -mx-2 rounded-t-md',
+                  isSat && 'border-amber-200 bg-amber-50/60',
+                  isSun && 'border-rose-200 bg-rose-50/60',
+                  !isSat && !isSun && 'border-black/5',
+                )}
+              >
                 <div
                   className={cn(
                     'text-lg font-display font-semibold',
-                    isToday ? 'text-fluent-blue-600' : 'text-fluent-neutral-90',
+                    isToday && 'text-fluent-blue-600',
+                    !isToday && isSat && 'text-amber-800',
+                    !isToday && isSun && 'text-rose-800',
+                    !isToday && !isSat && !isSun && 'text-fluent-neutral-90',
                   )}
                 >
                   {g.day.toLocaleDateString('el-GR', {
@@ -78,6 +91,16 @@ export function AgendaView({ tasks, events, onCreate, canCreate }: Props) {
                 {isToday && (
                   <span className="text-xs font-semibold text-fluent-blue-600 uppercase tracking-wider">
                     σήμερα
+                  </span>
+                )}
+                {!isToday && (isSat || isSun) && (
+                  <span
+                    className={cn(
+                      'text-xs font-semibold uppercase tracking-wider',
+                      isSat ? 'text-amber-700' : 'text-rose-700',
+                    )}
+                  >
+                    σαβ/κο
                   </span>
                 )}
               </div>

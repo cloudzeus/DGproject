@@ -189,18 +189,42 @@ export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule,
             <div className="flex h-7 border-b border-black/5 bg-white" style={{ width: totalWidth }}>
               {Array.from({ length: totalDays }).map((_, i) => {
                 const d = addDays(range.start, i);
-                const weekend = isWeekend(d);
+                const dow = d.getDay();
+                const isSat = dow === 6;
+                const isSun = dow === 0;
                 const isToday = i === todayOffset;
                 return (
                   <div
                     key={i}
                     className={`flex flex-col items-center justify-center text-[10px] border-r border-black/5 ${
-                      weekend ? 'bg-fluent-neutral-4' : ''
+                      isSat
+                        ? 'bg-amber-50'
+                        : isSun
+                        ? 'bg-rose-50'
+                        : ''
                     } ${isToday ? 'bg-fluent-blue-50' : ''}`}
                     style={{ width: DAY_WIDTH }}
                   >
-                    <span className="text-fluent-neutral-50">{format(d, 'EEE')}</span>
-                    <span className={`font-semibold ${isToday ? 'text-fluent-blue-700' : 'text-fluent-neutral-80'}`}>{format(d, 'd')}</span>
+                    <span
+                      className={`${
+                        isSat ? 'text-amber-700' : isSun ? 'text-rose-700' : 'text-fluent-neutral-50'
+                      }`}
+                    >
+                      {format(d, 'EEE')}
+                    </span>
+                    <span
+                      className={`font-semibold ${
+                        isToday
+                          ? 'text-fluent-blue-700'
+                          : isSat
+                          ? 'text-amber-800'
+                          : isSun
+                          ? 'text-rose-800'
+                          : 'text-fluent-neutral-80'
+                      }`}
+                    >
+                      {format(d, 'd')}
+                    </span>
                   </div>
                 );
               })}
@@ -430,10 +454,19 @@ function GanttRowGrid({
       <div className="absolute inset-0 flex" style={{ width: totalDays * dayWidth }}>
         {Array.from({ length: totalDays }).map((_, i) => {
           const d = addDays(rangeStart, i);
+          const dow = d.getDay();
+          const isSat = dow === 6;
+          const isSun = dow === 0;
           return (
             <div
               key={i}
-              className={`border-r border-black/5 ${isWeekend(d) ? 'bg-fluent-neutral-4/40' : ''}`}
+              className={`border-r border-black/5 ${
+                isSat
+                  ? 'bg-amber-50/60'
+                  : isSun
+                  ? 'bg-rose-50/60'
+                  : ''
+              }`}
               style={{ width: dayWidth }}
             />
           );

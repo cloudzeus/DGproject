@@ -44,10 +44,15 @@ export function MonthView({ year, month, tasks, events, onCellClick, canCreate }
   return (
     <>
       <div className="grid grid-cols-7 border-b border-black/5">
-        {['Κυρ', 'Δευ', 'Τρι', 'Τετ', 'Πεμ', 'Παρ', 'Σαβ'].map((d) => (
+        {(['Κυρ', 'Δευ', 'Τρι', 'Τετ', 'Πεμ', 'Παρ', 'Σαβ'] as const).map((d, idx) => (
           <div
             key={d}
-            className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60"
+            className={cn(
+              'px-3 py-2 text-xs font-semibold uppercase tracking-wider',
+              idx === 0 && 'text-rose-700 bg-rose-50',
+              idx === 6 && 'text-amber-700 bg-amber-50',
+              idx !== 0 && idx !== 6 && 'text-fluent-neutral-60',
+            )}
           >
             {d}
           </div>
@@ -57,6 +62,9 @@ export function MonthView({ year, month, tasks, events, onCellClick, canCreate }
       <div className="flex-1 grid grid-cols-7 grid-rows-6">
         {days.map((d, i) => {
           const isToday = d.date.toDateString() === today.toDateString();
+          const dow = d.date.getDay();
+          const isSat = dow === 6;
+          const isSun = dow === 0;
           const tasksHere = tasksOnDay(tasks, d.date);
           const eventsHere = eventsOnDay(events, d.date);
           const total = tasksHere.length + eventsHere.length;
@@ -68,16 +76,23 @@ export function MonthView({ year, month, tasks, events, onCellClick, canCreate }
               transition={{ duration: 0.15, delay: i * 0.003 }}
               onClick={() => onCellClick(d.date)}
               className={cn(
-                'border-r border-b border-black/5 p-2 min-h-0 flex flex-col hover:bg-fluent-neutral-4 transition-colors',
+                'border-r border-b border-black/5 p-2 min-h-0 flex flex-col transition-colors',
                 canCreate && 'cursor-pointer',
+                d.inMonth && isSat && 'bg-amber-50/60 hover:bg-amber-50',
+                d.inMonth && isSun && 'bg-rose-50/60 hover:bg-rose-50',
+                d.inMonth && !isSat && !isSun && 'hover:bg-fluent-neutral-4',
                 !d.inMonth && 'bg-fluent-neutral-4/50',
+                !d.inMonth && isSat && 'bg-amber-50/30',
+                !d.inMonth && isSun && 'bg-rose-50/30',
               )}
             >
               <div
                 className={cn(
                   'text-xs font-semibold mb-1.5 w-6 h-6 flex items-center justify-center rounded-full shrink-0',
                   isToday && 'bg-fluent-blue-500 text-white',
-                  !isToday && d.inMonth && 'text-fluent-neutral-80',
+                  !isToday && d.inMonth && isSat && 'text-amber-800',
+                  !isToday && d.inMonth && isSun && 'text-rose-800',
+                  !isToday && d.inMonth && !isSat && !isSun && 'text-fluent-neutral-80',
                   !isToday && !d.inMonth && 'text-fluent-neutral-40',
                 )}
               >
