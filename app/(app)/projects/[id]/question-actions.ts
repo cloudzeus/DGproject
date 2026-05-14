@@ -23,8 +23,6 @@ import {
   type Attachment as EmailAttachmentInfo,
 } from '@/lib/email-templates';
 
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-
 async function requireSession() {
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
@@ -484,9 +482,6 @@ export async function uploadQuestionAttachment(
   const title = String(formData.get('title') ?? '').trim() || null;
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false as const, error: 'Δεν επιλέχθηκε αρχείο.' };
-  }
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    return { ok: false as const, error: 'Το αρχείο υπερβαίνει τα 25MB.' };
   }
 
   const q = await prisma.taskQuestion.findUnique({

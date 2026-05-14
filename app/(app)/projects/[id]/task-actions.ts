@@ -28,7 +28,6 @@ import {
 import { sendEmail } from '@/lib/mailgun';
 import { notifyTaskAssignment, notifyTaskCompleted } from '@/lib/notifications';
 
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
 type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
@@ -706,9 +705,6 @@ export async function uploadTaskAttachment(projectId: string, taskId: string, fo
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: 'Δεν επιλέχθηκε αρχείο.' };
   }
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    return { ok: false, error: 'Το αρχείο υπερβαίνει τα 25MB.' };
-  }
 
   const taskExists = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true } });
   if (!taskExists) return { ok: false, error: 'Η εργασία δεν βρέθηκε.' };
@@ -777,9 +773,6 @@ export async function uploadProjectAttachment(projectId: string, formData: FormD
   const title = String(formData.get('title') ?? '').trim() || null;
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: 'Δεν επιλέχθηκε αρχείο.' };
-  }
-  if (file.size > MAX_ATTACHMENT_BYTES) {
-    return { ok: false, error: 'Το αρχείο υπερβαίνει τα 25MB.' };
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());

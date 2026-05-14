@@ -2,7 +2,9 @@
 const nextConfig = {
   experimental: {
     serverActions: {
-      bodySizeLimit: '100mb',
+      // No app-level cap on attachment uploads; this is the Next.js framework
+      // limit on the entire server-action payload (file + form fields).
+      bodySizeLimit: '2gb',
     },
   },
   images: {
