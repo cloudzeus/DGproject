@@ -564,6 +564,7 @@ model TaskQuestion {
   taskId       String
   askedById    String
   askedToId    String
+  parentId     String?
   question     String    @db.Text
   answer       String?   @db.Text
   answeredAt   DateTime?
@@ -573,11 +574,14 @@ model TaskQuestion {
   task         Task                     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   askedBy      User                     @relation("QuestionAsker", fields: [askedById], references: [id], onDelete: Cascade)
   askedTo      User                     @relation("QuestionAskee", fields: [askedToId], references: [id], onDelete: Cascade)
+  parent       TaskQuestion?            @relation("QuestionFollowUps", fields: [parentId], references: [id], onDelete: Cascade)
+  followUps    TaskQuestion[]           @relation("QuestionFollowUps")
   attachments  TaskQuestionAttachment[]
 
   @@index([taskId])
   @@index([askedById])
   @@index([askedToId])
+  @@index([parentId])
   @@index([createdAt])
 }
 

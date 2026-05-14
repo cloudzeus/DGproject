@@ -277,6 +277,8 @@ export async function askTaskQuestion(
 
   const askedToId = String(formData.get('askedToId') ?? '').trim();
   const question = String(formData.get('question') ?? '').trim();
+  const parentIdRaw = String(formData.get('parentId') ?? '').trim();
+  const parentId = parentIdRaw.length > 0 ? parentIdRaw : null;
 
   if (!askedToId) return { ok: false as const, error: 'Επίλεξε παραλήπτη.' };
   if (question.length < 2) return { ok: false as const, error: 'Η ερώτηση είναι πολύ σύντομη.' };
@@ -288,6 +290,17 @@ export async function askTaskQuestion(
     select: { id: true, title: true, projectId: true, priority: true, startDate: true, dueDate: true },
   });
   if (!task || task.projectId !== projectId) return { ok: false as const, error: 'Η εργασία δεν βρέθηκε.' };
+
+  // Follow-up question: validate parent belongs to same task
+  if (parentId) {
+    const parent = await prisma.taskQuestion.findUnique({
+      where: { id: parentId },
+      select: { id: true, taskId: true },
+    });
+    if (!parent || parent.taskId !== taskId) {
+      return { ok: false as const, error: 'Η γονική ερώτηση δεν βρέθηκε.' };
+    }
+  }
 
   const recipient = await prisma.user.findUnique({
     where: { id: askedToId },
@@ -308,6 +321,7 @@ export async function askTaskQuestion(
       taskId,
       askedById: user.id,
       askedToId,
+      parentId,
       question,
     },
     select: { id: true, createdAt: true },

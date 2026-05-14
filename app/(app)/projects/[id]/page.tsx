@@ -177,6 +177,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       })),
       questions: t.questions.map((q) => ({
         id: q.id,
+        parentId: q.parentId,
         question: q.question,
         answer: q.answer,
         answeredAt: q.answeredAt,

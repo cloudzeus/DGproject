@@ -42,6 +42,7 @@ export type QuestionAttachmentInfo = {
 
 export type TaskQuestionInfo = {
   id: string;
+  parentId: string | null;
   question: string;
   answer: string | null;
   answeredAt: Date | null;
@@ -84,13 +85,34 @@ export function TaskQuestionsPanel({
 
   const refresh = () => startTransition(() => router.refresh());
 
-  const sortedQuestions = [...questions].sort(
+  // Build thread map: parentId -> children, in chronological order.
+  const childrenByParent = new Map<string, TaskQuestionInfo[]>();
+  for (const q of questions) {
+    const key = q.parentId ?? '__root__';
+    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+    childrenByParent.get(key)!.push(q);
+  }
+  for (const list of childrenByParent.values()) {
+    list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  }
+  const roots = [...(childrenByParent.get('__root__') ?? [])].sort(
     (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
   );
-  const pendingQuestions = sortedQuestions.filter((q) => !q.answer);
-  const answeredQuestions = sortedQuestions.filter((q) => !!q.answer);
-  const pendingCount = pendingQuestions.length;
-  const answeredCount = answeredQuestions.length;
+
+  function threadHasPending(rootId: string): boolean {
+    const stack: TaskQuestionInfo[] = (childrenByParent.get(rootId) ?? []).slice();
+    while (stack.length) {
+      const n = stack.pop()!;
+      if (!n.answer) return true;
+      for (const c of childrenByParent.get(n.id) ?? []) stack.push(c);
+    }
+    return false;
+  }
+
+  const pendingRoots = roots.filter((r) => !r.answer || threadHasPending(r.id));
+  const answeredRoots = roots.filter((r) => !(pendingRoots.includes(r)));
+  const pendingCount = pendingRoots.length;
+  const answeredCount = answeredRoots.length;
 
   return (
     <div className="pt-4 mt-4 border-t border-black/5">
@@ -150,7 +172,7 @@ export function TaskQuestionsPanel({
         )}
       </AnimatePresence>
 
-      {sortedQuestions.length === 0 ? (
+      {roots.length === 0 ? (
         !composing && (
           <div className="rounded-xl border border-dashed border-fluent-neutral-20 px-4 py-6 text-center">
             <ChatBubblesQuestion20Regular className="h-8 w-8 mx-auto text-fluent-neutral-40 mb-2" />
@@ -163,11 +185,14 @@ export function TaskQuestionsPanel({
       ) : (
         <div className="space-y-3">
           {/* Pending: always visible */}
-          {pendingQuestions.map((q) => (
-            <QuestionCard
-              key={q.id}
+          {pendingRoots.map((root) => (
+            <QuestionThread
+              key={root.id}
               projectId={projectId}
-              question={q}
+              taskId={taskId}
+              root={root}
+              childrenByParent={childrenByParent}
+              members={askable}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
               onChanged={refresh}
@@ -182,7 +207,7 @@ export function TaskQuestionsPanel({
             </div>
           )}
 
-          {/* History accordion: collapsed by default. Holds answered Q&As. */}
+          {/* History accordion: collapsed by default. Holds fully-answered threads. */}
           {answeredCount > 0 && (
             <HistoryAccordion
               count={answeredCount}
@@ -190,11 +215,14 @@ export function TaskQuestionsPanel({
               onToggle={() => setHistoryOpen((v) => !v)}
             >
               <div className="space-y-3 pt-2">
-                {answeredQuestions.map((q) => (
-                  <QuestionCard
-                    key={q.id}
+                {answeredRoots.map((root) => (
+                  <QuestionThread
+                    key={root.id}
                     projectId={projectId}
-                    question={q}
+                    taskId={taskId}
+                    root={root}
+                    childrenByParent={childrenByParent}
+                    members={askable}
                     currentUserId={currentUserId}
                     isPrivileged={isPrivileged}
                     onChanged={refresh}
@@ -205,6 +233,100 @@ export function TaskQuestionsPanel({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+export function QuestionThread({
+  projectId,
+  taskId,
+  root,
+  childrenByParent,
+  members,
+  currentUserId,
+  isPrivileged,
+  onChanged,
+}: {
+  projectId: string;
+  taskId: string;
+  root: TaskQuestionInfo;
+  childrenByParent: Map<string, TaskQuestionInfo[]>;
+  members: ProjectMemberOption[];
+  currentUserId: string;
+  isPrivileged: boolean;
+  onChanged: () => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <QuestionCard
+        projectId={projectId}
+        taskId={taskId}
+        question={root}
+        currentUserId={currentUserId}
+        isPrivileged={isPrivileged}
+        askableMembers={members}
+        onChanged={onChanged}
+      />
+      <FollowUpList
+        parentId={root.id}
+        projectId={projectId}
+        taskId={taskId}
+        childrenByParent={childrenByParent}
+        members={members}
+        currentUserId={currentUserId}
+        isPrivileged={isPrivileged}
+        onChanged={onChanged}
+      />
+    </div>
+  );
+}
+
+function FollowUpList({
+  parentId,
+  projectId,
+  taskId,
+  childrenByParent,
+  members,
+  currentUserId,
+  isPrivileged,
+  onChanged,
+}: {
+  parentId: string;
+  projectId: string;
+  taskId: string;
+  childrenByParent: Map<string, TaskQuestionInfo[]>;
+  members: ProjectMemberOption[];
+  currentUserId: string;
+  isPrivileged: boolean;
+  onChanged: () => void;
+}) {
+  const children = childrenByParent.get(parentId) ?? [];
+  if (children.length === 0) return null;
+  return (
+    <div className="pl-5 ml-2 border-l-2 border-fluent-blue-100 space-y-2">
+      {children.map((child) => (
+        <div key={child.id} className="space-y-2">
+          <QuestionCard
+            projectId={projectId}
+            taskId={taskId}
+            question={child}
+            currentUserId={currentUserId}
+            isPrivileged={isPrivileged}
+            askableMembers={members}
+            onChanged={onChanged}
+          />
+          <FollowUpList
+            parentId={child.id}
+            projectId={projectId}
+            taskId={taskId}
+            childrenByParent={childrenByParent}
+            members={members}
+            currentUserId={currentUserId}
+            isPrivileged={isPrivileged}
+            onChanged={onChanged}
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -263,16 +385,18 @@ function HistoryAccordion({
   );
 }
 
-function NewQuestionComposer({
+export function NewQuestionComposer({
   projectId,
   taskId,
   members,
+  parentId,
   onCancel,
   onCreated,
 }: {
   projectId: string;
   taskId: string;
   members: ProjectMemberOption[];
+  parentId?: string | null;
   onCancel: () => void;
   onCreated: (questionId: string) => void;
 }) {
@@ -299,6 +423,7 @@ function NewQuestionComposer({
       const fd = new FormData();
       fd.set('askedToId', askedToId);
       fd.set('question', question.trim());
+      if (parentId) fd.set('parentId', parentId);
       const res = await askTaskQuestion(projectId, taskId, fd);
       if (!res.ok) {
         setError(res.error ?? 'Σφάλμα.');
@@ -449,25 +574,31 @@ function NewQuestionComposer({
   );
 }
 
-function QuestionCard({
+export function QuestionCard({
   projectId,
+  taskId,
   question,
   currentUserId,
   isPrivileged,
+  askableMembers,
   onChanged,
 }: {
   projectId: string;
+  taskId: string;
   question: TaskQuestionInfo;
   currentUserId: string;
   isPrivileged: boolean;
+  askableMembers?: ProjectMemberOption[];
   onChanged: () => void;
 }) {
   const [answering, setAnswering] = useState(false);
+  const [followingUp, setFollowingUp] = useState(false);
   const [, startTransition] = useTransition();
   const isAskee = question.askedTo.id === currentUserId;
   const isAsker = question.askedBy.id === currentUserId;
   const canDelete = isAsker || isPrivileged;
   const canAnswer = !question.answer && (isAskee || isPrivileged);
+  const canFollowUp = !!question.answer && (askableMembers?.length ?? 0) > 0;
 
   const questionAttachments = question.attachments.filter((a) => a.kind === 'question');
   const answerAttachments = question.attachments.filter((a) => a.kind === 'answer');
@@ -579,6 +710,43 @@ function QuestionCard({
               )}
             </div>
           </div>
+          {canFollowUp && (
+            <div className="mt-3 pl-6">
+              <AnimatePresence initial={false}>
+                {followingUp ? (
+                  <motion.div
+                    key="followup"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="overflow-hidden"
+                  >
+                    <NewQuestionComposer
+                      projectId={projectId}
+                      taskId={taskId}
+                      members={askableMembers!}
+                      parentId={question.id}
+                      onCancel={() => setFollowingUp(false)}
+                      onCreated={() => {
+                        setFollowingUp(false);
+                        onChanged();
+                      }}
+                    />
+                  </motion.div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setFollowingUp(true)}
+                    className="text-xs text-fluent-blue-700 hover:text-fluent-blue-800 font-medium inline-flex items-center gap-1.5"
+                  >
+                    <ArrowReply20Regular className="h-4 w-4" />
+                    Νέα ερώτηση σε αυτή την απάντηση
+                  </button>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       ) : canAnswer ? (
         answering ? (

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-11T09:32:42.685Z",
+  "timestamp": "2026-05-14T06:29:52.061Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -22,33 +22,33 @@
     },
     {
       "status": "M",
-      "path": "app/(app)/projects/[id]/meetings/[meetingId]/mom-panel.tsx"
+      "path": "app/(app)/projects/[id]/page.tsx"
     },
     {
       "status": "M",
-      "path": "app/(app)/projects/[id]/meetings/[meetingId]/page.tsx"
+      "path": "app/(app)/projects/[id]/project-detail.tsx"
     },
     {
       "status": "M",
-      "path": "app/api/meetings/[id]/mom-preview/route.ts"
+      "path": "app/(app)/projects/[id]/question-actions.ts"
     },
     {
       "status": "M",
-      "path": "app/api/meetings/[id]/send-mom/route.ts"
+      "path": "app/(app)/projects/[id]/task-questions-panel.tsx"
     },
     {
       "status": "M",
-      "path": "lib/meeting-mom.ts"
+      "path": "prisma/schema.prisma"
     },
     {
-      "status": "M",
-      "path": "lib/mom-sender.ts"
+      "status": "??",
+      "path": "app/(app)/projects/[id]/project-questions-tab.tsx"
     },
     {
-      "status": "M",
-      "path": "lib/softone-contacts.ts"
+      "status": "??",
+      "path": "prisma/migrations/20260514_task_question_followups/"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\n2dabb46 sync corrections\nd4589af sync corrections\n13f2db3 main update huge new features\nea2bb04 main update huge new features\nf386a37 main update huge new features"
+  "context_notes": "Recent commits:\n9dbce9b sync corrections\n2dabb46 sync corrections\nd4589af sync corrections\n13f2db3 main update huge new features\nea2bb04 main update huge new features"
 }

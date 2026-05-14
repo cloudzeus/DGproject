@@ -8,6 +8,7 @@ import {
   Board20Regular, List20Regular, Calendar20Regular, DataBarVertical20Regular,
   ArrowDownload20Regular, Open20Regular, CheckmarkCircle20Filled,
   DocumentMultiple20Regular, Mail20Regular,
+  ChatBubblesQuestion20Regular,
 } from '@fluentui/react-icons';
 import { ReportModal } from './report-modal';
 import { AvatarStack } from '@/components/ui/avatar';
@@ -18,6 +19,7 @@ import type { TaskAssigneeOption } from './task-form';
 import type { ProjectMemberOption } from './task-questions-panel';
 import { ProjectAttachments, type ProjectAttachmentInfo } from './project-attachments';
 import { ProjectFiles, type ProjectFileItem } from './project-files';
+import { ProjectQuestionsTab } from './project-questions-tab';
 
 type AvatarUser = { name: string; avatarUrl?: string };
 
@@ -41,7 +43,7 @@ type ProjectDetailProps = {
   aggregatedFiles: ProjectFileItem[];
 };
 
-type Tab = 'board' | 'list' | 'timeline' | 'files' | 'reports';
+type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'reports';
 
 function MenuItem({
   icon,
@@ -70,6 +72,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Board20Regular }[] = [
   { id: 'list', label: 'Λίστα', Icon: List20Regular },
   { id: 'timeline', label: 'Χρονοδιάγραμμα', Icon: Calendar20Regular },
   { id: 'files', label: 'Αρχεία', Icon: DocumentMultiple20Regular },
+  { id: 'questions', label: 'Ερωτήσεις', Icon: ChatBubblesQuestion20Regular },
   { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular },
 ];
 
@@ -264,7 +267,16 @@ export function ProjectDetail({
         <div className="max-w-[1600px] mx-auto flex gap-1">
           {TABS.map((t) => {
             const active = tab === t.id;
-            const count = t.id === 'files' ? aggregatedFiles.length : null;
+            const questionsCount = project.tasks.reduce(
+              (sum, task) => sum + task.questions.length,
+              0,
+            );
+            const count =
+              t.id === 'files'
+                ? aggregatedFiles.length
+                : t.id === 'questions'
+                ? questionsCount
+                : null;
             return (
               <button
                 key={t.id}
@@ -300,6 +312,22 @@ export function ProjectDetail({
             />
             <ProjectFiles files={aggregatedFiles} />
           </div>
+        )}
+        {tab === 'questions' && (
+          <ProjectQuestionsTab
+            projectId={project.id}
+            taskGroups={project.tasks
+              .filter((t) => t.questions.length > 0)
+              .map((t) => ({
+                taskId: t.id,
+                taskTitle: t.title,
+                taskStatus: t.status,
+                questions: t.questions,
+              }))}
+            members={questionMembers}
+            currentUserId={currentUserId}
+            isPrivileged={isPrivileged}
+          />
         )}
         {tab === 'reports' && <ReportsView tasks={project.tasks} />}
       </div>
