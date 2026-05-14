@@ -10,6 +10,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 600;
 
+const MAX_BYTES = 100 * 1024 * 1024;
+
 async function requireProjectEditor(projectId: string): Promise<string> {
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
@@ -61,6 +63,12 @@ export async function POST(
   const title = String(formData.get('title') ?? '').trim() || null;
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json({ ok: false, error: 'Δεν επιλέχθηκε αρχείο.' }, { status: 400 });
+  }
+  if (file.size > MAX_BYTES) {
+    return NextResponse.json(
+      { ok: false, error: 'Το αρχείο υπερβαίνει τα 100MB.' },
+      { status: 413 },
+    );
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());

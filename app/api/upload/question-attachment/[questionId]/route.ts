@@ -10,6 +10,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 600;
 
+const MAX_BYTES = 100 * 1024 * 1024;
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ questionId: string }> },
@@ -75,6 +77,12 @@ export async function POST(
 
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json({ ok: false, error: 'Δεν επιλέχθηκε αρχείο.' }, { status: 400 });
+  }
+  if (file.size > MAX_BYTES) {
+    return NextResponse.json(
+      { ok: false, error: 'Το αρχείο υπερβαίνει τα 100MB.' },
+      { status: 413 },
+    );
   }
   if (kindRaw !== 'question' && kindRaw !== 'answer') {
     return NextResponse.json({ ok: false, error: 'Μη έγκυρος τύπος συνημμένου.' }, { status: 400 });

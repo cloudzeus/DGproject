@@ -2,9 +2,10 @@
 const nextConfig = {
   experimental: {
     serverActions: {
-      // No app-level cap on attachment uploads; this is the Next.js framework
-      // limit on the entire server-action payload (file + form fields).
-      bodySizeLimit: '2gb',
+      // Attachment uploads now go through Route Handlers (not server actions),
+      // so this is just headroom for non-file server-action payloads.
+      // 200mb keeps us well above the per-file 100mb cap on the upload routes.
+      bodySizeLimit: '200mb',
       // Reverse-proxy hosts that must pass the Server Action CSRF Origin check.
       // Without these listed, Next.js 16 rejects POSTs whose Origin doesn't
       // match the request Host — a common silent-failure mode when running

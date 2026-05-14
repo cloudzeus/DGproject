@@ -28,9 +28,9 @@ import {
   askTaskQuestion,
   answerTaskQuestion,
   deleteTaskQuestion,
-  uploadQuestionAttachment,
   deleteQuestionAttachment,
 } from '@/app/(app)/projects/[id]/question-actions';
+import { uploadFileWithProgress, type UploadProgress } from '@/lib/upload-client';
 import type { ProjectMemberOption } from '@/app/(app)/projects/[id]/task-questions-panel';
 
 type UserMini = { id: string; name: string; email: string; avatarUrl?: string };
@@ -855,6 +855,7 @@ function AnswerComposer({
   const [pending, startTransition] = useTransition();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [fileTitle, setFileTitle] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleSubmit(e: React.FormEvent) {
@@ -873,12 +874,19 @@ function AnswerComposer({
         return;
       }
       if (pendingFile) {
-        const upload = new FormData();
-        upload.set('file', pendingFile);
-        if (fileTitle.trim()) upload.set('title', fileTitle.trim());
-        const upRes = await uploadQuestionAttachment(projectId, questionId, 'answer', upload);
+        setUploadProgress({ loaded: 0, total: pendingFile.size, pct: 0 });
+        const upRes = await uploadFileWithProgress<{ ok: boolean; error?: string }>({
+          url: `/api/upload/question-attachment/${questionId}`,
+          file: pendingFile,
+          fields: {
+            kind: 'answer',
+            ...(fileTitle.trim() ? { title: fileTitle.trim() } : {}),
+          },
+          onProgress: (p) => setUploadProgress(p),
+        });
+        setUploadProgress(null);
         if (!upRes.ok) {
-          setError(upRes.error ?? 'Στάλθηκε η απάντηση, αλλά απέτυχε το αρχείο.');
+          setError(upRes.data?.error ?? upRes.error ?? 'Στάλθηκε η απάντηση, αλλά απέτυχε το αρχείο.');
           onAnswered();
           return;
         }
@@ -956,6 +964,7 @@ function AnswerComposer({
           {error}
         </div>
       )}
+      {uploadProgress && <UploadProgressBar progress={uploadProgress} />}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={pending}>
           Ακύρωση
@@ -967,7 +976,11 @@ function AnswerComposer({
           icon={<Send20Regular className="h-4 w-4" />}
           disabled={pending}
         >
-          {pending ? 'Αποστολή…' : 'Αποστολή απάντησης'}
+          {pending
+            ? uploadProgress
+              ? `Μεταφόρτωση… ${uploadProgress.pct}%`
+              : 'Αποστολή…'
+            : 'Αποστολή απάντησης'}
         </Button>
       </div>
     </form>
@@ -995,6 +1008,7 @@ function FollowUpComposer({
   const [pending, startTransition] = useTransition();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [fileTitle, setFileTitle] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleSubmit(e: React.FormEvent) {
@@ -1019,12 +1033,19 @@ function FollowUpComposer({
         return;
       }
       if (pendingFile && res.id) {
-        const upload = new FormData();
-        upload.set('file', pendingFile);
-        if (fileTitle.trim()) upload.set('title', fileTitle.trim());
-        const upRes = await uploadQuestionAttachment(projectId, res.id, 'question', upload);
+        setUploadProgress({ loaded: 0, total: pendingFile.size, pct: 0 });
+        const upRes = await uploadFileWithProgress<{ ok: boolean; error?: string }>({
+          url: `/api/upload/question-attachment/${res.id}`,
+          file: pendingFile,
+          fields: {
+            kind: 'question',
+            ...(fileTitle.trim() ? { title: fileTitle.trim() } : {}),
+          },
+          onProgress: (p) => setUploadProgress(p),
+        });
+        setUploadProgress(null);
         if (!upRes.ok) {
-          setError(upRes.error ?? 'Δημιουργήθηκε η ερώτηση, αλλά απέτυχε το αρχείο.');
+          setError(upRes.data?.error ?? upRes.error ?? 'Δημιουργήθηκε η ερώτηση, αλλά απέτυχε το αρχείο.');
           onCreated();
           return;
         }
@@ -1141,6 +1162,8 @@ function FollowUpComposer({
         </div>
       )}
 
+      {uploadProgress && <UploadProgressBar progress={uploadProgress} />}
+
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={pending}>
           Ακύρωση
@@ -1152,10 +1175,33 @@ function FollowUpComposer({
           icon={<Send20Regular className="h-4 w-4" />}
           disabled={pending}
         >
-          {pending ? 'Αποστολή…' : 'Αποστολή ερώτησης'}
+          {pending
+            ? uploadProgress
+              ? `Μεταφόρτωση… ${uploadProgress.pct}%`
+              : 'Αποστολή…'
+            : 'Αποστολή ερώτησης'}
         </Button>
       </div>
     </form>
+  );
+}
+
+function UploadProgressBar({ progress }: { progress: UploadProgress }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[11px] text-fluent-neutral-70 tabular-nums">
+        <span>{progress.pct}%</span>
+        <span>
+          {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-fluent-neutral-10 overflow-hidden">
+        <div
+          className="h-full bg-fluent-blue-500 transition-all duration-200"
+          style={{ width: `${progress.pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1170,30 +1216,38 @@ function AnswerAttachmentUploader({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
+  void projectId;
 
   async function handleUpload() {
     if (!pendingFile) return;
     setUploading(true);
     setError(null);
-    try {
-      const fd = new FormData();
-      fd.set('file', pendingFile);
-      if (title.trim()) fd.set('title', title.trim());
-      const res = await uploadQuestionAttachment(projectId, questionId, 'answer', fd);
-      if (!res.ok) {
-        setError(res.error ?? 'Σφάλμα.');
-        return;
-      }
-      setPendingFile(null);
-      setTitle('');
-      if (inputRef.current) inputRef.current.value = '';
-      onUploaded();
-    } finally {
-      setUploading(false);
+    setProgress({ loaded: 0, total: pendingFile.size, pct: 0 });
+
+    const res = await uploadFileWithProgress<{ ok: boolean; error?: string }>({
+      url: `/api/upload/question-attachment/${questionId}`,
+      file: pendingFile,
+      fields: {
+        kind: 'answer',
+        ...(title.trim() ? { title: title.trim() } : {}),
+      },
+      onProgress: (p) => setProgress(p),
+    });
+    setUploading(false);
+    setProgress(null);
+
+    if (!res.ok) {
+      setError(res.data?.error ?? res.error ?? 'Σφάλμα μεταφόρτωσης.');
+      return;
     }
+    setPendingFile(null);
+    setTitle('');
+    if (inputRef.current) inputRef.current.value = '';
+    onUploaded();
   }
 
   if (!pendingFile) {
@@ -1233,6 +1287,7 @@ function AnswerAttachmentUploader({
         className="w-full h-8 px-2 rounded-md border border-fluent-neutral-20 text-xs focus:border-fluent-blue-500 focus:outline-none"
       />
       {error && <p className="text-[11px] text-red-700">{error}</p>}
+      {progress && <UploadProgressBar progress={progress} />}
       <div className="flex justify-end gap-1.5">
         <Button
           type="button"
@@ -1249,7 +1304,7 @@ function AnswerAttachmentUploader({
           Ακύρωση
         </Button>
         <Button type="button" variant="primary" size="sm" onClick={handleUpload} disabled={uploading}>
-          {uploading ? 'Μεταφόρτωση…' : 'Ανέβασμα'}
+          {uploading ? `Μεταφόρτωση… ${progress?.pct ?? 0}%` : 'Ανέβασμα'}
         </Button>
       </div>
     </div>
