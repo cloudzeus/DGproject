@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-14T06:47:05.519Z",
+  "timestamp": "2026-05-14T13:23:36.789Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -15,7 +15,32 @@
   "blockers": [],
   "human_actions_pending": [],
   "decisions": [],
-  "uncommitted_files": [],
+  "uncommitted_files": [
+    {
+      "status": "M",
+      "path": ".planning/HANDOFF.json"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/task-questions-panel.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/questions/questions-client.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/api/upload/project-attachment/[projectId]/route.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/api/upload/question-attachment/[questionId]/route.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/api/upload/task-attachment/[taskId]/route.ts"
+    }
+  ],
   "next_action": null,
-  "context_notes": "Recent commits:\n7b5641f new questions feature\n9dbce9b sync corrections\n2dabb46 sync corrections\nd4589af sync corrections\n13f2db3 main update huge new features"
+  "context_notes": "Recent commits:\n56de29d feat: streaming uploads with live progress bar for task + project files\n9cc5b51 refactor(catalog): use SoftOne SqlData instead of getBrowserInfo\n2c38e70 feat(catalog): optional S1_ITEM_COMPANY_FILTER for cross-company tenants\ne6b5a78 fix: auto-migrate on deploy + drop external CDN dependency for app icon\nc588a17 feat: SoftOne catalog + per-project costing"
 }
