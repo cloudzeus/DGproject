@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-14T13:23:36.789Z",
+  "timestamp": "2026-05-22T09:34:20.507Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -22,25 +22,9 @@
     },
     {
       "status": "M",
-      "path": "app/(app)/projects/[id]/task-questions-panel.tsx"
-    },
-    {
-      "status": "M",
-      "path": "app/(app)/questions/questions-client.tsx"
-    },
-    {
-      "status": "M",
-      "path": "app/api/upload/project-attachment/[projectId]/route.ts"
-    },
-    {
-      "status": "M",
-      "path": "app/api/upload/question-attachment/[questionId]/route.ts"
-    },
-    {
-      "status": "M",
-      "path": "app/api/upload/task-attachment/[taskId]/route.ts"
+      "path": "app/api/mail/connect/callback/route.ts"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\n56de29d feat: streaming uploads with live progress bar for task + project files\n9cc5b51 refactor(catalog): use SoftOne SqlData instead of getBrowserInfo\n2c38e70 feat(catalog): optional S1_ITEM_COMPANY_FILTER for cross-company tenants\ne6b5a78 fix: auto-migrate on deploy + drop external CDN dependency for app icon\nc588a17 feat: SoftOne catalog + per-project costing"
+  "context_notes": "Recent commits:\ne969651 fix(mail): remove prompt=consent so admin-granted scopes don't 90094\nf8de3e0 feat(mail): in-app email send buttons on tasks and question threads\nc180f26 feat(questions): tag Q&A notification emails for ingest routing\n96b4cb3 feat(mail): per-project Email tab with DeepSeek ingest + unified Communication History\n775e06a feat(mail): Microsoft Graph mailbox connect flow + schema for email ingest"
 }

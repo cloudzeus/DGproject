@@ -12,7 +12,11 @@ export async function GET(request: Request) {
   const code = url.searchParams.get('code');
   const stateParam = url.searchParams.get('state');
   const errorParam = url.searchParams.get('error_description') ?? url.searchParams.get('error');
-  const profileUrl = new URL('/profile', url.origin);
+  // Use NEXTAUTH_URL for the redirect origin — when running behind a reverse
+  // proxy (Coolify/Traefik) request.url sees the internal localhost endpoint,
+  // not the public hostname, so url.origin would send the user to localhost.
+  const publicOrigin = process.env.NEXTAUTH_URL?.replace(/\/$/, '') ?? url.origin;
+  const profileUrl = new URL('/profile', publicOrigin);
 
   const session = await auth();
   if (!session?.user?.id || session.user.userType === 'customer') {
