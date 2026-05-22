@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { uploadFileToCDN, deleteFileFromCDN } from '@/lib/bunnycdn';
 import { sendEmail } from '@/lib/mailgun';
+import { buildEmailTag, buildHiddenTagFooter } from '@/lib/email-tag';
 import { createNotifications } from '@/lib/notifications';
 import {
   emailLayout,
@@ -32,7 +33,7 @@ async function requireSession() {
 async function loadProjectAccess(projectId: string, userId: string, role: string | undefined) {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { id: true, name: true, color: true, ownerId: true },
+    select: { id: true, name: true, color: true, ownerId: true, projectCode: true },
   });
   if (!project) throw new Error('Project not found');
   if (role === 'admin' || role === 'manager' || project.ownerId === userId) return project;
@@ -90,6 +91,7 @@ async function notifyQuestionCreated(params: {
   projectId: string;
   projectName: string;
   projectColor: string;
+  projectCode: string | null;
   askedBy: { id: string; name: string | null; email: string };
   askedTo: { id: string; name: string | null; email: string };
   taskTitle: string;
@@ -98,7 +100,7 @@ async function notifyQuestionCreated(params: {
   createdAt: Date;
   attachments?: EmailAttachmentInfo[];
 }) {
-  const { taskId, projectName, projectColor, askedBy, askedTo, taskTitle, taskMeta, body, createdAt, attachments } = params;
+  const { taskId, projectName, projectColor, projectCode, askedBy, askedTo, taskTitle, taskMeta, body, createdAt, attachments } = params;
   const askerName = askedBy.name ?? askedBy.email;
   const recipientName = askedTo.name ?? askedTo.email;
 
@@ -148,11 +150,22 @@ async function notifyQuestionCreated(params: {
     footerNote: 'Όλες οι ερωτήσεις και απαντήσεις διατηρούνται στο νήμα της εργασίας.',
   });
 
+  // Route tag — when the recipient replies, Outlook keeps the subject
+  // (with `Re:` prefix) so our Graph search auto-routes the reply back to
+  // this exact task + project via lib/email-tag.ts.
+  const routeTag = projectCode ? buildEmailTag(projectCode, taskId) : '';
+  const subject = routeTag
+    ? `[${projectName}] Ερώτηση: ${taskTitle} ${routeTag}`
+    : `[${projectName}] Ερώτηση: ${taskTitle}`;
+  const htmlWithTag = projectCode
+    ? `${html}${buildHiddenTagFooter(projectCode, taskId)}`
+    : html;
+
   try {
     await sendEmail({
       to: askedTo.email,
-      subject: `[${projectName}] Ερώτηση: ${taskTitle}`,
-      html,
+      subject,
+      html: htmlWithTag,
     });
   } catch (e) {
     console.warn('[question email] failed', e);
@@ -164,6 +177,7 @@ async function notifyAnswerCreated(params: {
   projectId: string;
   projectName: string;
   projectColor: string;
+  projectCode: string | null;
   asker: { id: string; name: string | null; email: string };
   answeredBy: { id: string; name: string | null; email: string };
   taskTitle: string;
@@ -179,6 +193,7 @@ async function notifyAnswerCreated(params: {
     taskId,
     projectName,
     projectColor,
+    projectCode,
     asker,
     answeredBy,
     taskTitle,
@@ -253,12 +268,18 @@ async function notifyAnswerCreated(params: {
     footerNote: 'Όλες οι ερωτήσεις και απαντήσεις διατηρούνται στο νήμα της εργασίας.',
   });
 
+  const routeTag = projectCode ? buildEmailTag(projectCode, taskId) : '';
+  const subject = routeTag
+    ? `[${projectName}] Απάντηση: ${taskTitle} ${routeTag}`
+    : `[${projectName}] Απάντηση: ${taskTitle}`;
+  const htmlWithTag = projectCode ? `${html}${buildHiddenTagFooter(projectCode, taskId)}` : html;
+
   try {
     await sendEmail({
       to: asker.email,
       cc: answeredBy.email && answeredBy.email !== asker.email ? [answeredBy.email] : undefined,
-      subject: `[${projectName}] Απάντηση: ${taskTitle}`,
-      html,
+      subject,
+      html: htmlWithTag,
     });
   } catch (e) {
     console.warn('[answer email] failed', e);
@@ -336,6 +357,7 @@ export async function askTaskQuestion(
     projectId,
     projectName: project.name,
     projectColor: project.color,
+    projectCode: project.projectCode,
     askedBy: asker ?? { id: user.id, name: null, email: user.email ?? '' },
     askedTo: recipient,
     taskTitle: task.title,
@@ -374,7 +396,7 @@ export async function answerTaskQuestion(
           priority: true,
           startDate: true,
           dueDate: true,
-          project: { select: { name: true, color: true } },
+          project: { select: { name: true, color: true, projectCode: true } },
         },
       },
       askedBy: { select: { id: true, name: true, email: true } },
@@ -412,6 +434,7 @@ export async function answerTaskQuestion(
     projectId,
     projectName: existing.task.project.name,
     projectColor: existing.task.project.color,
+    projectCode: existing.task.project.projectCode,
     asker: existing.askedBy,
     answeredBy: { id: user.id, name: user.name ?? null, email: user.email ?? '' },
     taskTitle: existing.task.title,
