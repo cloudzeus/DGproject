@@ -138,6 +138,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const role = session?.user?.role;
   const sessionUserId = session?.user?.id ?? '';
   const isPrivileged = role === 'admin' || role === 'manager';
+  const isCustomer = session?.user?.userType === 'customer';
 
   // Costing data fetched only for admin/manager — viewers/members never see
   // the tab and never get the catalog payload (which can be large).
@@ -220,7 +221,35 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       name: m.user.name ?? m.user.email,
       avatarUrl: m.user.image ?? undefined,
     })),
-    tasks: project.tasks.map((t) => ({
+    tasks: project.tasks.map((t) => {
+      // For customer users, redact tasks they're not assigned to: only title and
+      // status are visible — no description, dates, assignees, attachments, or
+      // questions. Assigned tasks pass through with full detail so they can act
+      // on their own work and answer questions.
+      const isAssignedToMe = isCustomer && t.assignees.some((a) => a.user.id === sessionUserId);
+      if (isCustomer && !isAssignedToMe) {
+        return {
+          id: t.id,
+          title: t.title,
+          description: null,
+          status: t.status,
+          priority: t.priority,
+          startDate: null,
+          dueDate: null,
+          estimatedHours: null,
+          completedAt: null,
+          addToCalendar: false,
+          addToTeams: false,
+          inProgressStartedAt: null,
+          inProgressAccumulatedMs: 0,
+          dependencyIds: [] as string[],
+          assignees: [] as { id: string; name: string; avatarUrl?: string }[],
+          attachments: [] as never[],
+          questions: [] as never[],
+          _redacted: true as const,
+        };
+      }
+      return {
       id: t.id,
       title: t.title,
       description: t.description,
@@ -281,7 +310,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           url: a.url,
         })),
       })),
-    })),
+      };
+    }),
   };
 
   const projectAttachments = project.attachments.map((a) => ({
@@ -362,7 +392,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // Normalize meetings for the new "Συναντήσεις" tab. We keep the raw Json
   // arrays (decisions/actionItems/risks/openQuestions) as the inner type since
   // they were stored by the LLM pipeline and the tab only counts/displays them.
-  const meetingsForClient = meetings.map((m) => ({
+  // Customers do not see the meetings tab at all (we have no attendee model to
+  // tell which meetings they actually joined), so skip serializing the payload.
+  const meetingsForClient = isCustomer ? [] : meetings.map((m) => ({
     id: m.id,
     subject: m.subject,
     startedAt: m.startedAt,
@@ -446,6 +478,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         questionMembers={questionMembers}
         currentUserId={currentUserId}
         isPrivileged={isPrivileged}
+        isCustomer={isCustomer}
         canEdit={canEdit}
         projectAttachments={projectAttachments}
         aggregatedFiles={aggregatedFiles}

@@ -37,23 +37,40 @@ const nav = [
 ];
 
 type UserRole = 'admin' | 'manager' | 'member' | 'viewer' | undefined;
+type UserType = 'employee' | 'customer' | 'supplier' | undefined;
 
 type ProjectLink = { id: string; name: string; color: string };
 
 type Badges = { questions?: number };
 
+// Nav items hidden from external customer users. Aligned with the server-side
+// guards in lib/auth.config.ts so the sidebar never advertises a path the
+// middleware would reject.
+const CUSTOMER_HIDDEN_HREFS = new Set([
+  '/teams-meetings',
+  '/timeline',
+  '/files',
+  '/team',
+  '/reports',
+  '/calendar',
+]);
+
 export function Sidebar({
   userRole,
+  userType,
   projects = [],
   badges = {},
 }: {
   userRole?: UserRole;
+  userType?: UserType;
   projects?: ProjectLink[];
   badges?: Badges;
 }) {
   const pathname = usePathname();
   const isAdmin = userRole === 'admin';
   const isManagerOrAdmin = userRole === 'admin' || userRole === 'manager';
+  const isCustomer = userType === 'customer';
+  const visibleNav = isCustomer ? nav.filter((n) => !CUSTOMER_HIDDEN_HREFS.has(n.href)) : nav;
 
   return (
     <aside className="mica w-64 flex flex-col border-r border-black/5 h-screen sticky top-0">
@@ -75,7 +92,7 @@ export function Sidebar({
       {/* main nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <div className="space-y-0.5">
-          {nav.map((item) => {
+          {visibleNav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/');
             const Icon = active ? item.Filled : item.Regular;
             const badge = item.badgeKey ? badges[item.badgeKey] : undefined;

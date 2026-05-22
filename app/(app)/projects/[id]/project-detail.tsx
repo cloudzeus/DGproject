@@ -46,6 +46,7 @@ type ProjectDetailProps = {
   questionMembers: ProjectMemberOption[];
   currentUserId: string;
   isPrivileged: boolean;
+  isCustomer?: boolean;
   canEdit: boolean;
   projectAttachments: ProjectAttachmentInfo[];
   aggregatedFiles: ProjectFileItem[];
@@ -81,15 +82,15 @@ function MenuItem({
 }
 
 // Tabs shown to everyone; costing is filtered out below for non-privileged users.
-const TABS: { id: Tab; label: string; Icon: typeof Board20Regular; privilegedOnly?: boolean }[] = [
+const TABS: { id: Tab; label: string; Icon: typeof Board20Regular; privilegedOnly?: boolean; hideForCustomer?: boolean }[] = [
   { id: 'board', label: 'Board', Icon: Board20Regular },
   { id: 'list', label: 'Λίστα', Icon: List20Regular },
-  { id: 'timeline', label: 'Χρονοδιάγραμμα', Icon: Calendar20Regular },
+  { id: 'timeline', label: 'Χρονοδιάγραμμα', Icon: Calendar20Regular, hideForCustomer: true },
   { id: 'files', label: 'Αρχεία', Icon: DocumentMultiple20Regular },
   { id: 'questions', label: 'Ερωτήσεις', Icon: ChatBubblesQuestion20Regular },
-  { id: 'meetings', label: 'Συναντήσεις', Icon: CalendarLtr20Regular },
+  { id: 'meetings', label: 'Συναντήσεις', Icon: CalendarLtr20Regular, hideForCustomer: true },
   { id: 'costing', label: 'Κοστολόγηση', Icon: Money20Regular, privilegedOnly: true },
-  { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular },
+  { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular, hideForCustomer: true },
 ];
 
 export function ProjectDetail({
@@ -98,6 +99,7 @@ export function ProjectDetail({
   questionMembers,
   currentUserId,
   isPrivileged,
+  isCustomer = false,
   canEdit,
   projectAttachments,
   aggregatedFiles,
@@ -286,7 +288,7 @@ export function ProjectDetail({
 
       <div className="bg-white border-b border-black/5 px-6 lg:px-8">
         <div className="max-w-[1600px] mx-auto flex gap-1">
-          {TABS.filter((t) => !t.privilegedOnly || isPrivileged).map((t) => {
+          {TABS.filter((t) => (!t.privilegedOnly || isPrivileged) && !(isCustomer && t.hideForCustomer)).map((t) => {
             const active = tab === t.id;
             const questionsCount = project.tasks.reduce(
               (sum, task) => sum + task.questions.length,
@@ -327,7 +329,7 @@ export function ProjectDetail({
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
         {tab === 'board' && <BoardView projectId={project.id} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
         {tab === 'list' && <ListView projectId={project.id} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
-        {tab === 'timeline' && <TimelineView projectId={project.id} projectName={project.name} projectColor={project.color} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
+        {tab === 'timeline' && !isCustomer && <TimelineView projectId={project.id} projectName={project.name} projectColor={project.color} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
         {tab === 'files' && (
           <div className="space-y-4">
             <ProjectAttachments
@@ -354,7 +356,7 @@ export function ProjectDetail({
             isPrivileged={isPrivileged}
           />
         )}
-        {tab === 'meetings' && (
+        {tab === 'meetings' && !isCustomer && (
           <ProjectMeetingsTab projectId={project.id} meetings={meetings} />
         )}
         {tab === 'costing' && isPrivileged && (
@@ -365,7 +367,7 @@ export function ProjectDetail({
             services={catalogServices}
           />
         )}
-        {tab === 'reports' && (
+        {tab === 'reports' && !isCustomer && (
           <ReportsView
             tasks={project.tasks}
             members={projectMembers}

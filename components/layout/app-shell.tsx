@@ -7,6 +7,7 @@ import { Sidebar } from './sidebar';
 import { TopBar } from './topbar';
 
 type UserRole = 'admin' | 'manager' | 'member' | 'viewer' | undefined;
+type UserType = 'employee' | 'customer' | 'supplier' | undefined;
 type ProjectLink = { id: string; name: string; color: string };
 type TopBarUser = {
   name: string;
@@ -17,13 +18,14 @@ type TopBarUser = {
 
 interface Props {
   userRole: UserRole;
+  userType?: UserType;
   projects: ProjectLink[];
   user: TopBarUser;
   badges?: { questions?: number };
   children: React.ReactNode;
 }
 
-export function AppShell({ userRole, projects, user, badges, children }: Props) {
+export function AppShell({ userRole, userType, projects, user, badges, children }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
@@ -47,7 +49,7 @@ export function AppShell({ userRole, projects, user, badges, children }: Props) 
     <div className="flex min-h-screen bg-mesh">
       {/* Desktop sidebar — always visible */}
       <div className="hidden lg:block">
-        <Sidebar userRole={userRole} projects={projects} badges={badges} />
+        <Sidebar userRole={userRole} userType={userType} projects={projects} badges={badges} />
       </div>
 
       {/* Mobile drawer */}
@@ -70,7 +72,7 @@ export function AppShell({ userRole, projects, user, badges, children }: Props) 
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
               className="fixed top-0 left-0 bottom-0 z-50 lg:hidden"
             >
-              <Sidebar userRole={userRole} projects={projects} badges={badges} />
+              <Sidebar userRole={userRole} userType={userType} projects={projects} badges={badges} />
             </motion.div>
           </>
         )}

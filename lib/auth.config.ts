@@ -14,6 +14,7 @@ declare module "next-auth" {
       name: string;
       image?: string;
       role: "admin" | "manager" | "member" | "viewer";
+      userType?: "employee" | "customer" | "supplier";
       mustChangePassword?: boolean;
     };
     accessToken?: string;
@@ -86,6 +87,7 @@ export const authConfig: NextAuthConfig = {
           where: { id: user.id },
         });
         token.role = (dbUser?.role as any) || "member";
+        token.userType = (dbUser?.userType as any) || "employee";
         token.azureAdId = dbUser?.azureAdId;
         token.mustChangePassword = !!dbUser?.mustChangePassword;
       }
@@ -94,10 +96,11 @@ export const authConfig: NextAuthConfig = {
       if (trigger === "update" && token.id) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id as string },
-          select: { mustChangePassword: true, role: true },
+          select: { mustChangePassword: true, role: true, userType: true },
         });
         token.mustChangePassword = !!dbUser?.mustChangePassword;
         token.role = (dbUser?.role as any) || token.role;
+        token.userType = (dbUser?.userType as any) || token.userType;
       }
 
       // Handle Azure AD login — prefer `oid` (Object ID) over `sub`
@@ -116,6 +119,7 @@ export const authConfig: NextAuthConfig = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = (token.role as any) || "member";
+        session.user.userType = (token.userType as any) || "employee";
         session.user.mustChangePassword = !!token.mustChangePassword;
       }
       return session;
@@ -161,6 +165,20 @@ export const authConfig: NextAuthConfig = {
 
       if (pathname.startsWith("/settings")) {
         return ["admin", "manager"].includes(auth?.user?.role || "");
+      }
+
+      // Customer users (external clients): no access to global meetings,
+      // reports, timeline, team directory, file browser, or the SoftOne catalog.
+      if (auth?.user?.userType === "customer") {
+        const customerBlocked = [
+          "/teams-meetings",
+          "/reports",
+          "/timeline",
+          "/team",
+          "/files",
+          "/catalog",
+        ];
+        if (customerBlocked.some((p) => pathname.startsWith(p))) return false;
       }
 
       if (

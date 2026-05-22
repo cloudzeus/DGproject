@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const [user, sidebarProjects, pendingQuestions] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { name: true, email: true, image: true, role: true, azureAdId: true },
+      select: { name: true, email: true, image: true, role: true, userType: true, azureAdId: true },
     }),
     prisma.project.findMany({
       where: {
@@ -51,6 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <AppShell
       userRole={user.role}
+      userType={user.userType}
       projects={sidebarProjects}
       user={{
         name: user.name ?? user.email,

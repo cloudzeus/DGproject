@@ -65,6 +65,9 @@ export type TaskRow = {
   // sits in status=in_progress.
   inProgressStartedAt: Date | null;
   inProgressAccumulatedMs: number;
+  // Customer-role redaction marker: when true, only `title` and `status` are
+  // meaningful; all other fields are blank placeholders.
+  _redacted?: boolean;
 };
 
 const STATUS_ORDER: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done'];
@@ -1309,6 +1312,7 @@ function StaticBoardCard({
       } ${isOverlay ? 'shadow-fluent-16 rotate-2 scale-105' : ''}`}
       onClick={(e) => {
         if (isDragging) return;
+        if (task._redacted) return;
         e.stopPropagation();
         onEdit();
       }}
