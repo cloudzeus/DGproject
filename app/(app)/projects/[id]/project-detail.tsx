@@ -358,8 +358,8 @@ export function ProjectDetail({
       </div>
 
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
-        {tab === 'board' && <BoardView projectId={project.id} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
-        {tab === 'list' && <ListView projectId={project.id} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
+        {tab === 'board' && <BoardView projectId={project.id} projectCode={project.projectCode} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
+        {tab === 'list' && <ListView projectId={project.id} projectCode={project.projectCode} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
         {tab === 'timeline' && !isCustomer && <TimelineView projectId={project.id} projectName={project.name} projectColor={project.color} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
         {tab === 'files' && (
           <div className="space-y-4">

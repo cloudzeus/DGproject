@@ -11,6 +11,7 @@ import {
 } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { deleteTaskAttachment } from './task-actions';
+import { SendEmailButton } from '@/components/email/send-email-button';
 import { uploadFileWithProgress, type UploadProgress } from '@/lib/upload-client';
 import { useRouter } from 'next/navigation';
 import {
@@ -88,7 +89,9 @@ type Props = {
   onSubmit: (fd: FormData) => Promise<{ ok: boolean; error?: string } | void>;
   onCancel: () => void;
   projectId?: string;
+  projectCode?: string | null;
   taskId?: string;
+  taskTitleForEmail?: string;
   attachments?: TaskAttachmentInfo[];
   questions?: TaskQuestionInfo[];
   questionMembers?: ProjectMemberOption[];
@@ -107,7 +110,9 @@ export function TaskForm({
   onSubmit,
   onCancel,
   projectId,
+  projectCode,
   taskId,
+  taskTitleForEmail,
   attachments,
   questions,
   questionMembers,
@@ -191,7 +196,25 @@ export function TaskForm({
         <TemplatePicker templates={templates} onApply={applyTemplate} />
       )}
       <div>
-        <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Τίτλος</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-xs font-medium text-fluent-neutral-70">Τίτλος</label>
+          {isEdit && projectId && projectCode && questionMembers && questionMembers.length > 0 && (
+            <SendEmailButton
+              projectId={projectId}
+              projectCode={projectCode}
+              taskId={taskId ?? null}
+              defaultSubject={`[${taskTitleForEmail ?? initial?.title ?? 'Task'}]`}
+              recipients={questionMembers.map((m) => ({
+                id: m.id,
+                name: m.name,
+                email: m.email,
+                avatarUrl: m.avatarUrl,
+              }))}
+              variant="labelled"
+              label="Αποστολή email"
+            />
+          )}
+        </div>
         <input
           ref={titleRef}
           name="title"
@@ -387,7 +410,9 @@ export function TaskForm({
       {projectId && taskId && currentUserId && questionMembers && (
         <TaskQuestionsPanel
           projectId={projectId}
+          projectCode={projectCode}
           taskId={taskId}
+          taskTitle={taskTitleForEmail ?? initial?.title}
           currentUserId={currentUserId}
           isPrivileged={isPrivileged ?? false}
           members={questionMembers}

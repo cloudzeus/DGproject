@@ -20,6 +20,7 @@ import {
   History20Regular,
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
+import { SendEmailButton } from '@/components/email/send-email-button';
 import { Button } from '@/components/ui/button';
 import {
   askTaskQuestion,
@@ -61,7 +62,9 @@ export type ProjectMemberOption = {
 
 type Props = {
   projectId: string;
+  projectCode?: string | null;
   taskId: string;
+  taskTitle?: string;
   currentUserId: string;
   isPrivileged: boolean;
   members: ProjectMemberOption[];
@@ -70,7 +73,9 @@ type Props = {
 
 export function TaskQuestionsPanel({
   projectId,
+  projectCode,
   taskId,
+  taskTitle,
   currentUserId,
   isPrivileged,
   members,
@@ -129,17 +134,35 @@ export function TaskQuestionsPanel({
             </span>
           )}
         </h3>
-        {!composing && askable.length > 0 && (
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            icon={<ChatBubblesQuestion20Regular className="h-4 w-4" />}
-            onClick={() => setComposing(true)}
-          >
-            Νέα ερώτηση
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {projectCode && askable.length > 0 && (
+            <SendEmailButton
+              projectId={projectId}
+              projectCode={projectCode}
+              taskId={taskId}
+              defaultSubject={taskTitle ? `[${taskTitle}]` : undefined}
+              recipients={askable.map((m) => ({
+                id: m.id,
+                name: m.name,
+                email: m.email,
+                avatarUrl: m.avatarUrl,
+              }))}
+              variant="labelled"
+              label="Email"
+            />
+          )}
+          {!composing && askable.length > 0 && (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              icon={<ChatBubblesQuestion20Regular className="h-4 w-4" />}
+              onClick={() => setComposing(true)}
+            >
+              Νέα ερώτηση
+            </Button>
+          )}
+        </div>
       </div>
 
       {askable.length === 0 && (

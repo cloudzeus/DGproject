@@ -86,6 +86,7 @@ const PRIORITY_LABEL: Record<TaskPriority, string> = {
 
 type ViewProps = {
   projectId: string;
+  projectCode?: string | null;
   tasks: TaskRow[];
   members: TaskAssigneeOption[];
   canEdit: boolean;
@@ -134,7 +135,7 @@ function useTaskMutations(projectId: string) {
   return { create, update, remove, setStatus, pending };
 }
 
-export function ListView({ projectId, tasks, members, canEdit, questionMembers, currentUserId, isPrivileged }: ViewProps) {
+export function ListView({ projectId, projectCode, tasks, members, canEdit, questionMembers, currentUserId, isPrivileged }: ViewProps) {
   const mutations = useTaskMutations(projectId);
   const [creating, setCreating] = useState(false);
   // Track only the id; derive `editing` from the live `tasks` array so router.refresh()
@@ -240,6 +241,7 @@ export function ListView({ projectId, tasks, members, canEdit, questionMembers, 
               members={members}
               submitLabel="Αποθήκευση"
               projectId={projectId}
+              projectCode={projectCode}
               taskId={editing.id}
               attachments={editing.attachments}
               questions={editing.questions}
@@ -274,7 +276,7 @@ export function ListView({ projectId, tasks, members, canEdit, questionMembers, 
   );
 }
 
-export function BoardView({ projectId, tasks, members, canEdit, questionMembers, currentUserId, isPrivileged }: ViewProps) {
+export function BoardView({ projectId, projectCode, tasks, members, canEdit, questionMembers, currentUserId, isPrivileged }: ViewProps) {
   const mutations = useTaskMutations(projectId);
   const [creating, setCreating] = useState<TaskStatus | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -380,6 +382,7 @@ export function BoardView({ projectId, tasks, members, canEdit, questionMembers,
               members={members}
               submitLabel="Αποθήκευση"
               projectId={projectId}
+              projectCode={projectCode}
               taskId={editing.id}
               attachments={editing.attachments}
               questions={editing.questions}
@@ -447,6 +450,7 @@ function timelineAnchorLabel(d: Date, zoom: GanttZoom): string {
 
 export function TimelineView({
   projectId,
+  projectCode,
   projectName,
   projectColor,
   tasks,
@@ -574,6 +578,7 @@ export function TimelineView({
               members={members}
               submitLabel="Αποθήκευση"
               projectId={projectId}
+              projectCode={projectCode}
               taskId={editing.id}
               attachments={editing.attachments}
               questions={editing.questions}
