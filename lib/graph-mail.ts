@@ -36,9 +36,10 @@ export function buildAuthorizeUrl(state: string): string {
     response_mode: 'query',
     scope: MAIL_SCOPES.join(' '),
     state,
-    // prompt=consent forces the consent screen so users see Mail.Read/Send
-    // even if they previously granted base sign-in scopes only.
-    prompt: 'consent',
+    // No `prompt=consent` here — admin consent for Mail.Read/Mail.Send is
+    // already granted at the tenant level. Forcing consent here triggers
+    // AADSTS90094 in tenants where user consent is disabled, because AAD
+    // tries to ask the user to consent even though admin already did.
   });
   return `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?${params}`;
 }
