@@ -5,6 +5,8 @@ import { ProjectDetail } from './project-detail';
 import { MembersManager } from './members-manager';
 import { ProjectActionsBar } from './project-actions-bar';
 import type { ProjectFileItem } from './project-files';
+import type { ProjectEmail } from './project-emails-tab';
+import type { HistoryEntry } from './project-history-tab';
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -16,6 +18,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       include: {
         owner: true,
         members: { include: { user: true } },
+        // Customer contact (User with userType=customer) — its email is the
+        // default recipient for the "Νέο email" mailto launcher.
+        // customerUserId can be null for internal projects.
         tasks: {
           orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
           include: {
@@ -135,6 +140,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   if (!project) notFound();
 
+  // Look up the customer contact's email separately — Project.customerUserId
+  // is just a foreign-key column with no Prisma relation, so we can't
+  // include it. Skipped when the project has no linked customer.
+  const customerEmail = project.customerUserId
+    ? (await prisma.user.findUnique({
+        where: { id: project.customerUserId },
+        select: { email: true },
+      }))?.email ?? null
+    : null;
+
   const role = session?.user?.role;
   const sessionUserId = session?.user?.id ?? '';
   const isPrivileged = role === 'admin' || role === 'manager';
@@ -217,6 +232,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     color: project.color,
     status: project.status,
     dueDate: project.dueDate,
+    projectCode: project.projectCode,
+    customerEmail,
     members: project.members.map((m) => ({
       name: m.user.name ?? m.user.email,
       avatarUrl: m.user.image ?? undefined,
@@ -445,6 +462,159 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     createdAt: l.createdAt,
   }));
 
+  // ─── Email tab + Communication history ─────────────────────────────────
+  // Customers don't see either tab, so we skip the work for them.
+  const [emailRows, activityRows, taskQuestionRows, meetingRowsForHistory, memberRowsForHistory, costLinesForHistory] = isCustomer
+    ? [[], [], [], [], [], []]
+    : await Promise.all([
+        prisma.emailMessage.findMany({
+          where: { projectId: id },
+          orderBy: [{ receivedAt: 'desc' }, { sentAt: 'desc' }],
+          include: { task: { select: { id: true, title: true } } },
+          take: 200,
+        }),
+        prisma.activity.findMany({
+          where: { projectId: id },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            actor: { select: { id: true, name: true, email: true, image: true } },
+            task: { select: { id: true, title: true } },
+          },
+          take: 200,
+        }),
+        prisma.taskQuestion.findMany({
+          where: { task: { projectId: id } },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            askedBy: { select: { id: true, name: true, email: true, image: true } },
+            askedTo: { select: { id: true, name: true, email: true, image: true } },
+            task: { select: { id: true, title: true } },
+          },
+          take: 100,
+        }),
+        prisma.meetingNote.findMany({
+          where: { projectId: id },
+          orderBy: { startedAt: 'desc' },
+          select: {
+            id: true,
+            subject: true,
+            startedAt: true,
+            durationSec: true,
+            summary: true,
+            organizer: { select: { id: true, name: true, email: true, image: true } },
+          },
+          take: 100,
+        }),
+        prisma.projectMember.findMany({
+          where: { projectId: id },
+          orderBy: { createdAt: 'desc' },
+          include: { user: { select: { id: true, name: true, email: true, image: true } } },
+        }),
+        prisma.projectCostLine.findMany({
+          where: { projectId: id },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            createdBy: { select: { id: true, name: true, email: true, image: true } },
+            item: { select: { name: true } },
+          },
+          take: 100,
+        }),
+      ]);
+
+  const emails: ProjectEmail[] = emailRows.map((e) => ({
+    id: e.id,
+    direction: e.direction,
+    status: e.status,
+    subject: e.subject,
+    fromAddress: e.fromAddress,
+    toAddresses: e.toAddresses,
+    bodyPreview: e.bodyPreview,
+    receivedAt: e.receivedAt,
+    sentAt: e.sentAt,
+    conversationId: e.conversationId,
+    llmAction: e.llmAction,
+    taskId: e.taskId,
+    taskTitle: e.task?.title ?? null,
+  }));
+
+  // Unified activity timeline. Builds one HistoryEntry per source row so the
+  // tab can render a single sorted/grouped list. Order matters less than the
+  // identifying `kind` — the client sorts by `at` per day-group.
+  const historyEntries: HistoryEntry[] = [
+    ...activityRows
+      .filter((a) => a.task) // only task-scoped activity is meaningful in the timeline
+      .map<HistoryEntry>((a) => ({
+        kind: 'task',
+        id: a.id,
+        at: a.createdAt,
+        actor: { id: a.actor.id, name: a.actor.name ?? a.actor.email, avatarUrl: a.actor.image ?? undefined },
+        action: a.action,
+        taskTitle: a.task!.title,
+        taskId: a.task!.id,
+        // metadata can have { from, to, field, comment } etc.; surface as raw text
+        detail:
+          a.metadata && typeof a.metadata === 'object'
+            ? JSON.stringify(a.metadata, null, 2)
+            : null,
+      })),
+    ...emailRows.map<HistoryEntry>((e) => ({
+      kind: 'email',
+      id: e.id,
+      at: (e.receivedAt ?? e.sentAt ?? e.ingestedAt) as Date,
+      actor: {
+        name: e.direction === 'outbound' ? e.fromAddress : e.fromAddress,
+      },
+      direction: e.direction,
+      subject: e.subject,
+      from: e.fromAddress,
+      to: e.toAddresses,
+      preview: e.bodyPreview,
+      llmAction: e.llmAction,
+      taskTitle: e.task?.title ?? null,
+    })),
+    ...taskQuestionRows.map<HistoryEntry>((q) => ({
+      kind: 'question',
+      id: q.id,
+      at: q.createdAt,
+      actor: { id: q.askedBy.id, name: q.askedBy.name ?? q.askedBy.email, avatarUrl: q.askedBy.image ?? undefined },
+      taskTitle: q.task.title,
+      question: q.question,
+      askedToName: q.askedTo.name ?? q.askedTo.email,
+      answer: q.answer,
+      answeredAt: q.answeredAt,
+    })),
+    ...meetingRowsForHistory.map<HistoryEntry>((m) => ({
+      kind: 'meeting',
+      id: m.id,
+      at: m.startedAt,
+      actor: { id: m.organizer.id, name: m.organizer.name ?? m.organizer.email, avatarUrl: m.organizer.image ?? undefined },
+      subject: m.subject,
+      summary: m.summary,
+      durationSec: m.durationSec,
+    })),
+    ...memberRowsForHistory.map<HistoryEntry>((m) => ({
+      kind: 'member',
+      id: m.id,
+      at: m.createdAt,
+      actor: { id: m.user.id, name: m.user.name ?? m.user.email, avatarUrl: m.user.image ?? undefined },
+      memberName: m.user.name ?? m.user.email,
+      memberRole: m.role,
+    })),
+    ...costLinesForHistory.map<HistoryEntry>((c) => ({
+      kind: 'cost',
+      id: c.id,
+      at: c.createdAt,
+      actor: {
+        id: c.createdBy.id,
+        name: c.createdBy.name ?? c.createdBy.email,
+        avatarUrl: c.createdBy.image ?? undefined,
+      },
+      itemName: c.item.name,
+      quantity: c.quantity,
+      amount: c.quantity * c.unitPriceSnapshot,
+    })),
+  ];
+
   const catalogProducts = catalogItems
     .filter((i) => i.kind === 'product')
     .map((i) => ({
@@ -487,6 +657,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         costLines={costLines}
         catalogProducts={catalogProducts}
         catalogServices={catalogServices}
+        emails={emails}
+        historyEntries={historyEntries}
       />
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-4">
         <div className="flex items-center justify-end">

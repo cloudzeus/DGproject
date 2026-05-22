@@ -55,6 +55,19 @@ export async function createProject(formData: FormData) {
   const workspaceId = await ensureDefaultWorkspace(ownerId);
   const allMemberIds = Array.from(new Set([ownerId, ...input.memberIds]));
 
+  // Auto-generate a local projectCode (PRJ-YYYY-NNN) for any project that
+  // doesn't get one from a SoftOne sync. The code is the routing key for
+  // email ingest (see lib/email-tag.ts), so every project needs one.
+  const year = new Date().getFullYear();
+  const lastForYear = await prisma.project.findFirst({
+    where: { projectCode: { startsWith: `PRJ-${year}-` } },
+    orderBy: { projectCode: 'desc' },
+    select: { projectCode: true },
+  });
+  const lastSeq = lastForYear?.projectCode?.match(/-(\d+)$/)?.[1];
+  const nextSeq = String((lastSeq ? parseInt(lastSeq, 10) : 0) + 1).padStart(3, '0');
+  const projectCode = `PRJ-${year}-${nextSeq}`;
+
   const created = await prisma.project.create({
     data: {
       name: input.name,
@@ -65,6 +78,7 @@ export async function createProject(formData: FormData) {
       dueDate: input.dueDate,
       ownerId,
       workspaceId,
+      projectCode,
       members: {
         create: allMemberIds.map((userId) => ({ userId })),
       },

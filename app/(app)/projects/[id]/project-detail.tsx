@@ -11,6 +11,7 @@ import {
   ChatBubblesQuestion20Regular,
   CalendarLtr20Regular,
   Money20Regular,
+  History20Regular,
 } from '@fluentui/react-icons';
 import { ReportModal } from './report-modal';
 import { AvatarStack } from '@/components/ui/avatar';
@@ -23,11 +24,14 @@ import { ProjectAttachments, type ProjectAttachmentInfo } from './project-attach
 import { ProjectFiles, type ProjectFileItem } from './project-files';
 import { ProjectQuestionsTab } from './project-questions-tab';
 import { ProjectMeetingsTab, type ProjectMeeting } from './project-meetings-tab';
+import { EmailTagBadge } from './email-tag-badge';
 import {
   ProjectCostingTab,
   type CatalogPickerItem,
   type CostLine,
 } from './project-costing-tab';
+import { ProjectEmailsTab, type ProjectEmail } from './project-emails-tab';
+import { ProjectHistoryTab, type HistoryEntry } from './project-history-tab';
 
 type AvatarUser = { name: string; avatarUrl?: string };
 
@@ -39,6 +43,8 @@ type ProjectDetailProps = {
     color: string;
     status: 'active' | 'planning' | 'on_hold' | 'completed' | 'archived';
     dueDate: Date | null;
+    projectCode: string | null;
+    customerEmail: string | null;
     members: AvatarUser[];
     tasks: TaskRow[];
   };
@@ -55,9 +61,11 @@ type ProjectDetailProps = {
   costLines: CostLine[];
   catalogProducts: CatalogPickerItem[];
   catalogServices: CatalogPickerItem[];
+  emails: ProjectEmail[];
+  historyEntries: HistoryEntry[];
 };
 
-type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'costing' | 'reports';
+type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'costing' | 'reports' | 'emails' | 'history';
 
 function MenuItem({
   icon,
@@ -89,6 +97,8 @@ const TABS: { id: Tab; label: string; Icon: typeof Board20Regular; privilegedOnl
   { id: 'files', label: 'Αρχεία', Icon: DocumentMultiple20Regular },
   { id: 'questions', label: 'Ερωτήσεις', Icon: ChatBubblesQuestion20Regular },
   { id: 'meetings', label: 'Συναντήσεις', Icon: CalendarLtr20Regular, hideForCustomer: true },
+  { id: 'emails', label: 'Email', Icon: Mail20Regular, hideForCustomer: true },
+  { id: 'history', label: 'Ιστορικό', Icon: History20Regular, hideForCustomer: true },
   { id: 'costing', label: 'Κοστολόγηση', Icon: Money20Regular, privilegedOnly: true },
   { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular, hideForCustomer: true },
 ];
@@ -108,6 +118,8 @@ export function ProjectDetail({
   costLines,
   catalogProducts,
   catalogServices,
+  emails,
+  historyEntries,
 }: ProjectDetailProps) {
   const [tab, setTab] = useState<Tab>('board');
   const [shareCopied, setShareCopied] = useState(false);
@@ -190,6 +202,21 @@ export function ProjectDetail({
                 </div>
                 <h1 className="font-display text-3xl font-semibold text-white tracking-tight">{project.name}</h1>
                 <p className="text-white/80 text-sm mt-1 max-w-2xl">{project.description}</p>
+                {project.projectCode && !isCustomer && (
+                  <div className="mt-3">
+                    <EmailTagBadge
+                      projectId={project.id}
+                      projectCode={project.projectCode}
+                      recipients={questionMembers.map((m) => ({
+                        id: m.id,
+                        name: m.name,
+                        email: m.email,
+                        avatarUrl: m.avatarUrl,
+                      }))}
+                      defaultRecipient={project.customerEmail}
+                    />
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0 relative" ref={menuRef}>
@@ -303,6 +330,10 @@ export function ProjectDetail({
                 ? meetings.length
                 : t.id === 'costing'
                 ? costLines.length
+                : t.id === 'emails'
+                ? emails.length
+                : t.id === 'history'
+                ? historyEntries.length
                 : null;
             return (
               <button
@@ -367,6 +398,17 @@ export function ProjectDetail({
             services={catalogServices}
           />
         )}
+        {tab === 'emails' && !isCustomer && (
+          <ProjectEmailsTab
+            projectId={project.id}
+            projectCode={project.projectCode}
+            emails={emails}
+            openTasks={project.tasks
+              .filter((t) => !['done'].includes(t.status))
+              .map((t) => ({ id: t.id, title: t.title, status: t.status }))}
+          />
+        )}
+        {tab === 'history' && !isCustomer && <ProjectHistoryTab entries={historyEntries} />}
         {tab === 'reports' && !isCustomer && (
           <ReportsView
             tasks={project.tasks}

@@ -10,16 +10,17 @@ const TENANT_ID = process.env.TENANT_ID ?? 'common';
 const CLIENT_ID = process.env.APPLICATION_ID ?? '';
 const CLIENT_SECRET = process.env.CLIENT_SECRET_VALUE ?? '';
 
-// Granted scopes for the mail connection. Read-only — replies happen in
-// Outlook directly, and Graph's /me/messages search covers Sent Items too, so
-// we can ingest the user's outbound replies as part of the project history
-// without ever sending mail ourselves.
+// Granted scopes for the mail connection. Mail.Read is for ingest; Mail.Send
+// lets the app compose & send mail on the user's behalf (from /projects, task
+// detail, and question threads). Outbound mail always carries the routing tag
+// in a hidden footer so replies route themselves back to the right project.
 export const MAIL_SCOPES = [
   'offline_access',
   'openid',
   'profile',
   'email',
   'https://graph.microsoft.com/Mail.Read',
+  'https://graph.microsoft.com/Mail.Send',
 ] as const;
 
 export function getMailRedirectUri(): string {
@@ -181,5 +182,31 @@ export async function searchMessages(
 export async function getMessage(userId: string, messageId: string): Promise<GraphMessage> {
   const token = await getMailAccessToken(userId);
   return (await graphFetch(token, `/me/messages/${messageId}`)) as GraphMessage;
+}
+
+// Sends an HTML email from the user's mailbox via Graph. Always saves a copy
+// to Sent Items so the user has a normal Outlook record of what we sent.
+export async function sendMail(
+  userId: string,
+  msg: {
+    subject: string;
+    bodyHtml: string;
+    to: string[];
+    cc?: string[];
+  },
+): Promise<void> {
+  const token = await getMailAccessToken(userId);
+  await graphFetch(token, '/me/sendMail', {
+    method: 'POST',
+    body: JSON.stringify({
+      message: {
+        subject: msg.subject,
+        body: { contentType: 'HTML', content: msg.bodyHtml },
+        toRecipients: msg.to.map((address) => ({ emailAddress: { address } })),
+        ccRecipients: (msg.cc ?? []).map((address) => ({ emailAddress: { address } })),
+      },
+      saveToSentItems: true,
+    }),
+  });
 }
 
