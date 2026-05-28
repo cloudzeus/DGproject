@@ -13,6 +13,27 @@ export default async function DashboardPage() {
   const now = new Date();
   const weekAhead = new Date(now.getTime() + WEEK_MS);
 
+  const isPrivileged = session?.user?.role === 'admin' || session?.user?.role === 'manager';
+  const projectScope = isPrivileged
+    ? undefined
+    : { OR: [{ ownerId: userId }, { members: { some: { userId } } }] };
+
+  const allowedProjectIds = isPrivileged
+    ? null
+    : (await prisma.project.findMany({
+        where: projectScope,
+        select: { id: true },
+      })).map((p) => p.id);
+
+  const activityWhere = allowedProjectIds === null
+    ? {}
+    : {
+        OR: [
+          { projectId: { in: allowedProjectIds } },
+          { task: { projectId: { in: allowedProjectIds } } },
+        ],
+      };
+
   const [
     openAssigned,
     completedCount,
@@ -34,8 +55,18 @@ export default async function DashboardPage() {
     prisma.task.count({
       where: { status: 'done', assignees: { some: { userId } } },
     }),
-    prisma.user.count(),
+    isPrivileged
+      ? prisma.user.count()
+      : prisma.user.count({
+          where: {
+            OR: [
+              { ownedProjects: { some: projectScope! } },
+              { projectMemberships: { some: { project: projectScope! } } },
+            ],
+          },
+        }),
     prisma.activity.findMany({
+      where: activityWhere,
       take: 10,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -46,14 +77,7 @@ export default async function DashboardPage() {
     prisma.project.findMany({
       where: {
         status: 'active',
-        ...(session?.user?.role === 'admin' || session?.user?.role === 'manager'
-          ? {}
-          : {
-              OR: [
-                { ownerId: userId },
-                { members: { some: { userId } } },
-              ],
-            }),
+        ...(isPrivileged ? {} : projectScope!),
       },
       orderBy: [{ order: 'asc' }, { updatedAt: 'desc' }],
       include: {
