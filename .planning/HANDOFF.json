@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-22T09:34:20.507Z",
+  "timestamp": "2026-05-28T05:40:44.544Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -22,9 +22,33 @@
     },
     {
       "status": "M",
-      "path": "app/api/mail/connect/callback/route.ts"
+      "path": "components/layout/sidebar.tsx"
+    },
+    {
+      "status": "M",
+      "path": "prisma/schema.prisma"
+    },
+    {
+      "status": "??",
+      "path": "app/(app)/admin/meetings/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/admin/meetings/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/cron/ingest-meetings/"
+    },
+    {
+      "status": "??",
+      "path": "lib/meeting-ingest.ts"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/20260528_add_discovered_meetings/"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\ne969651 fix(mail): remove prompt=consent so admin-granted scopes don't 90094\nf8de3e0 feat(mail): in-app email send buttons on tasks and question threads\nc180f26 feat(questions): tag Q&A notification emails for ingest routing\n96b4cb3 feat(mail): per-project Email tab with DeepSeek ingest + unified Communication History\n775e06a feat(mail): Microsoft Graph mailbox connect flow + schema for email ingest"
+  "context_notes": "Recent commits:\na5504ae fix(mail): use NEXTAUTH_URL for callback redirect when behind reverse proxy\ne969651 fix(mail): remove prompt=consent so admin-granted scopes don't 90094\nf8de3e0 feat(mail): in-app email send buttons on tasks and question threads\nc180f26 feat(questions): tag Q&A notification emails for ingest routing\n96b4cb3 feat(mail): per-project Email tab with DeepSeek ingest + unified Communication History"
 }

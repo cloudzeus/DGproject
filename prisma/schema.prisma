@@ -688,6 +688,39 @@ model MeetingNote {
   @@index([startedAt])
 }
 
+// Auto-ingested Teams meetings that have a transcript and/or recording but have
+// NOT yet been assigned to a project for processing. The background cron writes
+// rows here; super-admins browse them at /admin/meetings and promote selected
+// ones to MeetingNote by assigning a project + running the LLM pipeline.
+model DiscoveredMeeting {
+  id                String   @id @default(cuid())
+  teamsMeetingId    String   @db.VarChar(500)
+  organizerEmail    String
+  organizerGraphId  String?
+  subject           String?
+  startedAt         DateTime?
+  endedAt           DateTime?
+  joinWebUrl        String?  @db.Text
+  hasTranscript     Boolean  @default(false)
+  hasRecording      Boolean  @default(false)
+  transcriptCreatedAt DateTime?
+  recordingCreatedAt  DateTime?
+
+  // Set once promoted to a MeetingNote via admin "Assign + Process" action.
+  // Stored as a plain id (not a relation) so deleting the MeetingNote keeps the
+  // discovery row for audit; promotedAt makes the lifecycle inspectable.
+  promotedMeetingNoteId String?
+  promotedAt            DateTime?
+
+  discoveredAt DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([teamsMeetingId])
+  @@index([organizerEmail])
+  @@index([startedAt])
+  @@index([promotedMeetingNoteId])
+}
+
 // One row per (MoM email, recipient). Created when admin sends Minutes-of-Meeting
 // from a MeetingNote. Updated by polling Mailgun events API for opened/delivered/failed.
 model MomDelivery {
