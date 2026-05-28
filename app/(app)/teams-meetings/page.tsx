@@ -44,6 +44,7 @@ export default async function TeamsMeetingsPage() {
       <TeamsMeetingsBrowser
         organizerEmail={session.user.email}
         projects={projects}
+        isAdmin={session.user.role === 'admin'}
       />
     </div>
   );

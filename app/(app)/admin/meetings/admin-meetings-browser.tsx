@@ -27,6 +27,7 @@ export default function AdminMeetingsBrowser({ projects }: { projects: ProjectOp
   const [daysBack, setDaysBack] = useState(30);
   const [filter, setFilter] = useState<'all' | 'unassigned' | 'promoted'>('unassigned');
   const [organizerFilter, setOrganizerFilter] = useState('');
+  const [scope, setScope] = useState<'tenant' | 'fluent-pm'>('fluent-pm');
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [ingesting, setIngesting] = useState(false);
@@ -66,7 +67,7 @@ export default function AdminMeetingsBrowser({ projects }: { projects: ProjectOp
       const res = await fetch('/api/admin/meetings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ daysBack: 7 }),
+        body: JSON.stringify({ daysBack, scope }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
       await load();
@@ -120,7 +121,11 @@ export default function AdminMeetingsBrowser({ projects }: { projects: ProjectOp
           disabled={ingesting}
           className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
         >
-          {ingesting ? 'Συγχρονισμός…' : 'Συγχρονισμός τώρα (7 ημέρες)'}
+          {ingesting
+            ? 'Συγχρονισμός…'
+            : `Συγχρονισμός τώρα (${daysBack} ${daysBack === 1 ? 'ημέρα' : 'ημέρες'}, ${
+                scope === 'tenant' ? 'όλος ο tenant' : 'fluent-pm users'
+              })`}
         </button>
       </div>
 
@@ -146,6 +151,17 @@ export default function AdminMeetingsBrowser({ projects }: { projects: ProjectOp
             <option value="unassigned">Μη επεξεργασμένα</option>
             <option value="promoted">Επεξεργασμένα</option>
             <option value="all">Όλα</option>
+          </select>
+        </label>
+        <label className="text-sm">
+          Scope sync
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value as 'tenant' | 'fluent-pm')}
+            className="ml-2 border rounded px-2 py-1"
+          >
+            <option value="fluent-pm">Μόνο fluent-pm users</option>
+            <option value="tenant">Όλος ο Azure AD tenant</option>
           </select>
         </label>
         <label className="text-sm">

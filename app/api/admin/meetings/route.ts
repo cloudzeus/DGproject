@@ -62,9 +62,12 @@ export async function POST(req: NextRequest) {
   if (session?.user?.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
-  const body = (await req.json().catch(() => ({}))) as { daysBack?: number };
-  const daysBack = Math.max(1, Math.min(30, Number(body.daysBack ?? 7)));
-  const summary = await ingestAllUsers(daysBack);
+  const body = (await req.json().catch(() => ({}))) as {
+    daysBack?: number;
+    scope?: 'fluent-pm' | 'tenant';
+  };
+  const daysBack = Math.max(1, Math.min(180, Number(body.daysBack ?? 7)));
+  const summary = await ingestAllUsers(daysBack, { scope: body.scope });
   const totals = summary.results.reduce(
     (acc, r) => {
       acc.scanned += r.scanned;

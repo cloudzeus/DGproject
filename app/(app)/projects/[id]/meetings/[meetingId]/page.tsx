@@ -104,6 +104,7 @@ export default async function MeetingDetailPage({
 
       <MomPanel
         meetingId={meeting.id}
+        projectId={projectId}
         meetingSubject={meeting.subject}
         suggestedRecipients={uniqByEmail([
           { email: meeting.project.owner.email, name: meeting.project.owner.name },
@@ -279,6 +280,18 @@ export default async function MeetingDetailPage({
               <div>{meeting.llmDurationMs ? `${meeting.llmDurationMs}ms` : '—'}</div>
             </div>
           </div>
+          {meeting.transcriptVttUrl && (
+            <div className="text-xs">
+              <a
+                href={meeting.transcriptVttUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 underline"
+              >
+                ⬇ Κατέβασμα original VTT (αρχείο)
+              </a>
+            </div>
+          )}
           {meeting.transcriptVtt && (
             <pre className="max-h-80 overflow-auto rounded bg-gray-50 p-3 font-mono text-[10px] leading-relaxed">
               {meeting.transcriptVtt}

@@ -1,6 +1,7 @@
 import { prisma } from './prisma';
 import { parseVtt } from './microsoft-graph';
 import { extractMeetingInsights, type MeetingInsights } from './llm';
+import { uploadFileToCDN } from './bunnycdn';
 import type { ActionItem } from './llm/types';
 import type { Task, TaskPriority } from '@prisma/client';
 
@@ -122,6 +123,32 @@ export async function processMeeting(input: ProcessMeetingInput): Promise<Proces
           status: 'processing',
         },
       });
+
+  // 2b. Persist raw VTT to BunnyCDN BEFORE the LLM call. This guarantees the
+  // original transcript survives even if the LLM step throws or the DB row
+  // is later truncated. We tolerate upload failures — DB copy is the backup.
+  try {
+    const safeSubject = input.subject
+      .replace(/[^\p{L}\p{N}\-_. ]+/gu, '')
+      .replace(/\s+/g, '_')
+      .slice(0, 60) || 'meeting';
+    const filename = `${meetingNote.id}-${Date.now()}-${safeSubject}.vtt`;
+    const uploaded = await uploadFileToCDN({
+      file: Buffer.from(input.vtt, 'utf8'),
+      filename,
+      folder: 'meeting-transcripts',
+      contentType: 'text/vtt; charset=utf-8',
+    });
+    await prisma.meetingNote.update({
+      where: { id: meetingNote.id },
+      data: { transcriptVttUrl: uploaded.url },
+    });
+  } catch (uploadErr) {
+    console.warn(
+      `[meeting-pipeline] VTT CDN upload failed for ${meetingNote.id}:`,
+      uploadErr instanceof Error ? uploadErr.message : uploadErr,
+    );
+  }
 
   try {
     // 3. Run LLM extraction

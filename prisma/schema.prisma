@@ -650,6 +650,10 @@ model MeetingNote {
   // Raw VTT pulled from Graph (or pasted manually for POC).
   // db.LongText so a 2-hour transcript still fits.
   transcriptVtt String? @db.LongText
+  // BunnyCDN URL of the same VTT, persisted as a file *before* LLM processing
+  // so the original transcript is always recoverable even if the DB row is
+  // truncated or the row is deleted.
+  transcriptVttUrl String? @db.Text
 
   // LLM-extracted insights
   summary       String? @db.Text

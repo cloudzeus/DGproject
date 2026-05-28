@@ -26,10 +26,73 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const daysBack = Math.max(1, Math.min(180, Number(url.searchParams.get('daysBack') ?? 30)));
-  const organizer = url.searchParams.get('organizer') ?? session.user.email;
+  const organizerParam = url.searchParams.get('organizer');
+  const allMode = !organizerParam || organizerParam === '*';
+  const organizer = organizerParam && !allMode ? organizerParam : session.user.email;
 
   const end = new Date();
   const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000);
+
+  // "All organizers" mode reads from the DiscoveredMeeting cache populated by
+  // the background ingest. Avoids fan-out Graph calls. Admin role required.
+  if (allMode) {
+    if (session.user.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Forbidden — admin role required for all-organizer view' },
+        { status: 403 },
+      );
+    }
+    const since = start;
+    const discovered = await prisma.discoveredMeeting.findMany({
+      where: {
+        OR: [{ startedAt: { gte: since } }, { discoveredAt: { gte: since } }],
+      },
+      orderBy: [{ startedAt: 'desc' }, { discoveredAt: 'desc' }],
+      take: 500,
+    });
+    const promotedIds = discovered
+      .map((d) => d.promotedMeetingNoteId)
+      .filter((x): x is string => Boolean(x));
+    const notes = promotedIds.length
+      ? await prisma.meetingNote.findMany({
+          where: { id: { in: promotedIds } },
+          select: { id: true, projectId: true, status: true, project: { select: { name: true } } },
+        })
+      : [];
+    const noteById = new Map(notes.map((n) => [n.id, n]));
+    const meetings = discovered.map((d) => {
+      const note = d.promotedMeetingNoteId ? noteById.get(d.promotedMeetingNoteId) : null;
+      return {
+        meetingId: d.teamsMeetingId,
+        organizerEmail: d.organizerEmail,
+        subject: d.subject,
+        startDateTime: d.startedAt?.toISOString() ?? null,
+        endDateTime: d.endedAt?.toISOString() ?? null,
+        joinWebUrl: d.joinWebUrl,
+        hasTranscript: d.hasTranscript,
+        hasRecording: d.hasRecording,
+        transcriptCreatedAt: d.transcriptCreatedAt?.toISOString() ?? null,
+        recordingCreatedAt: d.recordingCreatedAt?.toISOString() ?? null,
+        alreadyProcessedMeetingNoteId: note?.status === 'ready' ? note.id : null,
+        alreadyProcessedProjectId: note?.status === 'ready' ? note.projectId : null,
+        scheduledMeetingNoteId: null,
+        linkedProjectId: note?.projectId ?? null,
+        linkedProjectName: note?.project.name ?? null,
+      };
+    });
+    return NextResponse.json({
+      meetings,
+      organizer: '*',
+      mode: 'all',
+      range: { start: start.toISOString(), end: end.toISOString() },
+      counts: {
+        total: meetings.length,
+        transcripts: meetings.filter((m) => m.hasTranscript).length,
+        recordings: meetings.filter((m) => m.hasRecording).length,
+      },
+      policyWarning: null,
+    });
+  }
 
   try {
     // Fetch transcripts + recordings in parallel

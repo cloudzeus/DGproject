@@ -11,6 +11,7 @@ type ProjectOption = {
 
 type TeamsMeetingRow = {
   meetingId: string;
+  organizerEmail?: string;
   subject: string | null;
   startDateTime: string | null;
   endDateTime: string | null;
@@ -37,11 +38,17 @@ type ApiResponse = {
 export function TeamsMeetingsBrowser({
   organizerEmail,
   projects,
+  isAdmin = false,
 }: {
   organizerEmail: string;
   projects: ProjectOption[];
+  isAdmin?: boolean;
 }) {
   const [daysBack, setDaysBack] = useState(30);
+  // "all" = read aggregate from DiscoveredMeeting (admin only); "user" = realtime Graph per-organizer.
+  const [scope, setScope] = useState<'user' | 'all'>('user');
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   // Always start from the session email. If the session UPN doesn't match an
   // AAD user (e.g. session is on i4ria.com but AAD lives on dgsmart.gr), the
   // admin can override manually. We deliberately do NOT persist this in
@@ -59,13 +66,14 @@ export function TeamsMeetingsBrowser({
     Record<string, { ok: true; meetingNoteId: string } | { ok: false; error: string }>
   >({});
 
-  // Re-load whenever daysBack/organizerUpn changes (debounced via input blur).
+  // Re-load whenever daysBack/organizerUpn/scope changes (debounced via input blur).
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      const orgParam = scope === 'all' ? '*' : organizerUpn;
       const res = await fetch(
-        `/api/teams-meetings/list?daysBack=${daysBack}&organizer=${encodeURIComponent(organizerUpn)}`,
+        `/api/teams-meetings/list?daysBack=${daysBack}&organizer=${encodeURIComponent(orgParam)}`,
       );
       const json = await res.json();
       if (!res.ok) {
@@ -80,14 +88,39 @@ export function TeamsMeetingsBrowser({
     } finally {
       setLoading(false);
     }
-  }, [daysBack, organizerEmail]);
+  }, [daysBack, organizerUpn, scope]);
 
   // Auto-load on first mount and when filters change. organizerUpn changes
   // trigger a reload on blur (see input), to avoid one request per keystroke.
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [daysBack, organizerEmail]);
+  }, [daysBack, scope]);
+
+  async function runSync() {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch('/api/admin/meetings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ daysBack, scope: 'tenant' }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setSyncMsg(`Σφάλμα: ${json.error ?? res.status}`);
+      } else {
+        setSyncMsg(
+          `Συγχρονίστηκαν ${json.totals.upserted}/${json.totals.scanned} (σφάλματα: ${json.totals.errors})`,
+        );
+        await load();
+      }
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function process(meetingId: string) {
     // Use the explicit picker selection if any, else fall back to the project
@@ -104,7 +137,11 @@ export function TeamsMeetingsBrowser({
       const res = await fetch('/api/meetings/poc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, meetingId, organizer: organizerUpn }),
+        body: JSON.stringify({
+          projectId,
+          meetingId,
+          organizer: scope === 'all' ? row?.organizerEmail ?? organizerUpn : organizerUpn,
+        }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -133,6 +170,20 @@ export function TeamsMeetingsBrowser({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
+        {isAdmin && (
+          <>
+            <label className="text-sm font-medium">Scope:</label>
+            <select
+              value={scope}
+              onChange={(e) => setScope(e.target.value as 'user' | 'all')}
+              className="rounded border border-gray-300 px-2 py-1 text-sm"
+              disabled={loading}
+            >
+              <option value="user">Συγκεκριμένος user</option>
+              <option value="all">Όλοι (όλος ο tenant)</option>
+            </select>
+          </>
+        )}
         <label className="text-sm font-medium">Organizer (AAD UPN):</label>
         <input
           type="email"
@@ -141,7 +192,7 @@ export function TeamsMeetingsBrowser({
           onBlur={() => load()}
           placeholder="user@yourtenant.com"
           className="w-64 rounded border border-gray-300 px-2 py-1 text-sm"
-          disabled={loading}
+          disabled={loading || scope === 'all'}
         />
         <label className="text-sm font-medium">Διάστημα:</label>
         <select
@@ -163,6 +214,17 @@ export function TeamsMeetingsBrowser({
         >
           {loading ? 'Φόρτωση…' : 'Ανανέωση'}
         </button>
+        {isAdmin && scope === 'all' && (
+          <button
+            onClick={runSync}
+            disabled={syncing}
+            className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white disabled:bg-gray-300"
+            title="Pull από Microsoft Graph για όλο τον tenant"
+          >
+            {syncing ? 'Συγχρονισμός…' : 'Συγχρονισμός από Graph'}
+          </button>
+        )}
+        {syncMsg && <span className="text-xs text-gray-600">{syncMsg}</span>}
         {organizerUpn !== organizerEmail && (
           <button
             type="button"
@@ -262,6 +324,11 @@ Grant-CsApplicationAccessPolicy \`
                         )}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                        {scope === 'all' && m.organizerEmail && (
+                          <span className="rounded bg-gray-100 px-2 py-0.5 text-gray-700">
+                            👤 {m.organizerEmail}
+                          </span>
+                        )}
                         <span>{formatDate(m.startDateTime ?? m.transcriptCreatedAt)}</span>
                         {m.startDateTime && m.endDateTime && (
                           <span>· {formatDuration(m.startDateTime, m.endDateTime)}</span>

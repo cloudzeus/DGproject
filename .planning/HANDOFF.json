@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-28T05:40:44.544Z",
+  "timestamp": "2026-05-28T06:14:47.845Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -22,7 +22,43 @@
     },
     {
       "status": "M",
-      "path": "components/layout/sidebar.tsx"
+      "path": "app/(app)/admin/meetings/admin-meetings-browser.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/meetings/[meetingId]/mom-panel.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/meetings/[meetingId]/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/teams-meetings/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/teams-meetings/teams-meetings-browser.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/api/admin/meetings/route.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/api/cron/ingest-meetings/route.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/api/teams-meetings/list/route.ts"
+    },
+    {
+      "status": "M",
+      "path": "lib/meeting-ingest.ts"
+    },
+    {
+      "status": "M",
+      "path": "lib/meeting-pipeline.ts"
     },
     {
       "status": "M",
@@ -30,25 +66,13 @@
     },
     {
       "status": "??",
-      "path": "app/(app)/admin/meetings/"
+      "path": "app/(app)/projects/[id]/meetings/[meetingId]/preview/"
     },
     {
       "status": "??",
-      "path": "app/api/admin/meetings/"
-    },
-    {
-      "status": "??",
-      "path": "app/api/cron/ingest-meetings/"
-    },
-    {
-      "status": "??",
-      "path": "lib/meeting-ingest.ts"
-    },
-    {
-      "status": "??",
-      "path": "prisma/migrations/20260528_add_discovered_meetings/"
+      "path": "prisma/migrations/20260528_meeting_vtt_url/"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\na5504ae fix(mail): use NEXTAUTH_URL for callback redirect when behind reverse proxy\ne969651 fix(mail): remove prompt=consent so admin-granted scopes don't 90094\nf8de3e0 feat(mail): in-app email send buttons on tasks and question threads\nc180f26 feat(questions): tag Q&A notification emails for ingest routing\n96b4cb3 feat(mail): per-project Email tab with DeepSeek ingest + unified Communication History"
+  "context_notes": "Recent commits:\n8f62c1f all teams meetings\na5504ae fix(mail): use NEXTAUTH_URL for callback redirect when behind reverse proxy\ne969651 fix(mail): remove prompt=consent so admin-granted scopes don't 90094\nf8de3e0 feat(mail): in-app email send buttons on tasks and question threads\nc180f26 feat(questions): tag Q&A notification emails for ingest routing"
 }

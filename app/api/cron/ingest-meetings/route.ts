@@ -23,12 +23,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const daysBack = Math.max(
-    1,
-    Math.min(30, Number(new URL(req.url).searchParams.get('daysBack') ?? 7)),
-  );
+  const params = new URL(req.url).searchParams;
+  const daysBack = Math.max(1, Math.min(30, Number(params.get('daysBack') ?? 7)));
+  const scope = params.get('scope') === 'fluent-pm' ? 'fluent-pm' : 'tenant';
 
-  const summary = await ingestAllUsers(daysBack);
+  const summary = await ingestAllUsers(daysBack, { scope });
   const totals = summary.results.reduce(
     (acc, r) => {
       acc.scanned += r.scanned;

@@ -3,6 +3,7 @@ import {
   getOnlineMeetingById,
   listAllRecordings,
   listAllTranscripts,
+  listTenantUsers,
 } from '@/lib/microsoft-graph';
 
 export type IngestResult = {
@@ -106,26 +107,44 @@ async function ingestOrganizer(
   }
 }
 
-export async function ingestAllUsers(daysBack = 7): Promise<{
+export async function ingestAllUsers(
+  daysBack = 7,
+  opts: { scope?: 'fluent-pm' | 'tenant' } = {},
+): Promise<{
   windowStart: string;
   windowEnd: string;
+  scope: 'fluent-pm' | 'tenant';
   results: IngestResult[];
 }> {
+  const scope = opts.scope ?? 'fluent-pm';
   const end = new Date();
   const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000);
 
-  // "Connected" = users who have signed in via Azure AD (so we have an
-  // azureAdId on file). Imported placeholder rows without a real Microsoft
-  // login are skipped — Graph lookups for them would just 404.
-  const users = await prisma.user.findMany({
-    where: { azureAdId: { not: null } },
-    select: { email: true },
-  });
+  // scope='tenant' (default): enumerate ALL enabled users in Azure AD via
+  //   Graph /users — catches meetings organized by anyone in the tenant, even
+  //   users who never logged into fluent-pm.
+  // scope='fluent-pm': only users who have signed into fluent-pm via Azure AD
+  //   (User.azureAdId set) — faster, fewer Graph calls.
+  let emails: string[];
+  if (scope === 'tenant') {
+    const tenantUsers = await listTenantUsers();
+    emails = tenantUsers.map((u) => u.email).filter(Boolean);
+  } else {
+    const users = await prisma.user.findMany({
+      where: { azureAdId: { not: null } },
+      select: { email: true },
+    });
+    emails = users.map((u) => u.email).filter((e): e is string => Boolean(e));
+  }
 
   const results: IngestResult[] = [];
-  for (const u of users) {
-    if (!u.email) continue;
-    results.push(await ingestOrganizer(u.email, start, end));
+  for (const email of emails) {
+    results.push(await ingestOrganizer(email, start, end));
   }
-  return { windowStart: start.toISOString(), windowEnd: end.toISOString(), results };
+  return {
+    windowStart: start.toISOString(),
+    windowEnd: end.toISOString(),
+    scope,
+    results,
+  };
 }
