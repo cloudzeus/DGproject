@@ -1,5 +1,12 @@
 import { prisma } from '@/lib/prisma';
 
+export {
+  STATUS_LABELS_EL,
+  PRIORITY_LABELS_EL,
+  ROLE_LABELS_EL,
+} from './shared';
+export * from './shared';
+
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type ReportProjectRow = {
@@ -156,30 +163,3 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
     },
   };
 }
-
-export const STATUS_LABELS_EL: Record<string, string> = {
-  backlog: 'Backlog',
-  todo: 'Προς εκτέλεση',
-  in_progress: 'Σε εξέλιξη',
-  review: 'Προς έλεγχο',
-  done: 'Ολοκληρωμένο',
-  planning: 'Σχεδιασμός',
-  active: 'Ενεργό',
-  on_hold: 'Σε αναμονή',
-  completed: 'Ολοκληρωμένο',
-  archived: 'Αρχειοθετημένο',
-};
-
-export const PRIORITY_LABELS_EL: Record<string, string> = {
-  low: 'Χαμηλή',
-  medium: 'Μεσαία',
-  high: 'Υψηλή',
-  urgent: 'Επείγουσα',
-};
-
-export const ROLE_LABELS_EL: Record<string, string> = {
-  admin: 'Διαχειριστής',
-  manager: 'Διευθυντής',
-  member: 'Μέλος',
-  viewer: 'Προβολή',
-};
