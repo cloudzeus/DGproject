@@ -10,6 +10,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Public ticket status pages — addressed by unguessable token, no session.
+  if (pathname.startsWith("/t/")) {
+    return NextResponse.next();
+  }
+
   const session = await auth();
 
   if (!session?.user) {

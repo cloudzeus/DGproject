@@ -217,6 +217,7 @@ export function Sidebar({
                 { href: '/admin/users', label: 'Χρήστες', Regular: PeopleTeam24Regular, Filled: PeopleTeam24Filled },
                 { href: '/admin/departments', label: 'Τμήματα', Regular: BuildingMultiple24Regular, Filled: BuildingMultiple24Filled },
                 { href: '/admin/meetings', label: 'Recordings', Regular: Calendar24Regular, Filled: Calendar24Filled },
+                { href: '/admin/ticket-sources', label: 'Πηγές Tickets', Regular: Wrench24Regular, Filled: Wrench24Filled },
               ].map((item) => {
                 const active = pathname === item.href || pathname.startsWith(item.href + '/');
                 const Icon = active ? item.Filled : item.Regular;
