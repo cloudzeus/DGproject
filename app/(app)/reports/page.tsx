@@ -4,11 +4,13 @@ import { buildOverviewReport } from '@/lib/reports/overview';
 import { buildProjectsReport } from '@/lib/reports/projects';
 import { buildTasksReport } from '@/lib/reports/tasks';
 import { buildTicketsReport } from '@/lib/reports/tickets';
+import { buildUsersReport } from '@/lib/reports/users';
 import { ReportsShell, type ReportTab } from './reports-shell';
 import { OverviewTab } from './overview-tab';
 import { ProjectsTab } from './projects-tab';
 import { TasksTab } from './tasks-tab';
 import { TicketsTab } from './tickets-tab';
+import { UsersTab } from './users-tab';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,8 +55,11 @@ export default async function ReportsPage({
       content = <TicketsTab data={data} />;
       break;
     }
-    // Το υπόλοιπο tab προστίθεται στο Task 10 του πλάνου:
-    // case 'users': ...
+    case 'users': {
+      const data = await buildUsersReport(scope);
+      content = <UsersTab data={data} />;
+      break;
+    }
     default: {
       const data = await buildOverviewReport(scope);
       content = <OverviewTab data={data} />;
