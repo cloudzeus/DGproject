@@ -10,7 +10,7 @@ import { getUserLoads } from '@/lib/task-scheduling'
 import { sendTicketStatusEmail, sendTicketRejectedEmail, sendTicketMergedEmail, reporterRecipients } from '@/lib/tickets/emails'
 import { analyzeTicket } from '@/lib/tickets/triage'
 import { formatDurationGr } from '@/lib/tickets/format-duration'
-import { resolveHelpCategory } from '../knowledge/actions'
+import { resolveHelpCategory } from '@/lib/knowledge/help-category'
 import type { TaskPriority, TicketCategory, TicketStatus } from '@prisma/client'
 
 // Ticket triage is an admin/manager surface (spec §6).
