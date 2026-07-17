@@ -131,6 +131,44 @@ Migration με το γνωστό workaround (`prisma migrate diff --from-url` / 
 - `needs_info`: δημόσιο «Αναμονή απάντησής σας», εσωτερικό «Αναμονή πελάτη».
 - Το triage/λίστα tickets δείχνει badge για needs_info.
 
+## 4β. Data table `/tickets` — row actions, bulk actions, expandable ιστορικό
+
+### Row actions (dropdown ανά γραμμή)
+- Κουμπί «⋯» σε κάθε row με: **Δημιουργία task** (ανοίγει το υπάρχον convert
+  flow με προσυμπληρωμένα τα AI πεδία), **Ανάθεση σε μηχανικό** (dropdown μελών —
+  αν υπάρχει ήδη task ενημερώνει τους assignees του, αλλιώς convert με
+  προεπιλεγμένο assignee), **Ζητήστε διευκρίνιση**, **Απόρριψη**, **Άνοιγμα**.
+
+### Επιλογή & bulk actions
+- Checkbox αριστερά σε κάθε row + select-all στο header. Μπάρα bulk actions όταν
+  υπάρχουν επιλεγμένα:
+  - **Αλλαγή κατάστασης** (επιτρεπτές μεταβάσεις: new/triaged → rejected,
+    resolved → closed) με ένα action για όλα τα επιλεγμένα.
+  - **Συγχώνευση** (ενεργή με ≥2 επιλεγμένα): dialog που ζητά ποιο είναι το
+    **κύριο** ticket.
+
+### Merge semantics
+- Νέο status **`merged`** + πεδίο `Ticket.mergedIntoId String?`.
+- Τα δευτερεύοντα: status → merged, `TicketEvent(merged, payload: {into})`, τα
+  `TicketMessage`/`TicketAttachment` τους **μεταφέρονται** στο κύριο (τα
+  TicketEvent μένουν στο δευτερεύον για ιστορικό). Το κύριο παίρνει
+  `TicketEvent(absorbed, payload: {from})`.
+- Ο reporter του δευτερεύοντος λαμβάνει email: «Το αίτημά σας συγχωνεύθηκε» με
+  link στο **δικό του** `/t/{token}`, το οποίο πλέον δείχνει την πορεία του
+  κύριου ticket (proxy view: status/events του κύριου, χωρίς τα στοιχεία του
+  άλλου reporter).
+- **Οι μελλοντικές ενημερώσεις του κύριου πάνε και στους δύο reporters**: όλα
+  τα reporter emails (status, resolved, closed, διευκρινίσεις) στέλνονται και
+  στους reporters των merged children (lookup `mergedIntoId`), με το δικό τους
+  token/link το καθένα.
+- Δεν επιτρέπεται merge σε: closed/rejected/merged tickets, ή cross-source.
+
+### Expandable rows
+- Κάθε row επεκτείνεται (chevron) και δείχνει inline: πλήρες ιστορικό
+  (TicketEvents με τα ελληνικά labels), το νήμα TicketMessages, τα attachments,
+  και σύνοψη AI (τίτλος/κατηγορία/προτεραιότητα). Lazy fetch κατά το expand
+  (server action ή route) — όχι φόρτωση όλων στο αρχικό render.
+
 ## 5. Ασφάλεια
 
 - Public reply/upload: token auth, όρια μεγέθους/πλήθους, rate limits, plain
@@ -148,6 +186,9 @@ Migration με το γνωστό workaround (`prisma migrate diff --from-url` / 
   «Ζητήστε διευκρίνιση» από το task → email → απάντηση στο /t → status
   επαναφορά + notification → KB draft με πρόταση νέας κατηγορίας → approve →
   νέα κατηγορία στο help center.
+- E2E table: merge 2 tickets → email δευτερεύοντος reporter → /t δευτερεύοντος
+  δείχνει πορεία κύριου → status update κύριου ειδοποιεί και τους δύο· bulk
+  αλλαγή κατάστασης· expand row → ιστορικό.
 
 ## Εκτός scope (v1)
 
