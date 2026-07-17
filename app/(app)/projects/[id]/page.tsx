@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { ProjectDetail } from './project-detail';
 import { MembersManager } from './members-manager';
+import { ApproverSelector } from './approver-selector';
 import { ProjectActionsBar } from './project-actions-bar';
 import type { ProjectFileItem } from './project-files';
 import type { ProjectEmail } from './project-emails-tab';
@@ -18,6 +19,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       include: {
         owner: true,
         members: { include: { user: true } },
+        approver: { select: { id: true, name: true, email: true, image: true } },
         // Customer contact (User with userType=customer) — its email is the
         // default recipient for the "Νέο email" mailto launcher.
         // customerUserId can be null for internal projects.
@@ -678,6 +680,21 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             sessionEmail={session?.user?.email ?? ''}
           />
         </div>
+        <ApproverSelector
+          projectId={project.id}
+          canEdit={canEdit}
+          approver={
+            project.approver
+              ? {
+                  id: project.approver.id,
+                  name: project.approver.name ?? '',
+                  email: project.approver.email,
+                  image: project.approver.image,
+                }
+              : null
+          }
+          allUsers={allUsers.map((u) => ({ id: u.id, name: u.name ?? '', email: u.email, image: u.image ?? null }))}
+        />
         <MembersManager
           projectId={project.id}
           canEdit={canEdit}
