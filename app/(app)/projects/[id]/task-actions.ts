@@ -26,7 +26,8 @@ import {
   BUSINESS_START_MINUTE,
 } from '@/lib/business-hours';
 import { sendEmail } from '@/lib/mailgun';
-import { notifyTaskAssignment, notifyTaskCompleted } from '@/lib/notifications';
+import { notifyTaskAssignment, notifyTaskCompleted, notifyApprover, createNotifications } from '@/lib/notifications';
+import { canApprove, isApprovalGatedTransition, entersReview, isRejection } from '@/lib/approval';
 import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
 
 
@@ -659,14 +660,31 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
   const actorId = await requireProjectEditor(projectId);
   if (!STATUSES.includes(status)) return { ok: false, error: 'Μη έγκυρη κατάσταση.' };
 
-  const previous = await prisma.task.findUnique({
-    where: { id: taskId },
-    select: {
-      status: true,
-      inProgressStartedAt: true,
-      inProgressAccumulatedMs: true,
-    },
-  });
+  const session = await auth();
+  const actorRole = session?.user?.role ?? 'member';
+
+  const [previous, project, taskMeta] = await Promise.all([
+    prisma.task.findUnique({
+      where: { id: taskId },
+      select: { status: true, inProgressStartedAt: true, inProgressAccumulatedMs: true },
+    }),
+    prisma.project.findUnique({
+      where: { id: projectId },
+      select: { approverId: true, ownerId: true, name: true },
+    }),
+    prisma.task.findUnique({ where: { id: taskId }, select: { title: true, createdById: true } }),
+  ]);
+  if (!project || !taskMeta) return { ok: false, error: 'Δεν βρέθηκε.' };
+
+  const from = previous?.status ?? null;
+
+  if (
+    isApprovalGatedTransition(project.approverId, from, status) &&
+    !canApprove({ approverId: project.approverId, ownerId: project.ownerId, userId: actorId, userRole: actorRole })
+  ) {
+    return { ok: false, error: 'Μόνο ο υπεύθυνος έγκρισης (approver) μπορεί να εγκρίνει αυτή την εργασία.' };
+  }
+
   const timerFields = computeInProgressTimerUpdate(
     previous?.status ?? null,
     status,
@@ -689,13 +707,64 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
 
   if (previous && previous.status !== status) {
     const action: ActivityAction = status === 'done' ? 'completed' : 'moved';
-    await logTaskActivity(taskId, projectId, actorId, action, {
-      from: previous.status,
-      to: status,
-    });
+    await logTaskActivity(taskId, projectId, actorId, action, { from: previous.status, to: status });
+
+    // Approval-request notification: task entered review.
+    if (project.approverId && entersReview(from, status)) {
+      await notifyApprover(
+        projectId,
+        actorId,
+        {
+          title: 'Εργασία για έγκριση',
+          message: `Η εργασία «${taskMeta.title}» στο έργο ${project.name} περιμένει την έγκρισή σου.`,
+          type: 'approval',
+          link: '/board',
+        },
+        [],
+      );
+    }
+
+    // Approval decision notifications to creator + assignees.
+    if (project.approverId && (status === 'done' || isRejection(from, status))) {
+      const assignees = await prisma.taskAssignee.findMany({
+        where: { taskId },
+        select: { userId: true },
+      });
+      const recipients = new Set<string>([taskMeta.createdById, ...assignees.map((a) => a.userId)]);
+      recipients.delete(actorId);
+      const decided = status === 'done';
+      await createNotifications(
+        Array.from(recipients).map((userId) => ({
+          userId,
+          title: decided ? 'Εργασία εγκρίθηκε' : 'Ζητήθηκαν αλλαγές',
+          message: decided
+            ? `Η εργασία «${taskMeta.title}» εγκρίθηκε.`
+            : `Ζητήθηκαν αλλαγές στην εργασία «${taskMeta.title}».`,
+          type: 'approval' as const,
+          link: '/board',
+        })),
+      );
+    }
+
     if (status === 'done' && previous.status !== 'done') {
       await notifyTaskCompleted(taskId, actorId);
     }
+
+    // Firehose: approver hears about every status change (deduped against the
+    // decision/request notifications already sent above).
+    await notifyApprover(
+      projectId,
+      actorId,
+      {
+        title: 'Αλλαγή κατάστασης εργασίας',
+        message: `Η εργασία «${taskMeta.title}»: ${previous.status} → ${status}.`,
+        type: 'status_change',
+        link: '/board',
+      },
+      entersReview(from, status) || status === 'done' || isRejection(from, status)
+        ? [project.approverId ?? '']
+        : [],
+    );
   }
 
   revalidatePath(`/projects/${projectId}`);
