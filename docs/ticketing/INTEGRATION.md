@@ -55,6 +55,24 @@ Response `201`:
 
 Σφάλματα: `401` λάθος key/code (`missing_credentials`/`unknown_source`/`invalid_key`) · `403` μη επιτρεπτό origin · `422` ελλιπή πεδία (`invalid_subject` ≤200, `invalid_body` ≤5000, `invalid_email`) · `429` rate limit (10 tickets/ώρα ανά email, 60/ώρα ανά πηγή). Διπλή υποβολή (ίδιο email+subject εντός 10') επιστρέφει το υπάρχον ticket με `200` και `"duplicate": true`.
 
+#### Παραλλαγή multipart — με συνημμένα
+
+Το ίδιο endpoint δέχεται και `multipart/form-data` όταν ο χρήστης επισυνάπτει εικόνες:
+
+```
+Content-Type: multipart/form-data
+X-Ticket-Project: DGSHOP
+X-Ticket-Key: <secret>
+```
+
+Πεδία form-data: τα ίδια text πεδία (`subject`, `body`, `reporterEmail`, `reporterName`, `originUrl`) + **`files`** — έως **3 εικόνες** (jpg/png/webp), **≤5MB η καθεμία**, **≤15MB σύνολο**. Ο τύπος επαληθεύεται από τα magic bytes του αρχείου, όχι από το όνομα/MIME που δηλώνει ο client.
+
+Επιπλέον σφάλματα: `422` (`too_many_files`, `invalid_file_type`, `invalid_form`) · `413` (`file_too_large`, `files_too_large`). Το `201` response περιλαμβάνει πλέον και `"attachments": N` — πόσα αρχεία ανέβηκαν επιτυχώς (ένα αποτυχημένο upload δεν αποτυγχάνει την υποβολή).
+
+### POST `/api/tickets/{code}/reply?token={publicToken}` — απάντηση πελάτη
+
+Body: `{ "body": "κείμενο ≤3000 χαρ." }` → `200 {ok:true}`. Σφάλματα: `401 missing_token` · `404 not_found` · `409 ticket_closed` · `422 empty_body`/`invalid_json` · `429 rate_limited` (10/ώρα ανά ticket). Αν το ticket είναι σε κατάσταση «Αναμονή στοιχείων» (needs_info), η απάντηση επαναφέρει αυτόματα την προηγούμενη κατάσταση. Η φόρμα υπάρχει έτοιμη στη σελίδα `/t/{token}` — δεν χρειάζεται δική σας υλοποίηση.
+
 ### GET `/api/tickets/{code}?token={publicToken}` — κατάσταση
 
 ```json
@@ -80,6 +98,9 @@ Response `201`:
 
 ```ts
 // app/api/support/route.ts
+// Για συνημμένα: η client φόρμα κάνει POST multipart FormData σε αυτό το proxy,
+// κι εσείς προωθείτε το FormData ως έχει (ίδια auth headers, ΧΩΡΙΣ να ορίσετε
+// Content-Type χειροκίνητα — το boundary μπαίνει αυτόματα από το fetch).
 export async function POST(req: Request) {
   const data = await req.json()
   const res = await fetch(`${process.env.TICKETING_URL}/api/tickets`, {
