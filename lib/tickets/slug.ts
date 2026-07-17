@@ -8,6 +8,7 @@ const GR: Record<string, string> = {
 /** Greek-aware URL slug: transliterate, lowercase, hyphenate, max 80 chars, fallback 'entry'. */
 export function slugify(title: string): string {
   const base = title
+    .normalize('NFC')
     .toLowerCase()
     .split('')
     .map((c) => GR[c] ?? c)

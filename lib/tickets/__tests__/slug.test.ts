@@ -23,6 +23,10 @@ test('collapses symbols, trims, caps at 80 chars', () => {
   assert.equal(slugify('α'.repeat(200)).length <= 80, true)
 })
 
+test('NFD-normalized input', () => {
+  assert.equal(slugify('πρόβλημα'.normalize('NFD')), 'provlima')
+})
+
 test('empty input falls back', () => {
   assert.equal(slugify('!!!'), 'entry')
 })
