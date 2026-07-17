@@ -3,10 +3,12 @@ import { resolveRange, rangeLabel } from '@/lib/reports/shared';
 import { buildOverviewReport } from '@/lib/reports/overview';
 import { buildProjectsReport } from '@/lib/reports/projects';
 import { buildTasksReport } from '@/lib/reports/tasks';
+import { buildTicketsReport } from '@/lib/reports/tickets';
 import { ReportsShell, type ReportTab } from './reports-shell';
 import { OverviewTab } from './overview-tab';
 import { ProjectsTab } from './projects-tab';
 import { TasksTab } from './tasks-tab';
+import { TicketsTab } from './tickets-tab';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,8 +48,13 @@ export default async function ReportsPage({
       content = <TasksTab data={data} />;
       break;
     }
-    // Τα υπόλοιπα tabs προστίθενται στα Tasks 9–10 του πλάνου:
-    // case 'tickets': ... case 'users': ...
+    case 'tickets': {
+      const data = await buildTicketsReport(scope);
+      content = <TicketsTab data={data} />;
+      break;
+    }
+    // Το υπόλοιπο tab προστίθεται στο Task 10 του πλάνου:
+    // case 'users': ...
     default: {
       const data = await buildOverviewReport(scope);
       content = <OverviewTab data={data} />;
