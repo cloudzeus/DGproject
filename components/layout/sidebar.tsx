@@ -18,6 +18,7 @@ import {
   Video24Regular, Video24Filled,
   Tag24Regular, Tag24Filled,
   TicketDiagonal24Regular, TicketDiagonal24Filled,
+  BookOpen24Regular, BookOpen24Filled,
   Wrench24Regular, Wrench24Filled,
   ChevronRight16Regular,
   Add16Regular,
@@ -31,6 +32,7 @@ const nav = [
   { href: '/teams-meetings', label: 'Teams Συσκέψεις', Regular: Video24Regular, Filled: Video24Filled, badgeKey: undefined },
   { href: '/questions', label: 'Ερωτήσεις', Regular: ChatBubblesQuestion24Regular, Filled: ChatBubblesQuestion24Filled, badgeKey: 'questions' as const },
   { href: '/tickets', label: 'Tickets', Regular: TicketDiagonal24Regular, Filled: TicketDiagonal24Filled, badgeKey: 'tickets' as const },
+  { href: '/knowledge', label: 'Γνωσιακή βάση', Regular: BookOpen24Regular, Filled: BookOpen24Filled, badgeKey: undefined },
   { href: '/timeline', label: 'Χρονοδιάγραμμα', Regular: CalendarLtr24Regular, Filled: CalendarLtr24Filled, badgeKey: undefined },
   { href: '/calendar', label: 'Ημερολόγιο', Regular: Calendar24Regular, Filled: Calendar24Filled, badgeKey: undefined },
   { href: '/files', label: 'Αρχεία', Regular: DocumentMultiple24Regular, Filled: DocumentMultiple24Filled, badgeKey: undefined },
@@ -55,6 +57,7 @@ const CUSTOMER_HIDDEN_HREFS = new Set([
   '/team',
   '/reports',
   '/calendar',
+  '/knowledge',
 ]);
 
 export function Sidebar({

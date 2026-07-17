@@ -177,6 +177,7 @@ export const authConfig: NextAuthConfig = {
           "/team",
           "/files",
           "/catalog",
+          "/knowledge",
         ];
         if (customerBlocked.some((p) => pathname.startsWith(p))) return false;
       }
