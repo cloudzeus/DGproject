@@ -26,6 +26,24 @@ type EntryInput = {
   projectId: string | null
   sourceId: string | null
   isPublic: boolean
+  helpCategoryId?: string | null
+  newCategoryName?: string | null
+}
+
+/** Επιστρέφει helpCategoryId: υπάρχον id ή δημιουργία/επανάχρηση από όνομα. Ποτέ αυτόνομα από AI — μόνο σε approve. */
+export async function resolveHelpCategory(input: { categoryId?: string | null; newName?: string | null }): Promise<string | null> {
+  if (input.categoryId) {
+    const existing = await prisma.helpCategory.findUnique({ where: { id: input.categoryId }, select: { id: true } })
+    if (existing) return existing.id
+  }
+  const name = input.newName?.trim().slice(0, 80)
+  if (!name) return null
+  const byName = await prisma.helpCategory.findUnique({ where: { name }, select: { id: true } })
+  if (byName) return byName.id
+  let slug = slugify(name)
+  if (await prisma.helpCategory.findUnique({ where: { slug }, select: { id: true } })) slug = `${slug}-${Date.now().toString(36)}`
+  const created = await prisma.helpCategory.create({ data: { name, slug }, select: { id: true } })
+  return created.id
 }
 
 function validate(input: EntryInput): string | null {
@@ -50,8 +68,11 @@ export async function createKnowledgeEntry(input: EntryInput) {
   const invalid = validate(input)
   if (invalid) return { ok: false as const, error: invalid }
 
+  const helpCategoryId = await resolveHelpCategory({ categoryId: input.helpCategoryId, newName: input.newCategoryName })
+
   const entry = await prisma.knowledgeEntry.create({
     data: {
+      helpCategoryId,
       title: input.title.trim().slice(0, 190),
       problem: input.problem.trim().slice(0, 8000),
       solution: input.solution.trim().slice(0, 8000),
@@ -77,9 +98,12 @@ export async function updateKnowledgeEntry(input: EntryInput & { id: string }) {
   const existing = await prisma.knowledgeEntry.findUnique({ where: { id: input.id }, select: { slug: true } })
   if (!existing) return { ok: false as const, error: 'Η εγγραφή δεν βρέθηκε.' }
 
+  const helpCategoryId = await resolveHelpCategory({ categoryId: input.helpCategoryId, newName: input.newCategoryName })
+
   await prisma.knowledgeEntry.update({
     where: { id: input.id },
     data: {
+      helpCategoryId,
       title: input.title.trim().slice(0, 190),
       problem: input.problem.trim().slice(0, 8000),
       solution: input.solution.trim().slice(0, 8000),

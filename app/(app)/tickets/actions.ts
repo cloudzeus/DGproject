@@ -10,6 +10,7 @@ import { getUserLoads } from '@/lib/task-scheduling'
 import { sendTicketStatusEmail, sendTicketRejectedEmail, sendTicketMergedEmail, reporterRecipients } from '@/lib/tickets/emails'
 import { analyzeTicket } from '@/lib/tickets/triage'
 import { formatDurationGr } from '@/lib/tickets/format-duration'
+import { resolveHelpCategory } from '../knowledge/actions'
 import type { TaskPriority, TicketCategory, TicketStatus } from '@prisma/client'
 
 // Ticket triage is an admin/manager surface (spec §6).
@@ -191,6 +192,8 @@ export async function saveKnowledgeEntry(input: {
   problem: string
   solution: string
   tags: string[]
+  helpCategoryId?: string | null
+  newCategoryName?: string | null
 }) {
   const actorId = await requireTriager()
   const ticket = await prisma.ticket.findUnique({
@@ -205,8 +208,11 @@ export async function saveKnowledgeEntry(input: {
   if (ticket.status !== 'resolved') return { ok: false as const, error: 'Το ticket δεν είναι σε κατάσταση «Ολοκληρώθηκε».' }
   if (!input.title.trim() || !input.solution.trim()) return { ok: false as const, error: 'Συμπληρώστε τίτλο και λύση.' }
 
+  const helpCategoryId = await resolveHelpCategory({ categoryId: input.helpCategoryId, newName: input.newCategoryName })
+
   await prisma.knowledgeEntry.create({
     data: {
+      helpCategoryId,
       ticketId: ticket.id,
       taskId: ticket.taskId,
       sourceId: ticket.sourceId,

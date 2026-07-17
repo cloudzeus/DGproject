@@ -33,6 +33,8 @@ export async function generateKbDraft(ticketId: string): Promise<void> {
   })
   if (!ticket) return
 
+  const categories = await prisma.helpCategory.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
+
   const userMsg = `ΑΡΧΙΚΟ ΑΙΤΗΜΑ ΠΕΛΑΤΗ:
 ${maskPII(ticket.subject)}
 ${maskPII(ticket.body).slice(0, 2000)}
@@ -49,7 +51,10 @@ ${ticket.resolutionSummary ? maskPII(ticket.resolutionSummary).slice(0, 4000) : 
 ΣΧΟΛΙΑ ΟΜΑΔΑΣ ΚΑΤΑ ΤΗΝ ΕΠΙΛΥΣΗ (συμπληρωματικά):
 ${ticket.task?.comments.map((c) => `- ${maskPII(c.content).slice(0, 300)}`).join('\n') || '(κανένα)'}
 
-Γράψε εγγραφή γνωσιακής βάσης στα Ελληνικά. Αν υπάρχει ΛΥΣΗ ΑΠΟ ΤΟΝ ΤΕΧΝΙΚΟ, το "solution" βασίζεται σε αυτήν. JSON: {"title": string, "problem": string, "solution": string, "tags": string[]}`
+ΥΠΑΡΧΟΥΣΕΣ ΚΑΤΗΓΟΡΙΕΣ ΓΝΩΣΙΑΚΗΣ ΒΑΣΗΣ:
+${categories.map((c) => `- ${c.id}: ${c.name}`).join('\n') || '(καμία ακόμα)'}
+
+Γράψε εγγραφή γνωσιακής βάσης στα Ελληνικά. Αν υπάρχει ΛΥΣΗ ΑΠΟ ΤΟΝ ΤΕΧΝΙΚΟ, το "solution" βασίζεται σε αυτήν. Για την κατηγορία: διάλεξε υπάρχουσα (categoryId) ή πρότεινε νέα σύντομη ελληνική ονομασία (newCategoryName) μόνο αν καμία δεν ταιριάζει. JSON: {"title": string, "problem": string, "solution": string, "tags": string[], "categoryId": string | null, "newCategoryName": string | null}`
 
   const res = await fetch(apiUrl, {
     method: 'POST',
@@ -80,6 +85,11 @@ ${ticket.task?.comments.map((c) => `- ${maskPII(c.content).slice(0, 300)}`).join
     problem: String(parsed.problem ?? '').slice(0, 4000),
     solution: String(parsed.solution ?? '').slice(0, 4000),
     tags: Array.isArray(parsed.tags) ? parsed.tags.map(String).slice(0, 10) : [],
+    categoryId:
+      typeof parsed.categoryId === 'string' && categories.some((c) => c.id === parsed.categoryId)
+        ? parsed.categoryId
+        : null,
+    newCategoryName: typeof parsed.newCategoryName === 'string' ? parsed.newCategoryName.slice(0, 80) : null,
   }
 
   await prisma.ticketEvent.create({
