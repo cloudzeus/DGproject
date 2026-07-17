@@ -4,29 +4,9 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { TICKET_STATUS_LABEL } from '@/lib/tickets/status-labels'
 import type { TicketStatus } from '@prisma/client'
+import { TicketsTable } from './tickets-table'
 
 export const dynamic = 'force-dynamic'
-
-const STATUS_BADGE: Record<TicketStatus, string> = {
-  new: 'bg-fluent-accent-orange text-white',
-  analyzing: 'bg-fluent-blue-100 text-fluent-blue-700',
-  triaged: 'bg-fluent-blue-600 text-white',
-  converted: 'bg-purple-100 text-purple-700',
-  resolved: 'bg-green-100 text-green-700',
-  closed: 'bg-neutral-200 text-neutral-600',
-  rejected: 'bg-red-100 text-red-700',
-  needs_info: 'bg-amber-100 text-amber-800',
-  merged: 'bg-neutral-200 text-neutral-600',
-}
-
-const CATEGORY_LABEL: Record<string, string> = {
-  bug: '🐞 Σφάλμα',
-  feature: '✨ Νέα λειτουργία',
-  support: '🛟 Υποστήριξη',
-  question: '❓ Ερώτηση',
-  billing: '💶 Χρέωση',
-  other: '📋 Άλλο',
-}
 
 const OPEN_STATUSES: TicketStatus[] = ['new', 'analyzing', 'triaged']
 
@@ -43,7 +23,7 @@ export default async function TicketsPage({
   const statusFilter =
     status && status in TICKET_STATUS_LABEL ? (status as TicketStatus) : undefined
 
-  const [tickets, sources] = await Promise.all([
+  const [tickets, sources, users] = await Promise.all([
     prisma.ticket.findMany({
       where: {
         ...(statusFilter ? { status: statusFilter } : {}),
@@ -54,6 +34,11 @@ export default async function TicketsPage({
       take: 100,
     }),
     prisma.ticketSource.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    prisma.user.findMany({
+      where: { role: { in: ['admin', 'manager', 'member'] }, userType: 'employee' },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    }),
   ])
 
   // Open tickets first, then the rest — newest first inside each group.
@@ -63,7 +48,6 @@ export default async function TicketsPage({
     return ao - bo || b.createdAt.getTime() - a.createdAt.getTime()
   })
 
-  const fmt = new Intl.DateTimeFormat('el-GR', { dateStyle: 'short', timeStyle: 'short' })
   const filterLink = (params: Record<string, string | undefined>) => {
     const q = new URLSearchParams()
     if (params.status) q.set('status', params.status)
@@ -125,45 +109,20 @@ export default async function TicketsPage({
           Δεν υπάρχουν tickets{statusFilter ? ` με κατάσταση «${TICKET_STATUS_LABEL[statusFilter]}»` : ''}.
         </div>
       ) : (
-        <div className="rounded-lg border border-black/5 bg-white shadow-fluent-2 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-black/5 text-left text-xs uppercase tracking-wider text-fluent-neutral-50">
-                <th className="px-4 py-3 font-semibold">Κωδικός</th>
-                <th className="px-4 py-3 font-semibold">Θέμα</th>
-                <th className="px-4 py-3 font-semibold">Πηγή</th>
-                <th className="px-4 py-3 font-semibold">Κατηγορία</th>
-                <th className="px-4 py-3 font-semibold">Κατάσταση</th>
-                <th className="px-4 py-3 font-semibold">Υποβλήθηκε</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((t) => (
-                <tr key={t.id} className="border-b border-black/5 last:border-0 hover:bg-fluent-blue-50/40">
-                  <td className="px-4 py-3 font-mono text-xs text-fluent-neutral-70 whitespace-nowrap">
-                    <Link href={`/tickets/${t.id}`} className="hover:underline">{t.code}</Link>
-                  </td>
-                  <td className="px-4 py-3 max-w-md">
-                    <Link href={`/tickets/${t.id}`} className="font-medium text-fluent-neutral-90 hover:text-fluent-blue-600 line-clamp-1">
-                      {t.aiTitle ?? t.subject}
-                    </Link>
-                    <span className="text-xs text-fluent-neutral-50">{t.reporterEmail}</span>
-                  </td>
-                  <td className="px-4 py-3 text-fluent-neutral-70 whitespace-nowrap">{t.source.name}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-xs">
-                    {t.aiCategory ? CATEGORY_LABEL[t.aiCategory] : '—'}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_BADGE[t.status]}`}>
-                      {TICKET_STATUS_LABEL[t.status]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-fluent-neutral-60 whitespace-nowrap">{fmt.format(t.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <TicketsTable
+          rows={sorted.map((t) => ({
+            id: t.id,
+            code: t.code,
+            subject: t.subject,
+            aiTitle: t.aiTitle,
+            reporterEmail: t.reporterEmail,
+            sourceName: t.source.name,
+            aiCategory: t.aiCategory,
+            status: t.status,
+            createdAt: t.createdAt.toISOString(),
+          }))}
+          users={users}
+        />
       )}
     </div>
   )
