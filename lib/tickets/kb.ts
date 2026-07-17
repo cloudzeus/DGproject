@@ -21,6 +21,7 @@ export async function generateKbDraft(ticketId: string): Promise<void> {
       subject: true,
       body: true,
       aiDescription: true,
+      resolutionSummary: true,
       task: {
         select: {
           title: true,
@@ -42,10 +43,13 @@ ${maskPII(ticket.aiDescription ?? '—').slice(0, 2000)}
 ΕΡΓΑΣΙΑ ΠΟΥ ΟΛΟΚΛΗΡΩΘΗΚΕ:
 ${ticket.task ? `${ticket.task.title}\n${maskPII(ticket.task.description ?? '')}` : '—'}
 
-ΣΧΟΛΙΑ ΟΜΑΔΑΣ ΚΑΤΑ ΤΗΝ ΕΠΙΛΥΣΗ:
+ΛΥΣΗ ΑΠΟ ΤΟΝ ΤΕΧΝΙΚΟ (κύρια πηγή για το πεδίο "solution"):
+${ticket.resolutionSummary ? maskPII(ticket.resolutionSummary).slice(0, 4000) : '(δεν έχει καταγραφεί — βασίσου στα σχόλια)'}
+
+ΣΧΟΛΙΑ ΟΜΑΔΑΣ ΚΑΤΑ ΤΗΝ ΕΠΙΛΥΣΗ (συμπληρωματικά):
 ${ticket.task?.comments.map((c) => `- ${maskPII(c.content).slice(0, 300)}`).join('\n') || '(κανένα)'}
 
-Γράψε εγγραφή γνωσιακής βάσης στα Ελληνικά. JSON: {"title": string, "problem": string, "solution": string, "tags": string[]}`
+Γράψε εγγραφή γνωσιακής βάσης στα Ελληνικά. Αν υπάρχει ΛΥΣΗ ΑΠΟ ΤΟΝ ΤΕΧΝΙΚΟ, το "solution" βασίζεται σε αυτήν. JSON: {"title": string, "problem": string, "solution": string, "tags": string[]}`
 
   const res = await fetch(apiUrl, {
     method: 'POST',
