@@ -19,6 +19,7 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
     include: {
       source: { select: { name: true, defaultProjectId: true } },
       events: { orderBy: { createdAt: 'asc' } },
+      attachments: true,
       task: { select: { id: true, title: true, status: true, projectId: true, project: { select: { name: true } } } },
     },
   })
@@ -98,6 +99,7 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
             ? { id: ticket.task.id, title: ticket.task.title, status: ticket.task.status, projectId: ticket.task.projectId, projectName: ticket.task.project.name }
             : null,
         }}
+        attachments={ticket.attachments.map((a) => ({ id: a.id, name: a.name, url: a.url, mimeType: a.mimeType }))}
         projects={projects}
         users={users}
         events={events}

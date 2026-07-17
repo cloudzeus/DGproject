@@ -58,7 +58,10 @@ export async function convertTicketToTask(input: {
 
   const ticket = await prisma.ticket.findUnique({
     where: { id: input.ticketId },
-    select: { id: true, code: true, status: true, subject: true, reporterEmail: true, reporterName: true, publicToken: true, originUrl: true },
+    select: {
+      id: true, code: true, status: true, subject: true, reporterEmail: true, reporterName: true, publicToken: true, originUrl: true,
+      attachments: { select: { name: true, size: true, mimeType: true, url: true } },
+    },
   })
   if (!ticket) return { ok: false as const, error: 'Το ticket δεν βρέθηκε.' }
   if (ticket.status === 'converted' || ticket.status === 'resolved' || ticket.status === 'closed') {
@@ -96,6 +99,21 @@ export async function convertTicketToTask(input: {
     },
     select: { id: true },
   })
+
+  if (ticket.attachments.length > 0) {
+    await prisma.attachment.createMany({
+      data: ticket.attachments.map((a) => ({
+        taskId: task.id,
+        projectId: input.projectId,
+        name: a.name,
+        size: a.size,
+        mimeType: a.mimeType,
+        url: a.url,
+        source: 'local' as const,
+        uploadedById: actorId,
+      })),
+    })
+  }
 
   await prisma.ticket.update({
     where: { id: ticket.id },

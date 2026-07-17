@@ -40,6 +40,7 @@ type TicketView = {
 
 type Props = {
   ticket: TicketView
+  attachments: { id: string; name: string; url: string; mimeType: string }[]
   projects: { id: string; name: string; projectCode: string | null }[]
   users: { id: string; name: string; hint: string }[]
   events: { id: string; type: string; payload: Record<string, unknown> | null; createdAt: string }[]
@@ -83,7 +84,7 @@ function eventLabel(type: string, payload: Record<string, unknown> | null): stri
   }
 }
 
-export function TicketDetailClient({ ticket, projects, users, events, kbDraft, kbSaved }: Props) {
+export function TicketDetailClient({ ticket, attachments, projects, users, events, kbDraft, kbSaved }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -138,6 +139,25 @@ export function TicketDetailClient({ ticket, projects, users, events, kbDraft, k
             <div><dt className="inline font-semibold">Υποβλήθηκε: </dt><dd className="inline">{fmt(ticket.createdAt)}</dd></div>
           </dl>
         </div>
+
+        {/* Attachments */}
+        {attachments.length > 0 && (
+          <div className="rounded-lg border border-black/5 bg-white shadow-fluent-2 p-5">
+            <h2 className="text-sm font-semibold text-fluent-neutral-90 mb-3">📎 Συνημμένα</h2>
+            <div className="flex flex-wrap gap-3">
+              {attachments.map((a) => (
+                <a key={a.id} href={a.url} target="_blank" rel="noreferrer" className="group w-24 text-center">
+                  <img
+                    src={a.url}
+                    alt={a.name}
+                    className="h-20 w-20 rounded-md object-cover border border-black/5 mx-auto"
+                  />
+                  <p className="mt-1 truncate text-[11px] text-fluent-neutral-60 group-hover:underline">{a.name}</p>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Timeline */}
         <div className="rounded-lg border border-black/5 bg-white shadow-fluent-2 p-5">
