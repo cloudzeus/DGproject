@@ -1050,10 +1050,12 @@ model Ticket {
   aiError               String?         @db.Text
 
   // ─── Conversion ────────────────────────────────────────────────────
-  taskId     String?   @unique
-  resolvedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  taskId            String?   @unique
+  resolvedAt        DateTime?
+  // Human-written solution from the resolver (dialog on task completion / ticket page)
+  resolutionSummary String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   source TicketSource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   task   Task?         @relation("TicketTask", fields: [taskId], references: [id], onDelete: SetNull)
@@ -1083,15 +1085,23 @@ model KnowledgeEntry {
   ticketId     String?         @unique
   taskId       String?
   projectId    String?
+  // TicketSource grouping for the public help center (/help/{sourceCode})
+  sourceId     String?
   title        String
   problem      String          @db.Text
   solution     String          @db.Text
   // JSON array of keyword strings — matched via FULLTEXT/LIKE during triage
   tags         String          @db.Text
   category     TicketCategory?
+  // Public help-center exposure — flipped explicitly by a triager, never automatic
+  isPublic     Boolean         @default(false)
+  // URL slug for public articles; set when first published
+  slug         String?         @unique
   approvedById String?
   createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @default(now()) @updatedAt
 
   @@index([projectId])
   @@index([createdAt])
+  @@index([sourceId, isPublic])
 }
