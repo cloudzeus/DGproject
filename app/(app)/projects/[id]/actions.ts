@@ -47,3 +47,22 @@ export async function removeProjectMember(projectId: string, userId: string) {
   revalidatePath('/projects');
   return { ok: true };
 }
+
+export async function setProjectApprover(projectId: string, userId: string | null) {
+  await requireProjectEditor(projectId);
+
+  if (userId) {
+    // Approver may be ANY workspace user — no membership requirement.
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) return { ok: false, error: 'Ο χρήστης δεν βρέθηκε.' };
+  }
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { approverId: userId },
+  });
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/projects');
+  return { ok: true };
+}
