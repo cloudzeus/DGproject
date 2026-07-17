@@ -5,8 +5,8 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/mailgun';
 import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
-import { notifyApprover, notifyTaskCompleted, createNotifications } from '@/lib/notifications';
-import { canApprove, isApprovalGatedTransition, entersReview, isRejection } from '@/lib/approval';
+import { notifyTaskStatusChange } from '@/lib/notifications';
+import { canApprove, isApprovalGatedTransition } from '@/lib/approval';
 import type { TaskStatus } from '@prisma/client';
 
 const STATUSES: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done'];
@@ -97,51 +97,19 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   });
 
   if (from !== status) {
-    if (approverId && entersReview(from, status)) {
-      await notifyApprover(task.projectId, userId, {
-        title: 'Εργασία για έγκριση',
-        message: `Η εργασία «${previous.title}» στο έργο ${previous.project.name} περιμένει την έγκρισή σου.`,
-        type: 'approval',
-        link: '/board',
-      });
-    }
-    if (approverId && (status === 'done' || isRejection(from, status))) {
-      const recipients = new Set<string>([previous.createdById, ...previous.assignees.map((a) => a.userId)]);
-      recipients.delete(userId);
-      const decided = status === 'done';
-      await createNotifications(
-        Array.from(recipients).map((uid) => ({
-          userId: uid,
-          title: decided ? 'Εργασία εγκρίθηκε' : 'Ζητήθηκαν αλλαγές',
-          message: decided
-            ? `Η εργασία «${previous.title}» εγκρίθηκε.`
-            : `Ζητήθηκαν αλλαγές στην εργασία «${previous.title}».`,
-          type: 'approval' as const,
-          link: '/board',
-        })),
-      );
-    }
-    if (status === 'done' && from !== 'done') {
-      await notifyTaskCompleted(taskId, userId);
-    }
-    // Firehose: approver hears about every status change. Dedup ONLY on
-    // entersReview — the only transition where the approver already got a
-    // notification (the "Εργασία για έγκριση" call). On done/reject the decision
-    // notifications go to creator+assignees, NOT the approver, so the approver
-    // must still be informed here. Skip entirely when no approver.
-    if (approverId) {
-      await notifyApprover(
-        task.projectId,
-        userId,
-        {
-          title: 'Αλλαγή κατάστασης εργασίας',
-          message: `Η εργασία «${previous.title}»: ${from} → ${status}.`,
-          type: 'status_change',
-          link: '/board',
-        },
-        entersReview(from, status) ? [approverId] : [],
-      );
-    }
+    await notifyTaskStatusChange({
+      taskId,
+      projectId: task.projectId,
+      actorId: userId,
+      from,
+      to: status,
+      approverId,
+      taskTitle: previous.title,
+      projectName: previous.project.name,
+      createdById: previous.createdById,
+      ownerId: previous.project.ownerId,
+      assigneeIds: previous.assignees.map((a) => a.userId),
+    });
   }
 
   revalidatePath('/board');

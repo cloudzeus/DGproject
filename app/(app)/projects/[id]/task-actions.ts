@@ -26,8 +26,8 @@ import {
   BUSINESS_START_MINUTE,
 } from '@/lib/business-hours';
 import { sendEmail } from '@/lib/mailgun';
-import { notifyTaskAssignment, notifyTaskCompleted, notifyApprover, createNotifications } from '@/lib/notifications';
-import { canApprove, isApprovalGatedTransition, entersReview, isRejection } from '@/lib/approval';
+import { notifyTaskAssignment, notifyApprover, notifyTaskStatusChange } from '@/lib/notifications';
+import { canApprove, isApprovalGatedTransition } from '@/lib/approval';
 import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
 
 
@@ -438,6 +438,28 @@ export async function createTask(projectId: string, formData: FormData) {
   const cycleErr = await validateNoDependencyCycle(projectId, null, input.dependencyIds);
   if (cycleErr) return { ok: false, error: cycleErr };
 
+  // Approval gate: block creating a task directly into `done` (e.g. the board's
+  // "+" on the Done column) when the project has an approver and the creator is
+  // not approver/owner/global-admin.
+  const createGateProject = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { approverId: true, ownerId: true },
+  });
+  const createSession = await auth();
+  const createRole = createSession?.user?.role ?? 'member';
+  if (
+    createGateProject &&
+    isApprovalGatedTransition(createGateProject.approverId, null, input.status) &&
+    !canApprove({
+      approverId: createGateProject.approverId,
+      ownerId: createGateProject.ownerId,
+      userId: actorId,
+      userRole: createRole,
+    })
+  ) {
+    return { ok: false, error: 'Μόνο ο υπεύθυνος έγκρισης (approver) μπορεί να εγκρίνει αυτή την εργασία.' };
+  }
+
   // If the user didn't pick a date but selected dependencies, schedule starting
   // right after the latest dependency's due date.
   const depDeadline = await latestDependencyDue(input.dependencyIds);
@@ -507,17 +529,19 @@ export async function createTask(projectId: string, formData: FormData) {
   await syncTaskCalendar(created.id);
   await syncTaskTeams(created.id);
   await logTaskActivity(created.id, projectId, actorId, 'created');
-  await notifyApprover(
-    projectId,
-    actorId,
-    {
-      title: 'Νέα εργασία',
-      message: `Δημιουργήθηκε η εργασία «${input.title}».`,
-      type: 'assignment',
-      link: '/board',
-    },
-    input.assigneeIds,
-  );
+  if (createGateProject?.approverId) {
+    await notifyApprover(
+      projectId,
+      actorId,
+      {
+        title: 'Νέα εργασία',
+        message: `Δημιουργήθηκε η εργασία «${input.title}».`,
+        type: 'assignment',
+        link: '/board',
+      },
+      input.assigneeIds,
+    );
+  }
   if (input.assigneeIds.length > 0) {
     await notifyAssignees(created.id, input.assigneeIds, actorId, 'assigned');
     await notifyTaskAssignment(created.id, input.assigneeIds, actorId);
@@ -551,11 +575,13 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
 
   // Approval gate: block edit-form status changes into `done` when the project
   // has an approver and the editor is not approver/owner/global-admin.
+  // `gateProject` is hoisted to function scope so the status-change
+  // notifications below can reuse its approverId/ownerId/name.
+  const gateProject = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { approverId: true, ownerId: true, name: true },
+  });
   {
-    const gateProject = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { approverId: true, ownerId: true },
-    });
     const gateSession = await auth();
     const gateActorId = gateSession?.user?.id ?? '';
     const gateRole = gateSession?.user?.role ?? 'member';
@@ -679,24 +705,38 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
   if (addedAssigneeIds.length > 0) {
     await notifyAssignees(taskId, addedAssigneeIds, actorId, 'added');
     await notifyTaskAssignment(taskId, addedAssigneeIds, actorId);
-    await notifyApprover(
-      projectId,
-      actorId,
-      {
-        title: 'Αλλαγή ανάθεσης',
-        message: `Άλλαξε η ανάθεση στην εργασία.`,
-        type: 'assignment',
-        link: '/board',
-      },
-      addedAssigneeIds,
-    );
+    if (gateProject?.approverId) {
+      await notifyApprover(
+        projectId,
+        actorId,
+        {
+          title: 'Αλλαγή ανάθεσης',
+          message: `Άλλαξε η ανάθεση στην εργασία.`,
+          type: 'assignment',
+          link: '/board',
+        },
+        addedAssigneeIds,
+      );
+    }
     await logTaskActivity(taskId, projectId, actorId, 'assigned', {
       userIds: addedAssigneeIds,
     });
   }
 
-  if (previous && previous.status !== 'done' && input.status === 'done') {
-    await notifyTaskCompleted(taskId, actorId);
+  if (previous && previous.status !== input.status) {
+    await notifyTaskStatusChange({
+      taskId,
+      projectId,
+      actorId,
+      from: previous.status,
+      to: input.status,
+      approverId: gateProject?.approverId ?? null,
+      taskTitle: input.title,
+      projectName: gateProject?.name ?? '',
+      createdById: previous.createdById,
+      ownerId: gateProject?.ownerId ?? '',
+      assigneeIds: input.assigneeIds,
+    });
   }
 
   revalidatePath(`/projects/${projectId}`);
@@ -721,6 +761,7 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
         inProgressAccumulatedMs: true,
         title: true,
         createdById: true,
+        assignees: { select: { userId: true } },
       },
     }),
     prisma.project.findUnique({
@@ -762,66 +803,19 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
   if (previous && previous.status !== status) {
     const action: ActivityAction = status === 'done' ? 'completed' : 'moved';
     await logTaskActivity(taskId, projectId, actorId, action, { from: previous.status, to: status });
-
-    // Approval-request notification: task entered review.
-    if (project.approverId && entersReview(from, status)) {
-      await notifyApprover(
-        projectId,
-        actorId,
-        {
-          title: 'Εργασία για έγκριση',
-          message: `Η εργασία «${previous.title}» στο έργο ${project.name} περιμένει την έγκρισή σου.`,
-          type: 'approval',
-          link: '/board',
-        },
-        [],
-      );
-    }
-
-    // Approval decision notifications to creator + assignees.
-    if (project.approverId && (status === 'done' || isRejection(from, status))) {
-      const assignees = await prisma.taskAssignee.findMany({
-        where: { taskId },
-        select: { userId: true },
-      });
-      const recipients = new Set<string>([previous.createdById, ...assignees.map((a) => a.userId)]);
-      recipients.delete(actorId);
-      const decided = status === 'done';
-      await createNotifications(
-        Array.from(recipients).map((userId) => ({
-          userId,
-          title: decided ? 'Εργασία εγκρίθηκε' : 'Ζητήθηκαν αλλαγές',
-          message: decided
-            ? `Η εργασία «${previous.title}» εγκρίθηκε.`
-            : `Ζητήθηκαν αλλαγές στην εργασία «${previous.title}».`,
-          type: 'approval' as const,
-          link: '/board',
-        })),
-      );
-    }
-
-    if (status === 'done' && previous.status !== 'done') {
-      await notifyTaskCompleted(taskId, actorId);
-    }
-
-    // Firehose: approver hears about every status change. Dedup only on
-    // entersReview, where the approver already got the "request" notification
-    // above; on done/reject the decision notifications went to creator +
-    // assignees (never the approver), so the approver is informed via this
-    // firehose. When the actor IS the approver, notifyApprover self-suppresses.
-    if (project.approverId) {
-      await notifyApprover(
-        projectId,
-        actorId,
-        {
-          title: 'Αλλαγή κατάστασης εργασίας',
-          message: `Η εργασία «${previous.title}»: ${previous.status} → ${status}.`,
-          type: 'status_change',
-          link: '/board',
-        },
-        entersReview(from, status) ? [project.approverId ?? ''] : [],
-      );
-    }
+    await notifyTaskStatusChange({
+      taskId,
+      projectId,
+      actorId,
+      from,
+      to: status,
+      approverId: project.approverId,
+      taskTitle: previous.title,
+      projectName: project.name,
+      createdById: previous.createdById,
+      ownerId: project.ownerId,
+      assigneeIds: previous.assignees.map((a) => a.userId),
+    });
   }
 
   revalidatePath(`/projects/${projectId}`);

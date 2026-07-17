@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import type { NotificationType } from '@prisma/client';
+import { entersReview, isRejection } from '@/lib/approval';
 
 type CreateNotificationInput = {
   userId: string;
@@ -129,4 +130,85 @@ export async function notifyApprover(
       link: payload.link,
     },
   ]);
+}
+
+/**
+ * Emit all approver/creator/assignee notifications for a single task status
+ * change, with EXACTLY-ONCE delivery to the approver. Call from every path that
+ * changes a task's status (both updateTaskStatus actions and the edit form).
+ * Caller passes preloaded data to avoid extra queries. Does nothing if from===to.
+ */
+export async function notifyTaskStatusChange(params: {
+  taskId: string;
+  projectId: string;
+  actorId: string;
+  from: string | null;
+  to: string;
+  approverId: string | null;
+  taskTitle: string;
+  projectName: string;
+  createdById: string;
+  ownerId: string;
+  assigneeIds: string[];
+}): Promise<void> {
+  const { taskId, projectId, actorId, from, to, approverId, taskTitle, projectName, createdById, ownerId, assigneeIds } = params;
+  if (from === to) return;
+
+  // Track every user already notified for THIS event so the approver firehose
+  // below never double-notifies (spec: exactly-once for the approver).
+  const notified = new Set<string>();
+
+  // 1. Entered review → notify approver it needs approval.
+  if (approverId && entersReview(from, to)) {
+    await notifyApprover(projectId, actorId, {
+      title: 'Εργασία για έγκριση',
+      message: `Η εργασία «${taskTitle}» στο έργο ${projectName} περιμένει την έγκρισή σου.`,
+      type: 'approval',
+      link: '/board',
+    });
+    notified.add(approverId);
+  }
+
+  // 2. Decision (approve → done, or reject → out of review) → creator + assignees.
+  if (approverId && (to === 'done' || isRejection(from, to))) {
+    const recipients = new Set<string>([createdById, ...assigneeIds]);
+    recipients.delete(actorId);
+    const decided = to === 'done';
+    await createNotifications(
+      Array.from(recipients).map((userId) => ({
+        userId,
+        title: decided ? 'Εργασία εγκρίθηκε' : 'Ζητήθηκαν αλλαγές',
+        message: decided
+          ? `Η εργασία «${taskTitle}» εγκρίθηκε.`
+          : `Ζητήθηκαν αλλαγές στην εργασία «${taskTitle}».`,
+        type: 'approval' as const,
+        link: '/board',
+      })),
+    );
+    recipients.forEach((r) => notified.add(r));
+  }
+
+  // 3. Completed → existing behavior (notifies creator + owner + assignees, minus actor).
+  if (to === 'done' && from !== 'done') {
+    await notifyTaskCompleted(taskId, actorId);
+    [createdById, ownerId, ...assigneeIds].forEach((u) => {
+      if (u !== actorId) notified.add(u);
+    });
+  }
+
+  // 4. Firehose → approver hears about EVERY status change, exactly once (skipped
+  //    if the approver was already notified in steps 1-3 above, or is the actor).
+  if (approverId) {
+    await notifyApprover(
+      projectId,
+      actorId,
+      {
+        title: 'Αλλαγή κατάστασης εργασίας',
+        message: `Η εργασία «${taskTitle}»: ${from} → ${to}.`,
+        type: 'status_change',
+        link: '/board',
+      },
+      Array.from(notified),
+    );
+  }
 }
