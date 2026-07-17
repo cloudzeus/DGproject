@@ -107,6 +107,22 @@ export async function saveResolution(input: { ticketId: string; text: string }) 
       .catch((e) => console.error('[tickets] kb draft regen failed:', e))
   }
 
+  // Ενημέρωση πελάτη με τη λύση (μόνο όταν το ticket έχει ήδη επιλυθεί —
+  // αλλιώς η λύση θα σταλεί με το email ολοκλήρωσης του propagate).
+  if (ticket.status === 'resolved') {
+    try {
+      const { sendTicketResolvedEmail, reporterRecipients } = await import('@/lib/tickets/emails')
+      for (const r of await reporterRecipients(ticket.id)) {
+        await sendTicketResolvedEmail({ ...r, solution: text })
+      }
+      await prisma.ticketEvent.create({
+        data: { ticketId: ticket.id, type: 'emailed', actorId: userId, payload: JSON.stringify({ kind: 'solution' }) },
+      })
+    } catch (e) {
+      console.error('[tickets] solution email failed:', e)
+    }
+  }
+
   revalidatePath(`/tickets/${input.ticketId}`)
   return { ok: true as const }
 }
@@ -120,9 +136,15 @@ export async function getResolutionPromptInfo(taskId: string) {
   await requireUser()
   const ticket = await prisma.ticket.findUnique({
     where: { taskId },
-    select: { id: true, code: true, subject: true, status: true, resolutionSummary: true },
+    select: {
+      id: true, code: true, subject: true, status: true, resolutionSummary: true,
+      task: { select: { status: true } },
+    },
   })
   if (!ticket || ticket.resolutionSummary) return null
   if (ticket.status !== 'converted' && ticket.status !== 'resolved') return null
+  // Prompt μόνο όταν το task έχει πράγματι ολοκληρωθεί — οι callers (edit modal
+  // close, drag σε done) δεν ξέρουν πάντα το τρέχον status.
+  if (ticket.task?.status !== 'done') return null
   return { ticketId: ticket.id, code: ticket.code, subject: ticket.subject }
 }

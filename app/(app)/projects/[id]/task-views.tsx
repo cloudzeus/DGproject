@@ -118,6 +118,12 @@ function useTaskMutations(projectId: string) {
     new Promise<{ ok: boolean; error?: string }>((resolve) => {
       startTransition(async () => {
         const res = await updateTask(projectId, taskId, fd);
+        // Ολοκλήρωση μέσα από τη φόρμα επεξεργασίας: ζήτα λύση για το ticket
+        // (ο server ελέγχει ότι το task είναι όντως done και ότι λείπει λύση).
+        if ((res?.ok ?? true) && fd.get('status') === 'done') {
+          const info = await checkResolutionPrompt(taskId);
+          if (info) setResolutionPrompt(info);
+        }
         router.refresh();
         resolve(res ?? { ok: true });
       });

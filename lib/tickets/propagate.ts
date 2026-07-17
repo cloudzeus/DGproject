@@ -20,7 +20,7 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
       where: { taskId },
       select: {
         id: true, code: true, status: true, subject: true, reporterEmail: true,
-        reporterName: true, publicToken: true, createdAt: true,
+        reporterName: true, publicToken: true, createdAt: true, resolutionSummary: true,
         events: { where: { type: 'task_status' }, orderBy: { createdAt: 'desc' }, take: 1 },
       },
     })
@@ -49,6 +49,9 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
         await sendTicketResolvedEmail({
           ...r,
           resolutionTime: formatDurationGr(ticket.createdAt, resolvedAt),
+          // Αν ο resolver έχει ήδη καταγράψει λύση (π.χ. από τη σελίδα ticket),
+          // στείλ' την με το email ολοκλήρωσης.
+          solution: ticket.resolutionSummary,
         })
       }
       void import('@/lib/tickets/kb')

@@ -42,7 +42,7 @@ export default async function KnowledgePage({
   if (pub === '1') where.isPublic = true
   if (helpcat) where.helpCategoryId = helpcat
 
-  const [entries, sources, projects, helpCategories] = await Promise.all([
+  const [entries, sources, projects, helpCategories, draftCandidates] = await Promise.all([
     prisma.knowledgeEntry.findMany({ where, orderBy: { createdAt: 'desc' }, take: 100 }),
     prisma.ticketSource.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
@@ -50,7 +50,30 @@ export default async function KnowledgePage({
       select: { id: true, name: true, _count: { select: { entries: true } } },
       orderBy: { name: 'asc' },
     }),
+    // Λυμένα tickets με AI draft που δεν έχει εγκριθεί ακόμα ως εγγραφή ΚΒ.
+    canEdit
+      ? prisma.ticket.findMany({
+          where: {
+            status: { in: ['resolved', 'closed'] },
+            events: { some: { type: 'kb_draft' } },
+          },
+          select: { id: true, code: true, subject: true, resolvedAt: true },
+          orderBy: { resolvedAt: 'desc' },
+          take: 20,
+        })
+      : Promise.resolve([]),
   ])
+
+  // Χωρίς back-relation στο schema: φιλτράρουμε όσα tickets έχουν ήδη εγγραφή.
+  const approvedTicketIds = new Set(
+    (
+      await prisma.knowledgeEntry.findMany({
+        where: { ticketId: { in: draftCandidates.map((t) => t.id) } },
+        select: { ticketId: true },
+      })
+    ).map((e) => e.ticketId),
+  )
+  const pendingDrafts = draftCandidates.filter((t) => !approvedTicketIds.has(t.id))
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -118,6 +141,35 @@ export default async function KnowledgePage({
         <CategoryManager
           categories={helpCategories.map((c) => ({ id: c.id, name: c.name, count: c._count.entries }))}
         />
+      )}
+
+      {canEdit && pendingDrafts.length > 0 && (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">
+            Εκκρεμείς προτάσεις για τη γνωσιακή βάση ({pendingDrafts.length})
+          </p>
+          <p className="mt-0.5 text-xs text-amber-800">
+            Λυμένα tickets με έτοιμο AI πρόχειρο — ανοίξτε το ticket για έλεγχο και έγκριση της εγγραφής.
+          </p>
+          <ul className="mt-3 space-y-1.5">
+            {pendingDrafts.map((t) => (
+              <li key={t.id}>
+                <Link
+                  href={`/tickets/${t.id}`}
+                  className="group flex items-center gap-2 text-sm"
+                >
+                  <span className="font-mono text-xs text-amber-800">{t.code}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-fluent-neutral-90 group-hover:text-fluent-blue-600">
+                    {t.subject}
+                  </span>
+                  <span className="shrink-0 text-xs font-semibold text-fluent-blue-600 group-hover:underline">
+                    Έλεγχος &amp; έγκριση →
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {entries.length === 0 ? (

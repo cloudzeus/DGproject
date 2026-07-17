@@ -495,8 +495,14 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate, fo
               assigneeIds: editing.assigneeIds,
             }}
             onClose={() => {
+              const editedId = editing.id;
               setEditing(null);
               router.refresh();
+              // Αν η επεξεργασία ολοκλήρωσε task από ticket χωρίς λύση, ζήτα τη λύση
+              // (ο server απαντά μόνο όταν το task είναι done και λείπει resolutionSummary).
+              void checkResolutionPrompt(editedId).then((info) => {
+                if (info) setResolutionPrompt(info);
+              });
             }}
           />
         )}

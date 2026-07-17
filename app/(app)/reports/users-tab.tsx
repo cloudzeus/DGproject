@@ -5,7 +5,7 @@ import { ChevronDown16Regular, ChevronRight16Regular, ArrowUp16Filled, ArrowDown
 import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { ROLE_LABELS_EL, STATUS_LABELS_EL } from '@/lib/reports/shared';
-import { DELTA } from '@/lib/reports/chart-theme';
+import { DELTA, STATUS_SERIES } from '@/lib/reports/chart-theme';
 import { WeeklyBars } from '@/components/reports/time-charts';
 import type { UsersReport, UserReportRow } from '@/lib/reports/users';
 
@@ -84,20 +84,39 @@ export function UsersTab({ data }: { data: UsersReport }) {
                           <WeeklyBars data={u.weeklyCompletions} name="Ολοκληρώσεις" height={140} />
                         )}
                       </div>
-                      <div>
-                        <p className="text-[11px] font-semibold text-fluent-neutral-60 uppercase tracking-wider mb-2">Πρόσφατα tasks</p>
-                        <ul className="space-y-1.5">
-                          {u.recentTasks.map((t) => (
-                            <li key={t.id} className="flex items-center gap-2 text-xs">
-                              <Link href={`/board?task=${t.id}`} className="font-medium text-fluent-neutral-90 hover:text-fluent-blue-600 truncate">
-                                {t.title}
-                              </Link>
-                              <span className="text-fluent-neutral-50 shrink-0">
-                                {t.projectName} · {STATUS_LABELS_EL[t.status] ?? t.status}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-fluent-neutral-60 uppercase tracking-wider mb-2">
+                          Πρόσφατα tasks
+                        </p>
+                        {u.recentTasks.length === 0 ? (
+                          <p className="text-sm text-fluent-neutral-50 py-4">Κανένα task.</p>
+                        ) : (
+                          <ul className="rounded-lg border border-black/5 bg-white divide-y divide-black/5 max-h-60 overflow-y-auto shadow-fluent-2">
+                            {u.recentTasks.map((t) => (
+                              <li key={t.id}>
+                                <Link
+                                  href={`/board?task=${t.id}`}
+                                  className="group flex items-center gap-2.5 px-3 py-2 hover:bg-fluent-blue-50/40 transition-colors"
+                                >
+                                  <span
+                                    className="h-2 w-2 rounded-full shrink-0"
+                                    style={{ background: STATUS_SERIES[t.status] ?? '#8A8A8A' }}
+                                    aria-hidden
+                                  />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block text-xs font-medium text-fluent-neutral-90 truncate group-hover:text-fluent-blue-600">
+                                      {t.title}
+                                    </span>
+                                    <span className="block text-[10px] text-fluent-neutral-50 truncate">{t.projectName}</span>
+                                  </span>
+                                  <span className="shrink-0 rounded-full bg-fluent-neutral-6 px-2 py-0.5 text-[10px] font-semibold text-fluent-neutral-70">
+                                    {STATUS_LABELS_EL[t.status] ?? t.status}
+                                  </span>
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
                     </div>
                   </td>

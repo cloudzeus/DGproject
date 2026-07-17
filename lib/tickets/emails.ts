@@ -66,7 +66,7 @@ export async function sendTicketStatusEmail(
 }
 
 export async function sendTicketResolvedEmail(
-  input: TicketEmailInput & { resolutionTime?: string | null }
+  input: TicketEmailInput & { resolutionTime?: string | null; solution?: string | null }
 ) {
   const url = statusUrl(input.publicToken)
   const html = emailLayout({
@@ -78,6 +78,7 @@ export async function sendTicketResolvedEmail(
     },
     body: `
       <p style="font-size:14px;line-height:1.6;">Το αίτημά σας ολοκληρώθηκε. Αν το πρόβλημα επιμένει ή έχετε νέες ερωτήσεις, απαντήστε σε αυτό το email ή υποβάλετε νέο αίτημα.</p>
+      ${input.solution ? quote({ body: input.solution, tone: 'success', caption: 'Η λύση' }) : ''}
       ${input.resolutionTime ? metaTable([{ label: 'Χρόνος επίλυσης', value: input.resolutionTime }]) : ''}`,
     actions: [{ label: 'Προβολή αιτήματος', url }],
     footerNote: 'Ευχαριστούμε για την επικοινωνία.',
