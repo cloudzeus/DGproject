@@ -21,6 +21,27 @@ import {
   ROLE_LABELS_EL,
   type ReportsData,
 } from '@/lib/reports';
+import { resolveRange } from '@/lib/reports/shared';
+import { buildOverviewReport } from '@/lib/reports/overview';
+import { buildProjectsReport } from '@/lib/reports/projects';
+import { buildTasksReport } from '@/lib/reports/tasks';
+import { buildTicketsReport } from '@/lib/reports/tickets';
+import { buildUsersReport } from '@/lib/reports/users';
+
+function csvResponse(filename: string, headers: string[], rows: (string | number | null)[][]): NextResponse {
+  const esc = (v: string | number | null) => {
+    const s = v === null ? '' : String(v);
+    return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  // UTF-8 BOM ώστε το Excel να διαβάζει σωστά τα ελληνικά.
+  const body = '﻿' + [headers, ...rows].map((r) => r.map(esc).join(';')).join('\r\n');
+  return new NextResponse(body, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
+}
 
 type Tab = 'overview' | 'projects' | 'users';
 
@@ -372,6 +393,64 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const sp = req.nextUrl.searchParams;
+  const rawTab = sp.get('tab') ?? 'overview';
+  const isPrivilegedForCsv = session.user.role === 'admin' || session.user.role === 'manager';
+  const stampForCsv = todayStamp();
+  const hasPeriodParams = Boolean(sp.get('period') || sp.get('from'));
+
+  if (rawTab === 'tasks' || rawTab === 'tickets' || ((rawTab === 'overview' || rawTab === 'projects' || rawTab === 'users') && hasPeriodParams)) {
+    const { range, prev } = resolveRange({
+      period: sp.get('period') ?? undefined,
+      from: sp.get('from') ?? undefined,
+      to: sp.get('to') ?? undefined,
+    });
+    const scope = { range, prev, userId: session.user.id, isPrivileged: isPrivilegedForCsv };
+
+    if (rawTab === 'tasks') {
+      const d = await buildTasksReport(scope);
+      return csvResponse(
+        `tasks-report-${stampForCsv}.csv`,
+        ['Εβδομάδα', 'Ολοκληρώσεις'],
+        d.throughputByWeek.map((w) => [w.week, w.count]),
+      );
+    }
+    if (rawTab === 'tickets') {
+      if (!isPrivilegedForCsv) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+      const d = await buildTicketsReport(scope);
+      return csvResponse(
+        `tickets-report-${stampForCsv}.csv`,
+        ['Πηγή', 'Tickets'],
+        d.volume.bySource.map((s) => [s.label, s.value]),
+      );
+    }
+    if (rawTab === 'projects') {
+      const d = await buildProjectsReport(scope);
+      return csvResponse(
+        `projects-report-${stampForCsv}.csv`,
+        ['Έργο', 'Κατάσταση', 'Ολοκλ. περιόδου', 'Velocity/εβδ', 'Net flow', 'Ώρες tracked', 'Ώρες εκτίμηση', 'Μ.ό. cycle (h)', 'Εκπρόθεσμα'],
+        d.rows.map((p) => [p.name, p.status, p.completedInPeriod, p.velocityPerWeek, p.netFlow, p.trackedHours, p.estimatedHours, p.avgCycleHours, p.overdue]),
+      );
+    }
+    if (rawTab === 'users') {
+      if (!isPrivilegedForCsv) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+      const d = await buildUsersReport(scope);
+      return csvResponse(
+        `users-report-${stampForCsv}.csv`,
+        ['Χρήστης', 'Email', 'Ολοκλ. περιόδου', 'Δ%', 'Ώρες tracked', 'Μ.ό. cycle (h)', 'Εντός προθεσμίας %', 'Ενεργός φόρτος', 'Εκπρόθεσμα', 'Tickets'],
+        d.rows.map((u) => [u.name, u.email, u.completedInPeriod, u.completedDelta, u.trackedHours, u.avgCycleHours, u.onTimePct, u.activeLoad, u.overdue, u.ticketsResolved]),
+      );
+    }
+    // rawTab === 'overview' με period params
+    const d = await buildOverviewReport(scope);
+    return csvResponse(
+      `overview-report-${stampForCsv}.csv`,
+      ['Ημέρα', 'Ολοκληρώσεις tasks', 'Εισερχόμενα tickets', 'Επιλυμένα tickets'],
+      d.taskCompletionsByDay.map((row, i) => [row.day, row.value, d.ticketFlowByDay[i]?.a ?? 0, d.ticketFlowByDay[i]?.b ?? 0]),
+    );
+  }
+
+  // Fallthrough: παλιό xlsx/docx path (χωρίς period params, tabs overview/projects/users μόνο)
   const url = new URL(req.url);
   const format = url.searchParams.get('format');
   const tab = parseTab(url.searchParams.get('tab'));
