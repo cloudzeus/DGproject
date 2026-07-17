@@ -24,24 +24,34 @@ export type EntryFormValue = {
   projectId: string | null
   sourceId: string | null
   isPublic: boolean
+  helpCategoryId: string | null
 }
 
-export function EntryForm({ initial, sources, projects, canDelete }: {
+export function EntryForm({ initial, sources, projects, helpCategories, canDelete }: {
   initial: EntryFormValue
   sources: { id: string; name: string }[]
   projects: { id: string; name: string }[]
+  helpCategories: { id: string; name: string }[]
   canDelete: boolean
 }) {
   const router = useRouter()
   const [v, setV] = useState(initial)
   const [tagsText, setTagsText] = useState(initial.tags.join(', '))
+  // Help-center category select: '' = none, existing id, or '__new__' (free text).
+  const [helpCat, setHelpCat] = useState(initial.helpCategoryId ?? '')
+  const [newCatName, setNewCatName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const submit = () =>
     startTransition(async () => {
       setError(null)
-      const payload = { ...v, tags: tagsText.split(',').map((t) => t.trim()).filter(Boolean) }
+      const payload = {
+        ...v,
+        tags: tagsText.split(',').map((t) => t.trim()).filter(Boolean),
+        helpCategoryId: helpCat && helpCat !== '__new__' ? helpCat : null,
+        newCategoryName: helpCat === '__new__' ? newCatName.trim() || null : null,
+      }
       const res = v.id
         ? await updateKnowledgeEntry({ ...payload, id: v.id })
         : await createKnowledgeEntry(payload)
@@ -131,6 +141,30 @@ export function EntryForm({ initial, sources, projects, canDelete }: {
             ))}
           </select>
         </div>
+      </div>
+
+      <div className="mt-3">
+        <label className="block text-xs font-semibold text-fluent-neutral-60 mb-1">Κατηγορία help center</label>
+        <select
+          value={helpCat}
+          onChange={(e) => setHelpCat(e.target.value)}
+          className="w-full rounded-md border border-neutral-300 px-2 py-2 text-sm sm:max-w-xs"
+        >
+          <option value="">Καμία</option>
+          {helpCategories.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+          <option value="__new__">➕ Νέα κατηγορία…</option>
+        </select>
+        {helpCat === '__new__' && (
+          <input
+            value={newCatName}
+            maxLength={80}
+            onChange={(e) => setNewCatName(e.target.value)}
+            placeholder="Όνομα νέας κατηγορίας"
+            className="mt-2 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm sm:max-w-xs"
+          />
+        )}
       </div>
 
       <label className="mt-4 flex items-center gap-2 text-sm text-fluent-neutral-90">

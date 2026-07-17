@@ -40,15 +40,24 @@ export default async function HelpCenterPage({
         : {}),
     },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, title: true, problem: true, slug: true, category: true },
+    select: { id: true, title: true, problem: true, slug: true, category: true, helpCategory: { select: { name: true } } },
     take: 200,
   })
 
+  // Group by dynamic help category name; entries without one fall back to legacy enum labels.
   const groups = new Map<string, typeof entries>()
+  const dynamicNames = new Set<string>()
   for (const e of entries) {
-    const key = e.category ?? 'other'
+    const key = e.helpCategory?.name ?? (CATEGORY_LABELS[e.category ?? 'other'] ?? 'Γενικά')
+    if (e.helpCategory?.name) dynamicNames.add(key)
     groups.set(key, [...(groups.get(key) ?? []), e])
   }
+  // Dynamic categories first (alphabetical), then legacy enum groups.
+  const orderedGroups = [...groups.entries()].sort(([a], [b]) => {
+    const da = dynamicNames.has(a) ? 0 : 1
+    const db = dynamicNames.has(b) ? 0 : 1
+    return da !== db ? da - db : a.localeCompare(b, 'el')
+  })
 
   return (
     <main className="min-h-screen bg-neutral-50 flex items-start justify-center px-4 py-12">
@@ -73,10 +82,10 @@ export default async function HelpCenterPage({
           <p className="mt-10 text-sm text-neutral-500">Δεν βρέθηκαν άρθρα.</p>
         ) : (
           <div className="mt-8 space-y-8">
-            {[...groups.entries()].map(([category, items]) => (
-              <section key={category}>
+            {orderedGroups.map(([label, items]) => (
+              <section key={label}>
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-500">
-                  {CATEGORY_LABELS[category] ?? 'Γενικά'}
+                  {label}
                 </h2>
                 <ul className="mt-3 space-y-3">
                   {items.map((e) => (

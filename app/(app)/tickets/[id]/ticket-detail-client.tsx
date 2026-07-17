@@ -46,8 +46,16 @@ type Props = {
   projects: { id: string; name: string; projectCode: string | null }[]
   users: { id: string; name: string; hint: string }[]
   events: { id: string; type: string; payload: Record<string, unknown> | null; createdAt: string }[]
-  kbDraft: { title: string; problem: string; solution: string; tags: string[] } | null
+  kbDraft: {
+    title: string
+    problem: string
+    solution: string
+    tags: string[]
+    categoryId?: string | null
+    newCategoryName?: string | null
+  } | null
   kbSaved: { id: string; title: string } | null
+  helpCategories: { id: string; name: string }[]
 }
 
 const CATEGORY_OPTIONS: { value: TicketCategory; label: string }[] = [
@@ -86,7 +94,7 @@ function eventLabel(type: string, payload: Record<string, unknown> | null): stri
   }
 }
 
-export function TicketDetailClient({ ticket, attachments, messages, projects, users, events, kbDraft, kbSaved }: Props) {
+export function TicketDetailClient({ ticket, attachments, messages, projects, users, events, kbDraft, kbSaved, helpCategories }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -104,6 +112,13 @@ export function TicketDetailClient({ ticket, attachments, messages, projects, us
   const [kbProblem, setKbProblem] = useState(kbDraft?.problem ?? '')
   const [kbSolution, setKbSolution] = useState(kbDraft?.solution ?? '')
   const [kbTags, setKbTags] = useState(kbDraft?.tags?.join(', ') ?? '')
+  // Help-center category: '' = none, existing id, or '__new__' (free text below).
+  const [kbCat, setKbCat] = useState(() => {
+    if (kbDraft?.categoryId && helpCategories.some((c) => c.id === kbDraft.categoryId)) return kbDraft.categoryId
+    if (kbDraft?.newCategoryName) return '__new__'
+    return ''
+  })
+  const [kbNewCat, setKbNewCat] = useState(kbDraft?.newCategoryName ?? '')
 
   const isOpen = ['new', 'analyzing', 'triaged'].includes(ticket.status)
   const fmt = (iso: string) => new Date(iso).toLocaleString('el-GR', { dateStyle: 'short', timeStyle: 'short' })
@@ -407,6 +422,29 @@ export function TicketDetailClient({ ticket, attachments, messages, projects, us
             <textarea value={kbSolution} onChange={(e) => setKbSolution(e.target.value)} rows={4} className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
             <label className="mt-3 block text-xs font-semibold text-fluent-neutral-60 mb-1">Λέξεις-κλειδιά (με κόμμα)</label>
             <input value={kbTags} onChange={(e) => setKbTags(e.target.value)} className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+            <label className="mt-3 block text-xs font-semibold text-fluent-neutral-60 mb-1">Κατηγορία help center</label>
+            <select
+              value={kbCat}
+              onChange={(e) => setKbCat(e.target.value)}
+              className="w-full rounded-md border border-neutral-300 px-2 py-2 text-sm"
+            >
+              <option value="">Καμία</option>
+              {helpCategories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+              <option value="__new__">
+                {kbNewCat.trim() ? `➕ Νέα: ${kbNewCat.trim()}` : '➕ Νέα κατηγορία…'}
+              </option>
+            </select>
+            {kbCat === '__new__' && (
+              <input
+                value={kbNewCat}
+                maxLength={80}
+                onChange={(e) => setKbNewCat(e.target.value)}
+                placeholder="Όνομα νέας κατηγορίας"
+                className="mt-2 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+              />
+            )}
             {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
             <button
               onClick={() =>
@@ -417,6 +455,8 @@ export function TicketDetailClient({ ticket, attachments, messages, projects, us
                     problem: kbProblem,
                     solution: kbSolution,
                     tags: kbTags.split(',').map((t) => t.trim()).filter(Boolean),
+                    helpCategoryId: kbCat && kbCat !== '__new__' ? kbCat : null,
+                    newCategoryName: kbCat === '__new__' ? kbNewCat.trim() || null : null,
                   })
                 )
               }

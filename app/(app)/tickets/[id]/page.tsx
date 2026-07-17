@@ -62,13 +62,21 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
   })
 
   const kbDraftEvent = [...ticket.events].reverse().find((e) => e.type === 'kb_draft')
-  let kbDraft: { title: string; problem: string; solution: string; tags: string[] } | null = null
+  let kbDraft: {
+    title: string
+    problem: string
+    solution: string
+    tags: string[]
+    categoryId?: string | null
+    newCategoryName?: string | null
+  } | null = null
   if (kbDraftEvent?.payload && ticket.status === 'resolved') {
     try {
       kbDraft = JSON.parse(kbDraftEvent.payload)
     } catch {}
   }
   const kbSaved = await prisma.knowledgeEntry.findUnique({ where: { ticketId: ticket.id }, select: { id: true, title: true } })
+  const helpCategories = await prisma.helpCategory.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -107,6 +115,7 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
         events={events}
         kbDraft={kbDraft}
         kbSaved={kbSaved ? { id: kbSaved.id, title: kbSaved.title } : null}
+        helpCategories={helpCategories}
       />
     </div>
   )

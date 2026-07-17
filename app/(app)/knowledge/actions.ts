@@ -127,3 +127,21 @@ export async function deleteKnowledgeEntry(id: string) {
   revalidatePath('/knowledge')
   return { ok: true as const }
 }
+
+export async function renameHelpCategory(input: { id: string; name: string }) {
+  await requireTriager()
+  const name = input.name.trim().slice(0, 80)
+  if (!name) return { ok: false as const, error: 'Κενό όνομα.' }
+  const clash = await prisma.helpCategory.findUnique({ where: { name }, select: { id: true } })
+  if (clash && clash.id !== input.id) return { ok: false as const, error: 'Υπάρχει ήδη κατηγορία με αυτό το όνομα.' }
+  await prisma.helpCategory.update({ where: { id: input.id }, data: { name } })
+  revalidatePath('/knowledge')
+  return { ok: true as const }
+}
+
+export async function deleteHelpCategory(id: string) {
+  await requireTriager()
+  await prisma.helpCategory.delete({ where: { id } }) // entries → SetNull
+  revalidatePath('/knowledge')
+  return { ok: true as const }
+}

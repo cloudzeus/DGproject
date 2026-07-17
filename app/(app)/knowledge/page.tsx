@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import type { Prisma, TicketCategory } from '@prisma/client'
+import { CategoryManager } from './category-manager'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,12 +18,12 @@ const CATEGORY_OPTIONS: { value: TicketCategory; label: string }[] = [
 export default async function KnowledgePage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; source?: string; project?: string; category?: string; pub?: string }>
+  searchParams: Promise<{ q?: string; source?: string; project?: string; category?: string; pub?: string; helpcat?: string }>
 }) {
   const session = await auth()
   const role = session?.user?.role
   const canEdit = role === 'admin' || role === 'manager'
-  const { q, source, project, category, pub } = await searchParams
+  const { q, source, project, category, pub, helpcat } = await searchParams
 
   const where: Prisma.KnowledgeEntryWhereInput = {}
   if (q) {
@@ -39,11 +40,16 @@ export default async function KnowledgePage({
     where.category = category as TicketCategory
   }
   if (pub === '1') where.isPublic = true
+  if (helpcat) where.helpCategoryId = helpcat
 
-  const [entries, sources, projects] = await Promise.all([
+  const [entries, sources, projects, helpCategories] = await Promise.all([
     prisma.knowledgeEntry.findMany({ where, orderBy: { createdAt: 'desc' }, take: 100 }),
     prisma.ticketSource.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    prisma.helpCategory.findMany({
+      select: { id: true, name: true, _count: { select: { entries: true } } },
+      orderBy: { name: 'asc' },
+    }),
   ])
 
   return (
@@ -91,6 +97,12 @@ export default async function KnowledgePage({
             <option key={c.value} value={c.value}>{c.label}</option>
           ))}
         </select>
+        <select name="helpcat" defaultValue={helpcat ?? ''} className="rounded-md border border-neutral-300 px-2 py-2 text-sm">
+          <option value="">Όλες οι κατηγορίες help center</option>
+          {helpCategories.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
         <label className="flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-2 text-sm">
           <input type="checkbox" name="pub" value="1" defaultChecked={pub === '1'} /> Μόνο δημόσιες
         </label>
@@ -101,6 +113,12 @@ export default async function KnowledgePage({
           Αναζήτηση
         </button>
       </form>
+
+      {canEdit && (
+        <CategoryManager
+          categories={helpCategories.map((c) => ({ id: c.id, name: c.name, count: c._count.entries }))}
+        />
+      )}
 
       {entries.length === 0 ? (
         <div className="rounded-lg border border-dashed border-neutral-300 p-12 text-center text-sm text-fluent-neutral-60">

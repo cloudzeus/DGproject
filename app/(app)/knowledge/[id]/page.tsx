@@ -38,9 +38,10 @@ export default async function KnowledgeEntryPage({
     )
   }
 
-  const [sources, projects] = await Promise.all([
+  const [sources, projects, helpCategories] = await Promise.all([
     prisma.ticketSource.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     prisma.project.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    prisma.helpCategory.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
   ])
 
   let tags: string[] = []
@@ -62,9 +63,11 @@ export default async function KnowledgeEntryPage({
           projectId: entry.projectId,
           sourceId: entry.sourceId,
           isPublic: entry.isPublic,
+          helpCategoryId: entry.helpCategoryId,
         }}
         sources={sources}
         projects={projects}
+        helpCategories={helpCategories}
         canDelete
       />
     </div>
