@@ -85,7 +85,8 @@ export function dayKeys(range: DateRange): string[] {
   for (let t = startOfDay(range.from).getTime(); t <= range.to.getTime(); t += DAY) {
     keys.push(dayKey(new Date(t)))
   }
-  return keys
+  // Το fall-back DST (25ωρη τοπική ημέρα) παράγει διπλό key μία φορά τον χρόνο.
+  return [...new Set(keys)]
 }
 
 /** Μετράει rows ανά ημέρα πάνω σε ΟΛΕΣ τις ημέρες της περιόδου (μηδενικά όπου λείπουν). */

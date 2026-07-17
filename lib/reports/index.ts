@@ -1,10 +1,5 @@
 import { prisma } from '@/lib/prisma';
 
-export {
-  STATUS_LABELS_EL,
-  PRIORITY_LABELS_EL,
-  ROLE_LABELS_EL,
-} from './shared';
 export * from './shared';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
