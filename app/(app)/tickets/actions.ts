@@ -7,10 +7,10 @@ import { syncTaskCalendar } from '@/lib/task-calendar-sync'
 import { notifyTaskAssignment } from '@/lib/notifications'
 import { normalizeToBusinessHours } from '@/lib/business-hours'
 import { getUserLoads } from '@/lib/task-scheduling'
-import { sendTicketStatusEmail, sendTicketRejectedEmail, reporterRecipients } from '@/lib/tickets/emails'
+import { sendTicketStatusEmail, sendTicketRejectedEmail, sendTicketMergedEmail, reporterRecipients } from '@/lib/tickets/emails'
 import { analyzeTicket } from '@/lib/tickets/triage'
 import { formatDurationGr } from '@/lib/tickets/format-duration'
-import type { TaskPriority, TicketCategory } from '@prisma/client'
+import type { TaskPriority, TicketCategory, TicketStatus } from '@prisma/client'
 
 // Ticket triage is an admin/manager surface (spec §6).
 async function requireTriager(): Promise<string> {
@@ -246,4 +246,123 @@ export async function reanalyzeTicket(ticketId: string) {
   await analyzeTicket(ticketId)
   revalidatePath(`/tickets/${ticketId}`)
   return { ok: true as const }
+}
+
+/** Αναθέτει μηχανικό: σε υπάρχον task αντικαθιστά τους assignees, αλλιώς convert με τα AI στοιχεία. */
+export async function assignTicketEngineer(input: { ticketId: string; userId: string }) {
+  const actorId = await requireTriager()
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: input.ticketId },
+    select: {
+      id: true, status: true, taskId: true, subject: true,
+      aiTitle: true, aiDescription: true, aiPriority: true, aiSuggestedProjectId: true,
+      source: { select: { defaultProjectId: true } },
+    },
+  })
+  if (!ticket) return { ok: false as const, error: 'Το ticket δεν βρέθηκε.' }
+
+  if (ticket.taskId) {
+    await prisma.$transaction([
+      prisma.taskAssignee.deleteMany({ where: { taskId: ticket.taskId } }),
+      prisma.taskAssignee.create({ data: { taskId: ticket.taskId, userId: input.userId } }),
+    ])
+    await notifyTaskAssignment(ticket.taskId, [input.userId], actorId)
+    await prisma.ticketEvent.create({
+      data: { ticketId: ticket.id, type: 'note', actorId, payload: JSON.stringify({ assigned: input.userId }) },
+    })
+    revalidatePath('/tickets')
+    revalidatePath(`/tickets/${ticket.id}`)
+    return { ok: true as const }
+  }
+
+  const projectId = ticket.aiSuggestedProjectId ?? ticket.source.defaultProjectId
+  if (!projectId) return { ok: false as const, error: 'Δεν υπάρχει προτεινόμενο έργο — ανοίξτε το ticket για πλήρη ανάθεση.' }
+  return convertTicketToTask({
+    ticketId: ticket.id,
+    projectId,
+    assigneeId: input.userId,
+    title: ticket.aiTitle ?? ticket.subject,
+    description: ticket.aiDescription ?? '',
+    priority: ticket.aiPriority ?? 'medium',
+  })
+}
+
+/** Bulk μεταβάσεις: reject (new/analyzing/triaged/needs_info) ή close (resolved). Αγνοεί τα μη επιτρεπτά. */
+export async function bulkUpdateTicketStatus(input: { ticketIds: string[]; action: 'reject' | 'close' }) {
+  const actorId = await requireTriager()
+  const allowedFrom: TicketStatus[] = input.action === 'reject' ? ['new', 'analyzing', 'triaged', 'needs_info'] : ['resolved']
+  const to: TicketStatus = input.action === 'reject' ? 'rejected' : 'closed'
+  const targets = await prisma.ticket.findMany({
+    where: { id: { in: input.ticketIds.slice(0, 50) }, status: { in: allowedFrom } },
+    select: { id: true },
+  })
+  for (const t of targets) {
+    await prisma.ticket.update({
+      where: { id: t.id },
+      data: { status: to, events: { create: { type: to === 'rejected' ? 'rejected' : 'closed', actorId } } },
+    })
+  }
+  revalidatePath('/tickets')
+  return { ok: true as const, updated: targets.length, skipped: input.ticketIds.length - targets.length }
+}
+
+/** Συγχώνευση: τα secondaries γίνονται merged, μηνύματα/αρχεία μεταφέρονται στο primary, reporters ενημερώνονται. */
+export async function mergeTickets(input: { primaryId: string; secondaryIds: string[] }) {
+  const actorId = await requireTriager()
+  const ids = input.secondaryIds.filter((id) => id !== input.primaryId).slice(0, 20)
+  if (ids.length === 0) return { ok: false as const, error: 'Επιλέξτε τουλάχιστον δύο tickets.' }
+
+  const primary = await prisma.ticket.findUnique({
+    where: { id: input.primaryId },
+    select: { id: true, code: true, status: true, sourceId: true },
+  })
+  if (!primary || ['closed', 'rejected', 'merged'].includes(primary.status)) {
+    return { ok: false as const, error: 'Το κύριο ticket δεν είναι ανοιχτό.' }
+  }
+  const secondaries = await prisma.ticket.findMany({
+    where: { id: { in: ids }, sourceId: primary.sourceId, status: { notIn: ['closed', 'rejected', 'merged'] } },
+    select: { id: true, code: true, reporterEmail: true, reporterName: true, subject: true, publicToken: true },
+  })
+  if (secondaries.length === 0) return { ok: false as const, error: 'Κανένα επιλέξιμο ticket για συγχώνευση (ίδια πηγή, ανοιχτό).' }
+
+  for (const s of secondaries) {
+    await prisma.$transaction([
+      prisma.ticketMessage.updateMany({ where: { ticketId: s.id }, data: { ticketId: primary.id } }),
+      prisma.ticketAttachment.updateMany({ where: { ticketId: s.id }, data: { ticketId: primary.id } }),
+      prisma.ticket.update({
+        where: { id: s.id },
+        data: {
+          status: 'merged', mergedIntoId: primary.id,
+          events: { create: { type: 'merged', actorId, payload: JSON.stringify({ into: primary.code }) } },
+        },
+      }),
+      prisma.ticketEvent.create({
+        data: { ticketId: primary.id, type: 'absorbed', actorId, payload: JSON.stringify({ from: s.code }) },
+      }),
+    ])
+    await sendTicketMergedEmail({
+      to: s.reporterEmail, reporterName: s.reporterName, code: s.code, subject: s.subject,
+      publicToken: s.publicToken, primaryCode: primary.code,
+    })
+  }
+
+  revalidatePath('/tickets')
+  revalidatePath(`/tickets/${primary.id}`)
+  return { ok: true as const, merged: secondaries.length }
+}
+
+/** Lazy ιστορικό για το expandable row του table. */
+export async function getTicketHistory(ticketId: string) {
+  await requireTriager()
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    select: {
+      aiTitle: true, aiCategory: true, aiPriority: true, aiConfidence: true,
+      events: { orderBy: { createdAt: 'asc' }, select: { id: true, type: true, payload: true, createdAt: true } },
+      messages: { orderBy: { createdAt: 'asc' }, select: { id: true, direction: true, body: true, createdAt: true } },
+      attachments: { select: { id: true, name: true, url: true } },
+    },
+  })
+  if (!ticket) return null
+  return ticket
 }
