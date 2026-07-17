@@ -33,6 +33,11 @@ import { createTask, updateTask, deleteTask, updateTaskStatus, updateTaskDates }
 import { Gantt, type GanttTask, type GanttZoom } from '@/components/gantt/gantt';
 import { ChevronLeft20Regular, ChevronRight20Regular } from '@fluentui/react-icons';
 import { SpentTimeBadge } from './spent-time-badge';
+import {
+  ResolutionDialog,
+  checkResolutionPrompt,
+  type ResolutionPromptInfo,
+} from '@/components/tickets/resolution-dialog';
 import { computeSpentMs, formatSpent } from '@/lib/task-in-progress-timer';
 
 export type TaskAttachment = {
@@ -98,6 +103,7 @@ type ViewProps = {
 function useTaskMutations(projectId: string) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [resolutionPrompt, setResolutionPrompt] = useState<ResolutionPromptInfo | null>(null);
 
   const create = (fd: FormData) =>
     new Promise<{ ok: boolean; error?: string }>((resolve) => {
@@ -130,12 +136,19 @@ function useTaskMutations(projectId: string) {
       const res = await updateTaskStatus(projectId, taskId, status);
       if (res && !res.ok && res.error) {
         alert(res.error);
+      } else if (status === 'done') {
+        const info = await checkResolutionPrompt(taskId);
+        if (info) setResolutionPrompt(info);
       }
       router.refresh();
     });
   };
 
-  return { create, update, remove, setStatus, pending };
+  const resolutionDialog = resolutionPrompt ? (
+    <ResolutionDialog info={resolutionPrompt} onClose={() => setResolutionPrompt(null)} />
+  ) : null;
+
+  return { create, update, remove, setStatus, pending, resolutionDialog };
 }
 
 export function ListView({ projectId, projectCode, tasks, members, canEdit, questionMembers, currentUserId, isPrivileged }: ViewProps) {
@@ -275,6 +288,8 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, ques
           </TaskModal>
         )}
       </AnimatePresence>
+
+      {mutations.resolutionDialog}
     </div>
   );
 }
@@ -416,6 +431,8 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, que
           </TaskModal>
         )}
       </AnimatePresence>
+
+      {mutations.resolutionDialog}
     </>
   );
 }
@@ -612,6 +629,8 @@ export function TimelineView({
           </TaskModal>
         )}
       </AnimatePresence>
+
+      {mutations.resolutionDialog}
     </div>
   );
 }

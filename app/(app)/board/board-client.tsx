@@ -34,6 +34,11 @@ import type { TaskStatus, Priority as TaskPriority, TaskWithRelations } from '@/
 import { updateTaskStatus, sendTaskReminder } from './actions';
 import { deleteTask } from '@/app/(app)/projects/[id]/task-actions';
 import { BoardTaskModal, type BoardProjectOption } from './board-task-modal';
+import {
+  ResolutionDialog,
+  checkResolutionPrompt,
+  type ResolutionPromptInfo,
+} from '@/components/tickets/resolution-dialog';
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string; color: string }[] = [
   { value: 'urgent', label: 'Επείγουσα', color: '#C50F1F' },
@@ -67,6 +72,7 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
   const [createStatus, setCreateStatus] = useState<TaskStatus | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<TaskWithRelations | null>(null);
+  const [resolutionPrompt, setResolutionPrompt] = useState<ResolutionPromptInfo | null>(null);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -139,6 +145,11 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
       if (res && !res.ok) {
         if (res.error) alert(res.error);
         setTasks(initialTasks); // snap the card back to its persisted column
+        return;
+      }
+      if (status === 'done') {
+        const info = await checkResolutionPrompt(taskId);
+        if (info) setResolutionPrompt(info);
       }
     });
   }
@@ -477,6 +488,10 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
           />
         )}
       </AnimatePresence>
+
+      {resolutionPrompt && (
+        <ResolutionDialog info={resolutionPrompt} onClose={() => setResolutionPrompt(null)} />
+      )}
     </div>
   );
 }
