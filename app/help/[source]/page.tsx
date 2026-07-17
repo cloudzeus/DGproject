@@ -24,13 +24,17 @@ export default async function HelpCenterPage({
   const { source: sourceCode } = await params
   const { q } = await searchParams
 
-  const source = await prisma.ticketSource.findUnique({ where: { code: sourceCode } })
+  const source = await prisma.ticketSource.findUnique({
+    where: { code: sourceCode },
+    select: { id: true, name: true, active: true },
+  })
   if (!source || !source.active) notFound()
 
   const entries = await prisma.knowledgeEntry.findMany({
     where: {
       sourceId: source.id,
       isPublic: true,
+      slug: { not: null },
       ...(q
         ? { OR: [{ title: { contains: q } }, { problem: { contains: q } }, { solution: { contains: q } }, { tags: { contains: q } }] }
         : {}),

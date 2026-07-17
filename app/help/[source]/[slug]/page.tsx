@@ -14,7 +14,10 @@ export default async function HelpArticlePage({ params }: { params: Promise<{ so
   })
   if (!source || !source.active) notFound()
 
-  const entry = await prisma.knowledgeEntry.findUnique({ where: { slug } })
+  const entry = await prisma.knowledgeEntry.findUnique({
+    where: { slug },
+    select: { id: true, title: true, problem: true, solution: true, isPublic: true, sourceId: true },
+  })
   if (!entry || !entry.isPublic || entry.sourceId !== source.id) notFound()
 
   return (
