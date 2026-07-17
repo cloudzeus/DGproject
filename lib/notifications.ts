@@ -98,3 +98,35 @@ export async function notifyTaskCompleted(
     })),
   );
 }
+
+/**
+ * Notify a project's approver of a task event. Guarantees EXACTLY-ONCE delivery:
+ * does nothing when there is no approver, when the approver is the actor, or when
+ * the approver is already in `alreadyNotified` (so owners/assignees who are also
+ * the approver never get a duplicate for the same event).
+ */
+export async function notifyApprover(
+  projectId: string,
+  actorId: string,
+  payload: { title: string; message: string; type: NotificationType; link?: string },
+  alreadyNotified: string[] = [],
+): Promise<void> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { approverId: true },
+  });
+  const approverId = project?.approverId;
+  if (!approverId) return;
+  if (approverId === actorId) return;
+  if (alreadyNotified.includes(approverId)) return;
+
+  await createNotifications([
+    {
+      userId: approverId,
+      title: payload.title,
+      message: payload.message,
+      type: payload.type,
+      link: payload.link,
+    },
+  ]);
+}
