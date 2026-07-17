@@ -331,7 +331,7 @@ function ProjectsCards({
   canReorder: boolean;
 }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
       {projects.map((p, i) => (
         <SortableCard key={p.id} project={p} index={i} onEdit={onEdit} canReorder={canReorder && p.canEdit} />
       ))}
@@ -383,25 +383,27 @@ function SortableCard({
       )}
       <Link href={`/projects/${p.id}`} className="block group">
         <div className="bg-white rounded-xl border border-black/5 overflow-hidden shadow-fluent-2 hover:shadow-fluent-16 hover:-translate-y-0.5 transition-all duration-300">
-          <div className="h-20 relative" style={{ background: `linear-gradient(135deg, ${p.color} 0%, ${p.color}dd 100%)` }}>
+          <div className="h-12 relative" style={{ background: `linear-gradient(135deg, ${p.color} 0%, ${p.color}dd 100%)` }}>
             <div className="absolute inset-0 bg-mesh opacity-30" />
             <ProjectCardMenu project={p} onEdit={() => onEdit(p)} />
-            <div className="absolute -bottom-5 left-5 h-10 w-10 rounded-lg bg-white shadow-fluent-4 flex items-center justify-center text-lg font-bold" style={{ color: p.color }}>
+            <div className="absolute -bottom-4 left-4 h-8 w-8 rounded-lg bg-white shadow-fluent-4 flex items-center justify-center text-sm font-bold" style={{ color: p.color }}>
               {p.name[0]}
             </div>
           </div>
 
-          <div className="pt-7 px-5 pb-5">
-            <div className="flex items-start justify-between mb-1">
-              <h3 className="font-display font-semibold text-fluent-neutral-95 truncate">{p.name}</h3>
+          <div className="pt-6 px-4 pb-4">
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <h3 className="font-display font-semibold text-sm text-fluent-neutral-95 truncate">{p.name}</h3>
               <Badge variant={STATUS_VARIANT[p.status]}>{statusLabel(p.status)}</Badge>
             </div>
-            <p className="text-xs text-fluent-neutral-60 line-clamp-2 mb-4 min-h-[32px]">{p.description}</p>
+            {p.description && (
+              <p className="text-xs text-fluent-neutral-60 line-clamp-1 mb-3">{p.description}</p>
+            )}
 
-            <div className="mb-4">
-              <div className="flex justify-between text-[11px] mb-1.5">
+            <div className="mb-3">
+              <div className="flex justify-between text-[11px] mb-1">
                 <span className="text-fluent-neutral-60">Πρόοδος</span>
-                <span className="font-semibold text-fluent-neutral-90">{pct}%</span>
+                <span className="font-semibold text-fluent-neutral-90 tabular-nums">{pct}%</span>
               </div>
               <div className="h-1.5 bg-fluent-neutral-8 rounded-full overflow-hidden">
                 <motion.div
@@ -414,19 +416,18 @@ function SortableCard({
               </div>
             </div>
 
-            <div className="flex items-center gap-3 text-[11px] text-fluent-neutral-60 mb-4">
-              <span className="flex items-center gap-1">
-                <CheckmarkCircle16Regular /> {done}/{total}
-              </span>
-              {p.dueDate && (
-                <span className="flex items-center gap-1">
-                  <Calendar16Regular /> {formatDate(p.dueDate)}
+            <div className="flex items-center justify-between pt-2.5 border-t border-black/5">
+              <div className="flex items-center gap-3 text-[11px] text-fluent-neutral-60">
+                <span className="flex items-center gap-1 tabular-nums">
+                  <CheckmarkCircle16Regular /> {done}/{total}
                 </span>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-black/5">
-              <AvatarStack users={p.members} max={4} size="xs" />
+                {p.dueDate && (
+                  <span className="flex items-center gap-1">
+                    <Calendar16Regular /> {formatDate(p.dueDate)}
+                  </span>
+                )}
+              </div>
+              <AvatarStack users={p.members} max={3} size="xs" />
             </div>
           </div>
         </div>

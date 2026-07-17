@@ -120,6 +120,7 @@ export default async function TicketsPage({
             aiCategory: t.aiCategory,
             status: t.status,
             createdAt: t.createdAt.toISOString(),
+            taskId: t.taskId,
           }))}
           users={users}
         />

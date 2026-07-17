@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Dismiss20Regular, Flag16Filled, Calendar16Regular, Person16Regular,
   Tag16Regular, Edit20Regular, Delete20Regular, Mail20Regular, Send20Filled,
+  TicketDiagonal16Regular,
 } from '@fluentui/react-icons';
 import { AvatarStack } from '@/components/ui/avatar';
 import { Badge, Tag } from '@/components/ui/badge';
@@ -157,6 +158,16 @@ function DrawerContent({ task, onClose, onEdit, onDelete, onSendReminder }: Draw
               <Flag16Filled className="h-3 w-3" /> {task.priority}
             </Badge>
             {overdue && <Badge variant="red">Overdue</Badge>}
+            {task.ticket && (
+              <Link
+                href={`/tickets/${task.ticket.id}`}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs font-semibold hover:bg-purple-100 transition-colors"
+                title="Άνοιγμα ticket"
+              >
+                <TicketDiagonal16Regular className="h-3.5 w-3.5" />
+                {task.ticket.code}
+              </Link>
+            )}
           </div>
 
           <div className="grid grid-cols-[120px_1fr] gap-y-3 text-sm mb-6">

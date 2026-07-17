@@ -31,6 +31,7 @@ export type TicketRow = {
   aiCategory: string | null
   status: string
   createdAt: string
+  taskId: string | null
 }
 
 type UserOpt = { id: string; name: string | null; email: string }
@@ -264,8 +265,20 @@ export function TicketsTable({ rows, users }: { rows: TicketRow[]; users: UserOp
                       {t.aiCategory ? CATEGORY_LABEL[t.aiCategory] : '—'}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_BADGE[t.status]}`}>
-                        {TICKET_STATUS_LABEL[t.status as keyof typeof TICKET_STATUS_LABEL] ?? t.status}
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_BADGE[t.status]}`}>
+                          {TICKET_STATUS_LABEL[t.status as keyof typeof TICKET_STATUS_LABEL] ?? t.status}
+                        </span>
+                        {t.taskId && (
+                          <Link
+                            href={`/board?task=${t.taskId}`}
+                            title="Άνοιγμα εργασίας στο board"
+                            className="inline-flex items-center gap-0.5 text-[11px] font-medium text-fluent-blue-600 hover:underline whitespace-nowrap"
+                          >
+                            Εργασία
+                            <ChevronRight16Regular className="h-3 w-3" />
+                          </Link>
+                        )}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-fluent-neutral-60 whitespace-nowrap">
@@ -301,6 +314,15 @@ export function TicketsTable({ rows, users }: { rows: TicketRow[]; users: UserOp
                               >
                                 Άνοιγμα
                               </Link>
+                              {t.taskId && (
+                                <Link
+                                  href={`/board?task=${t.taskId}`}
+                                  className="block px-3 py-2 text-sm text-fluent-neutral-80 hover:bg-fluent-neutral-6"
+                                  onClick={() => setOpenMenu(null)}
+                                >
+                                  Άνοιγμα εργασίας στο board
+                                </Link>
+                              )}
                               {CONVERTIBLE.includes(t.status) && (
                                 <Link
                                   href={`/tickets/${t.id}`}

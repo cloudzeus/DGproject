@@ -4,7 +4,12 @@ import type { TaskWithRelations } from '@/types';
 import { BoardClient } from './board-client';
 import type { BoardProjectOption } from './board-task-modal';
 
-export default async function BoardPage() {
+export default async function BoardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ task?: string }>;
+}) {
+  const { task: focusTaskId } = await searchParams;
   const session = await auth();
   const role = session?.user?.role;
   const userId = session?.user?.id ?? '';
@@ -36,6 +41,7 @@ export default async function BoardPage() {
           },
         },
         tags: { select: { name: true } },
+        ticket: { select: { id: true, code: true } },
         _count: { select: { comments: true, attachments: true } },
       },
     }),
@@ -89,6 +95,7 @@ export default async function BoardPage() {
     })),
     commentCount: t._count.comments,
     attachmentCount: t._count.attachments,
+    ticket: t.ticket ? { id: t.ticket.id, code: t.ticket.code } : null,
   }));
 
   const projects: BoardProjectOption[] = editableProjects.map((p) => ({
@@ -112,6 +119,7 @@ export default async function BoardPage() {
       }))}
       projects={projects}
       canCreate={projects.length > 0}
+      focusTaskId={focusTaskId}
     />
   );
 }

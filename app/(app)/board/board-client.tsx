@@ -62,9 +62,11 @@ interface Props {
   headerUsers: HeaderUser[];
   projects: BoardProjectOption[];
   canCreate: boolean;
+  /** Deep-link: /board?task=<id> opens this task's drawer on load. */
+  focusTaskId?: string;
 }
 
-export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: Props) {
+export function BoardClient({ initialTasks, headerUsers, projects, canCreate, focusTaskId }: Props) {
   const router = useRouter();
   const [tasks, setTasks] = useState<TaskWithRelations[]>(initialTasks);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -78,6 +80,17 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
   useEffect(() => {
     setTasks(initialTasks);
   }, [initialTasks]);
+
+  // Deep-link (?task=...): open the drawer for the requested task once on load.
+  const focusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusTaskId || focusedRef.current === focusTaskId) return;
+    const target = initialTasks.find((t) => t.id === focusTaskId);
+    if (target) {
+      focusedRef.current = focusTaskId;
+      setSelectedTask(target);
+    }
+  }, [focusTaskId, initialTasks]);
 
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority[]>([]);

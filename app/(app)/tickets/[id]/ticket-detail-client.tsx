@@ -197,9 +197,20 @@ export function TicketDetailClient({ ticket, attachments, messages, projects, us
             <p className="font-semibold text-green-800">Έχει ανατεθεί ως εργασία</p>
             <p className="mt-1 text-green-700">
               <Link href={`/projects/${ticket.task.projectId}`} className="underline">
-                [{ticket.task.projectName}] {ticket.task.title}
+                [{ticket.task.projectName}]
+              </Link>{' '}
+              <Link href={`/board?task=${ticket.task.id}`} className="underline">
+                {ticket.task.title}
               </Link>{' '}
               — κατάσταση: {ticket.task.status}
+            </p>
+            <p className="mt-2">
+              <Link
+                href={`/board?task=${ticket.task.id}`}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-green-800 hover:underline"
+              >
+                Άνοιγμα στο board →
+              </Link>
             </p>
           </div>
         ) : null}

@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
 import {
-  Flag16Filled, Comment16Regular, Attach16Regular, Calendar16Regular,
+  Flag16Filled, Comment16Regular, Attach16Regular, Calendar16Regular, TicketDiagonal16Regular,
 } from '@fluentui/react-icons';
 import { AvatarStack } from '@/components/ui/avatar';
 import { Tag } from '@/components/ui/badge';
@@ -61,6 +61,14 @@ export function TaskCard({ task, onClick, isDragOverlay }: { task: TaskWithRelat
       <h4 className="text-sm font-medium text-fluent-neutral-90 leading-snug mb-2 line-clamp-2">
         {task.title}
       </h4>
+
+      {/* Ticket origin */}
+      {task.ticket && (
+        <span className="inline-flex items-center gap-1 mb-2 px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 text-[10px] font-semibold tabular-nums">
+          <TicketDiagonal16Regular className="h-3 w-3" />
+          {task.ticket.code}
+        </span>
+      )}
 
       {/* Tags */}
       {task.tags.length > 0 && (

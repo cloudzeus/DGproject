@@ -120,6 +120,8 @@ export interface TaskWithRelations extends Task {
   project: Pick<Project, 'id' | 'name' | 'color'>;
   commentCount: number;
   attachmentCount: number;
+  // Set when the task was created from a support ticket (Ticket.taskId).
+  ticket?: { id: string; code: string } | null;
 }
 
 export interface ProjectWithStats extends Project {
