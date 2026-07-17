@@ -71,6 +71,27 @@ enum NotificationType {
   question
   answer
   approval
+  ticket
+}
+
+// ─── Ticketing ────────────────────────────────────────────────────────
+enum TicketStatus {
+  new // παραλήφθηκε, εκκρεμεί ανάλυση
+  analyzing // τρέχει LLM ανάλυση
+  triaged // υπάρχει πρόταση, περιμένει admin/manager
+  converted // έγινε Task — παρακολουθεί το task status
+  resolved // το task ολοκληρώθηκε (done)
+  closed // KB entry αποθηκεύτηκε / έκλεισε οριστικά
+  rejected // spam / εκτός σκοπού
+}
+
+enum TicketCategory {
+  bug
+  feature
+  support
+  question
+  billing
+  other
 }
 
 enum TaskQuestionAttachmentKind {
@@ -298,6 +319,7 @@ model Project {
   meetings      MeetingNote[]
   costLines     ProjectCostLine[]
   emailMessages EmailMessage[]
+  ticketSources TicketSource[]    @relation("SourceDefaultProject")
 
   @@index([workspaceId])
   @@index([ownerId])
@@ -386,6 +408,7 @@ model Task {
   // Tasks that depend on this task (this must complete before they can start)
   dependents           TaskDependency[] @relation("TaskPrerequisites")
   emailMessages        EmailMessage[]
+  ticket               Ticket?          @relation("TicketTask")
 
   @@index([projectId])
   @@index([status])
@@ -654,7 +677,7 @@ model MeetingNote {
 
   // Raw VTT pulled from Graph (or pasted manually for POC).
   // db.LongText so a 2-hour transcript still fits.
-  transcriptVtt String? @db.LongText
+  transcriptVtt    String? @db.LongText
   // BunnyCDN URL of the same VTT, persisted as a file *before* LLM processing
   // so the original transcript is always recoverable even if the DB row is
   // truncated or the row is deleted.
@@ -702,16 +725,16 @@ model MeetingNote {
 // rows here; super-admins browse them at /admin/meetings and promote selected
 // ones to MeetingNote by assigning a project + running the LLM pipeline.
 model DiscoveredMeeting {
-  id                String   @id @default(cuid())
-  teamsMeetingId    String   @db.VarChar(500)
-  organizerEmail    String
-  organizerGraphId  String?
-  subject           String?
-  startedAt         DateTime?
-  endedAt           DateTime?
-  joinWebUrl        String?  @db.Text
-  hasTranscript     Boolean  @default(false)
-  hasRecording      Boolean  @default(false)
+  id                  String    @id @default(cuid())
+  teamsMeetingId      String    @db.VarChar(500)
+  organizerEmail      String
+  organizerGraphId    String?
+  subject             String?
+  startedAt           DateTime?
+  endedAt             DateTime?
+  joinWebUrl          String?   @db.Text
+  hasTranscript       Boolean   @default(false)
+  hasRecording        Boolean   @default(false)
   transcriptCreatedAt DateTime?
   recordingCreatedAt  DateTime?
 
@@ -976,4 +999,99 @@ model EmailMessage {
   @@index([userId])
   @@index([conversationId])
   @@index([status])
+}
+
+// ─── Ticketing System ─────────────────────────────────────────────────
+// Central support desk: external client apps submit tickets, DeepSeek
+// triages them, admins convert to Tasks. See docs/superpowers/specs/2026-07-17.
+
+model TicketSource {
+  id               String   @id @default(cuid())
+  // Short project code declared in the client app's .env (TICKETING_PROJECT_CODE)
+  code             String   @unique
+  name             String
+  // bcrypt hash of the API secret (shown once at creation)
+  secretHash       String
+  // JSON array of allowed origins for CORS + submission checks. Empty = allow all.
+  originUrls       String   @db.Text
+  defaultProjectId String?
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  defaultProject Project? @relation("SourceDefaultProject", fields: [defaultProjectId], references: [id], onDelete: SetNull)
+  tickets        Ticket[]
+
+  @@index([active])
+}
+
+model Ticket {
+  id            String       @id @default(cuid())
+  code          String       @unique // TKT-YYYY-NNNN
+  sourceId      String
+  reporterEmail String
+  reporterName  String?
+  originUrl     String       @db.Text
+  subject       String
+  body          String       @db.Text // original user text, never overwritten
+  status        TicketStatus @default(new)
+  // Unguessable token for the public status page /t/{token} and email links
+  publicToken   String       @unique @default(cuid())
+
+  // ─── LLM triage output ─────────────────────────────────────────────
+  aiTitle               String?
+  aiDescription         String?         @db.Text // technical rewrite (Greek)
+  aiCategory            TicketCategory?
+  aiPriority            TaskPriority?
+  aiSuggestedProjectId  String?
+  aiSuggestedAssigneeId String?
+  aiReasoning           String?         @db.Text
+  aiConfidence          Float?
+  aiError               String?         @db.Text
+
+  // ─── Conversion ────────────────────────────────────────────────────
+  taskId     String?   @unique
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  source TicketSource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  task   Task?         @relation("TicketTask", fields: [taskId], references: [id], onDelete: SetNull)
+  events TicketEvent[]
+
+  @@index([status, createdAt])
+  @@index([sourceId])
+  @@index([reporterEmail])
+}
+
+model TicketEvent {
+  id        String   @id @default(cuid())
+  ticketId  String
+  // created | analyzed | triaged | converted | task_status | emailed | kb_draft | closed | rejected | note
+  type      String
+  payload   String?  @db.Text // JSON details
+  actorId   String? // null = system
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+}
+
+model KnowledgeEntry {
+  id           String          @id @default(cuid())
+  ticketId     String?         @unique
+  taskId       String?
+  projectId    String?
+  title        String
+  problem      String          @db.Text
+  solution     String          @db.Text
+  // JSON array of keyword strings — matched via FULLTEXT/LIKE during triage
+  tags         String          @db.Text
+  category     TicketCategory?
+  approvedById String?
+  createdAt    DateTime        @default(now())
+
+  @@index([projectId])
+  @@index([createdAt])
 }
