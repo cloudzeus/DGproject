@@ -15,6 +15,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Public help center — read-only, only isPublic entries are served.
+  if (pathname.startsWith("/help/")) {
+    return NextResponse.next();
+  }
+
   const session = await auth();
 
   if (!session?.user) {
