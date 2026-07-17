@@ -83,6 +83,8 @@ enum TicketStatus {
   resolved // το task ολοκληρώθηκε (done)
   closed // KB entry αποθηκεύτηκε / έκλεισε οριστικά
   rejected // spam / εκτός σκοπού
+  needs_info // ζητήθηκαν διευκρινίσεις από τον πελάτη
+  merged // συγχωνεύθηκε σε άλλο ticket
 }
 
 enum TicketCategory {
@@ -1050,20 +1052,27 @@ model Ticket {
   aiError               String?         @db.Text
 
   // ─── Conversion ────────────────────────────────────────────────────
-  taskId            String?   @unique
+  taskId            String?       @unique
   resolvedAt        DateTime?
   // Human-written solution from the resolver (dialog on task completion / ticket page)
-  resolutionSummary String?   @db.Text
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  resolutionSummary String?       @db.Text
+  // Status to restore when the reporter answers a clarification request
+  statusBeforeInfo  TicketStatus?
+  // Set when this ticket was merged into another (status becomes 'merged')
+  mergedIntoId      String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  source TicketSource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  task   Task?         @relation("TicketTask", fields: [taskId], references: [id], onDelete: SetNull)
-  events TicketEvent[]
+  source      TicketSource       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  task        Task?              @relation("TicketTask", fields: [taskId], references: [id], onDelete: SetNull)
+  events      TicketEvent[]
+  attachments TicketAttachment[]
+  messages    TicketMessage[]
 
   @@index([status, createdAt])
   @@index([sourceId])
   @@index([reporterEmail])
+  @@index([mergedIntoId])
 }
 
 model TicketEvent {
@@ -1081,27 +1090,69 @@ model TicketEvent {
 }
 
 model KnowledgeEntry {
-  id           String          @id @default(cuid())
-  ticketId     String?         @unique
-  taskId       String?
-  projectId    String?
+  id             String          @id @default(cuid())
+  ticketId       String?         @unique
+  taskId         String?
+  projectId      String?
   // TicketSource grouping for the public help center (/help/{sourceCode})
-  sourceId     String?
-  title        String
-  problem      String          @db.Text
-  solution     String          @db.Text
+  sourceId       String?
+  title          String
+  problem        String          @db.Text
+  solution       String          @db.Text
   // JSON array of keyword strings — matched via FULLTEXT/LIKE during triage
-  tags         String          @db.Text
-  category     TicketCategory?
+  tags           String          @db.Text
+  category       TicketCategory?
   // Public help-center exposure — flipped explicitly by a triager, never automatic
-  isPublic     Boolean         @default(false)
+  isPublic       Boolean         @default(false)
   // URL slug for public articles; set when first published
-  slug         String?         @unique
-  approvedById String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @default(now()) @updatedAt
+  slug           String?         @unique
+  approvedById   String?
+  helpCategoryId String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now()) @updatedAt
+
+  helpCategory HelpCategory? @relation(fields: [helpCategoryId], references: [id], onDelete: SetNull)
 
   @@index([projectId])
   @@index([createdAt])
   @@index([sourceId, isPublic])
+  @@index([helpCategoryId])
+}
+
+model HelpCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  sourceId  String?
+  createdAt DateTime @default(now())
+
+  entries KnowledgeEntry[]
+}
+
+model TicketAttachment {
+  id        String   @id @default(cuid())
+  ticketId  String
+  name      String
+  size      Int
+  mimeType  String
+  url       String   @db.Text
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
+
+model TicketMessage {
+  id        String   @id @default(cuid())
+  ticketId  String
+  // 'outbound' = ομάδα → πελάτης, 'inbound' = πελάτης → ομάδα
+  direction String
+  body      String   @db.Text
+  authorId  String?
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
 }

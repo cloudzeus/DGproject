@@ -10,6 +10,8 @@ export const TICKET_PUBLIC_STATUS_LABEL: Record<TicketStatus, string> = {
   resolved: 'Ολοκληρώθηκε',
   closed: 'Έκλεισε',
   rejected: 'Απορρίφθηκε',
+  needs_info: 'Αναμονή απάντησής σας',
+  merged: 'Συγχωνεύθηκε',
 }
 
 // Internal labels for the admin UI.
@@ -21,6 +23,8 @@ export const TICKET_STATUS_LABEL: Record<TicketStatus, string> = {
   resolved: 'Ολοκληρώθηκε',
   closed: 'Έκλεισε',
   rejected: 'Απορρίφθηκε',
+  needs_info: 'Αναμονή πελάτη',
+  merged: 'Συγχωνεύθηκε',
 }
 
 // Public labels for sanitized event types (null = hidden from public).

@@ -15,6 +15,8 @@ const STATUS_BADGE: Record<TicketStatus, string> = {
   resolved: 'bg-green-100 text-green-700',
   closed: 'bg-neutral-200 text-neutral-600',
   rejected: 'bg-red-100 text-red-700',
+  needs_info: 'bg-amber-100 text-amber-800',
+  merged: 'bg-neutral-200 text-neutral-600',
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
