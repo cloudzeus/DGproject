@@ -136,7 +136,10 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate }: 
   function persistStatus(taskId: string, status: TaskStatus) {
     startTransition(async () => {
       const res = await updateTaskStatus(taskId, status);
-      if (!res.ok) setTasks(initialTasks);
+      if (res && !res.ok) {
+        if (res.error) alert(res.error);
+        setTasks(initialTasks); // snap the card back to its persisted column
+      }
     });
   }
 

@@ -127,7 +127,10 @@ function useTaskMutations(projectId: string) {
 
   const setStatus = (taskId: string, status: TaskStatus) => {
     startTransition(async () => {
-      await updateTaskStatus(projectId, taskId, status);
+      const res = await updateTaskStatus(projectId, taskId, status);
+      if (res && !res.ok && res.error) {
+        alert(res.error);
+      }
       router.refresh();
     });
   };
