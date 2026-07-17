@@ -65,7 +65,7 @@ export async function convertTicketToTask(input: {
     },
   })
   if (!ticket) return { ok: false as const, error: 'Το ticket δεν βρέθηκε.' }
-  if (ticket.status === 'converted' || ticket.status === 'resolved' || ticket.status === 'closed') {
+  if (['converted', 'resolved', 'closed', 'rejected', 'merged'].includes(ticket.status)) {
     return { ok: false as const, error: 'Το ticket έχει ήδη ανατεθεί.' }
   }
   const title = input.title.trim()
@@ -133,15 +133,13 @@ export async function convertTicketToTask(input: {
   if (input.assigneeId) {
     await notifyTaskAssignment(task.id, [input.assigneeId], actorId)
   }
-  await sendTicketStatusEmail({
-    to: ticket.reporterEmail,
-    reporterName: ticket.reporterName,
-    code: ticket.code,
-    subject: ticket.subject,
-    publicToken: ticket.publicToken,
-    statusLabel: 'Σε επεξεργασία',
-    detail: 'Το αίτημά σας ανατέθηκε στην ομάδα μας και μπήκε στον προγραμματισμό εργασιών.',
-  })
+  for (const r of await reporterRecipients(ticket.id)) {
+    await sendTicketStatusEmail({
+      ...r,
+      statusLabel: 'Σε επεξεργασία',
+      detail: 'Το αίτημά σας ανατέθηκε στην ομάδα μας και μπήκε στον προγραμματισμό εργασιών.',
+    })
+  }
 
   revalidatePath('/tickets')
   revalidatePath(`/tickets/${ticket.id}`)
@@ -168,14 +166,12 @@ export async function rejectTicket(input: { ticketId: string; reason: string; no
     },
   })
   if (input.notifyReporter) {
-    await sendTicketRejectedEmail({
-      to: ticket.reporterEmail,
-      reporterName: ticket.reporterName,
-      code: ticket.code,
-      subject: ticket.subject,
-      publicToken: ticket.publicToken,
-      reason: input.reason || null,
-    })
+    for (const r of await reporterRecipients(ticket.id)) {
+      await sendTicketRejectedEmail({
+        ...r,
+        reason: input.reason || null,
+      })
+    }
   }
   revalidatePath('/tickets')
   revalidatePath(`/tickets/${input.ticketId}`)
@@ -266,6 +262,9 @@ export async function assignTicketEngineer(input: { ticketId: string; userId: st
     },
   })
   if (!ticket) return { ok: false as const, error: 'Το ticket δεν βρέθηκε.' }
+  if (['rejected', 'merged', 'closed'].includes(ticket.status)) {
+    return { ok: false as const, error: 'Το ticket δεν είναι ενεργό.' }
+  }
 
   if (ticket.taskId) {
     await prisma.$transaction([
@@ -333,6 +332,9 @@ export async function mergeTickets(input: { primaryId: string; secondaryIds: str
 
   for (const s of secondaries) {
     await prisma.$transaction([
+      // Flatten merge chains: re-point existing children of the secondary to the
+      // new primary so their reporters stay in the fan-out and /t follows the live ticket.
+      prisma.ticket.updateMany({ where: { mergedIntoId: s.id }, data: { mergedIntoId: primary.id } }),
       prisma.ticketMessage.updateMany({ where: { ticketId: s.id }, data: { ticketId: primary.id } }),
       prisma.ticketAttachment.updateMany({ where: { ticketId: s.id }, data: { ticketId: primary.id } }),
       prisma.ticket.update({

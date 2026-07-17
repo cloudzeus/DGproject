@@ -24,7 +24,7 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
         events: { where: { type: 'task_status' }, orderBy: { createdAt: 'desc' }, take: 1 },
       },
     })
-    if (!ticket || ticket.status !== 'converted') return
+    if (!ticket || (ticket.status !== 'converted' && ticket.status !== 'needs_info')) return
 
     // Debounce: skip if the latest task_status event already carries this status.
     const last = ticket.events[0]
@@ -42,7 +42,7 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
       const resolvedAt = new Date()
       await prisma.ticket.update({
         where: { id: ticket.id },
-        data: { status: 'resolved', resolvedAt },
+        data: { status: 'resolved', resolvedAt, statusBeforeInfo: null },
       })
       const recipients = await reporterRecipients(ticket.id)
       for (const r of recipients) {
@@ -57,8 +57,10 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
       return
     }
 
+    // While needs_info the customer is being asked something — skip the
+    // intermediate progress emails (they'd be noise mid-clarification).
     const email = STATUS_EMAIL[newStatus]
-    if (email) {
+    if (email && ticket.status === 'converted') {
       const recipients = await reporterRecipients(ticket.id)
       for (const r of recipients) {
         await sendTicketStatusEmail({
