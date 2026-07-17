@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { sendTicketStatusEmail, sendTicketResolvedEmail } from '@/lib/tickets/emails'
+import { sendTicketStatusEmail, sendTicketResolvedEmail, reporterRecipients } from '@/lib/tickets/emails'
 import { formatDurationGr } from '@/lib/tickets/format-duration'
 
 // Reporter-facing labels/details per interesting task status.
@@ -44,14 +44,13 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
         where: { id: ticket.id },
         data: { status: 'resolved', resolvedAt },
       })
-      await sendTicketResolvedEmail({
-        to: ticket.reporterEmail,
-        reporterName: ticket.reporterName,
-        code: ticket.code,
-        subject: ticket.subject,
-        publicToken: ticket.publicToken,
-        resolutionTime: formatDurationGr(ticket.createdAt, resolvedAt),
-      })
+      const recipients = await reporterRecipients(ticket.id)
+      for (const r of recipients) {
+        await sendTicketResolvedEmail({
+          ...r,
+          resolutionTime: formatDurationGr(ticket.createdAt, resolvedAt),
+        })
+      }
       void import('@/lib/tickets/kb')
         .then((m) => m.generateKbDraft(ticket.id))
         .catch((e) => console.error('[tickets] kb draft failed:', e))
@@ -60,15 +59,14 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
 
     const email = STATUS_EMAIL[newStatus]
     if (email) {
-      await sendTicketStatusEmail({
-        to: ticket.reporterEmail,
-        reporterName: ticket.reporterName,
-        code: ticket.code,
-        subject: ticket.subject,
-        publicToken: ticket.publicToken,
-        statusLabel: email.label,
-        detail: email.detail,
-      })
+      const recipients = await reporterRecipients(ticket.id)
+      for (const r of recipients) {
+        await sendTicketStatusEmail({
+          ...r,
+          statusLabel: email.label,
+          detail: email.detail,
+        })
+      }
     }
   } catch (e) {
     console.error('[tickets] status propagation failed:', e)

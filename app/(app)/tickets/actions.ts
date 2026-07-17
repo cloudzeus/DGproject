@@ -7,7 +7,7 @@ import { syncTaskCalendar } from '@/lib/task-calendar-sync'
 import { notifyTaskAssignment } from '@/lib/notifications'
 import { normalizeToBusinessHours } from '@/lib/business-hours'
 import { getUserLoads } from '@/lib/task-scheduling'
-import { sendTicketStatusEmail, sendTicketRejectedEmail } from '@/lib/tickets/emails'
+import { sendTicketStatusEmail, sendTicketRejectedEmail, reporterRecipients } from '@/lib/tickets/emails'
 import { analyzeTicket } from '@/lib/tickets/triage'
 import { formatDurationGr } from '@/lib/tickets/format-duration'
 import type { TaskPriority, TicketCategory } from '@prisma/client'
@@ -208,16 +208,14 @@ export async function saveKnowledgeEntry(input: {
       events: { create: { type: 'closed', actorId } },
     },
   })
-  await sendTicketStatusEmail({
-    to: ticket.reporterEmail,
-    reporterName: ticket.reporterName,
-    code: ticket.code,
-    subject: ticket.subject,
-    publicToken: ticket.publicToken,
-    statusLabel: 'Το αίτημα έκλεισε',
-    detail: 'Το αίτημά σας ολοκληρώθηκε και αρχειοθετήθηκε. Ευχαριστούμε για την επικοινωνία.',
-    resolutionTime: formatDurationGr(ticket.createdAt, ticket.resolvedAt ?? new Date()),
-  })
+  for (const r of await reporterRecipients(ticket.id)) {
+    await sendTicketStatusEmail({
+      ...r,
+      statusLabel: 'Το αίτημα έκλεισε',
+      detail: 'Το αίτημά σας ολοκληρώθηκε και αρχειοθετήθηκε. Ευχαριστούμε για την επικοινωνία.',
+      resolutionTime: formatDurationGr(ticket.createdAt, ticket.resolvedAt ?? new Date()),
+    })
+  }
 
   revalidatePath('/tickets')
   revalidatePath(`/tickets/${input.ticketId}`)
