@@ -20,6 +20,7 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
       source: { select: { name: true, defaultProjectId: true } },
       events: { orderBy: { createdAt: 'asc' } },
       attachments: true,
+      messages: { orderBy: { createdAt: 'asc' } },
       task: { select: { id: true, title: true, status: true, projectId: true, project: { select: { name: true } } } },
     },
   })
@@ -100,6 +101,7 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
             : null,
         }}
         attachments={ticket.attachments.map((a) => ({ id: a.id, name: a.name, url: a.url, mimeType: a.mimeType }))}
+        messages={ticket.messages.map((m) => ({ id: m.id, direction: m.direction, body: m.body, createdAt: m.createdAt.toISOString() }))}
         projects={projects}
         users={users}
         events={events}

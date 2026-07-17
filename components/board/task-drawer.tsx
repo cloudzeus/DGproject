@@ -1,5 +1,6 @@
 'use client';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Dismiss20Regular, Flag16Filled, Calendar16Regular, Person16Regular,
@@ -9,6 +10,8 @@ import { AvatarStack } from '@/components/ui/avatar';
 import { Badge, Tag } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn, formatDate, statusLabel } from '@/lib/utils';
+import { getTicketThreadForTask } from '@/app/(app)/tickets/followup-actions';
+import { ThreadList, ClarificationBox } from '@/components/tickets/clarification-thread';
 import type { TaskWithRelations } from '@/types';
 
 interface Props {
@@ -61,6 +64,20 @@ function DrawerContent({ task, onClose, onEdit, onDelete, onSendReminder }: Draw
   const [reminderFeedback, setReminderFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   const [deletePending, startDelete] = useTransition();
   const [reminderPending, startReminder] = useTransition();
+  const [thread, setThread] = useState<Awaited<ReturnType<typeof getTicketThreadForTask>>>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setThread(null);
+    getTicketThreadForTask(task.id)
+      .then((t) => {
+        if (!cancelled) setThread(t);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id]);
 
   const overdue = task.dueDate && task.dueDate < new Date() && task.status !== 'done';
   const canSendReminder = Boolean(onSendReminder) && task.assignees.length > 0;
@@ -248,6 +265,29 @@ function DrawerContent({ task, onClose, onEdit, onDelete, onSendReminder }: Draw
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {thread && (
+            <div className="mt-6 border-t border-black/5 pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-60">
+                  💬 Επικοινωνία με πελάτη ({thread.code})
+                </h3>
+                <Link
+                  href={`/tickets/${thread.ticketId}`}
+                  className="text-xs font-medium text-fluent-blue-600 hover:underline"
+                >
+                  Άνοιγμα ticket
+                </Link>
+              </div>
+              <div className="space-y-3">
+                <ThreadList messages={thread.messages} />
+                <ClarificationBox
+                  ticketId={thread.ticketId}
+                  disabled={['closed', 'rejected', 'merged'].includes(thread.status)}
+                />
+              </div>
             </div>
           )}
         </div>

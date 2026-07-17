@@ -11,6 +11,7 @@ import {
   saveKnowledgeEntry,
 } from '../actions'
 import { polishSolution, saveResolution } from '../resolution-actions'
+import { ThreadList, ClarificationBox, type ThreadMessage } from '@/components/tickets/clarification-thread'
 import type { TaskPriority, TicketCategory, TicketStatus } from '@prisma/client'
 
 type TicketView = {
@@ -41,6 +42,7 @@ type TicketView = {
 type Props = {
   ticket: TicketView
   attachments: { id: string; name: string; url: string; mimeType: string }[]
+  messages: ThreadMessage[]
   projects: { id: string; name: string; projectCode: string | null }[]
   users: { id: string; name: string; hint: string }[]
   events: { id: string; type: string; payload: Record<string, unknown> | null; createdAt: string }[]
@@ -84,7 +86,7 @@ function eventLabel(type: string, payload: Record<string, unknown> | null): stri
   }
 }
 
-export function TicketDetailClient({ ticket, attachments, projects, users, events, kbDraft, kbSaved }: Props) {
+export function TicketDetailClient({ ticket, attachments, messages, projects, users, events, kbDraft, kbSaved }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -363,6 +365,22 @@ export function TicketDetailClient({ ticket, attachments, projects, users, event
             )}
           </div>
         )}
+
+        {/* ─── Clarification thread ─── */}
+        <div className="rounded-lg border border-black/5 bg-white shadow-fluent-2 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-fluent-neutral-90">💬 Επικοινωνία με πελάτη</h2>
+            {ticket.status === 'needs_info' && (
+              <span className="rounded-full bg-amber-100 px-3 py-0.5 text-xs font-semibold text-amber-800">
+                Αναμονή πελάτη
+              </span>
+            )}
+          </div>
+          <div className="space-y-3">
+            <ThreadList messages={messages} />
+            <ClarificationBox ticketId={ticket.id} disabled={['closed', 'rejected', 'merged'].includes(ticket.status)} />
+          </div>
+        </div>
 
         {/* ─── Resolution ─── */}
         {(ticket.status === 'converted' || ticket.status === 'resolved') && (
