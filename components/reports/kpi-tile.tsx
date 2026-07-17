@@ -1,6 +1,5 @@
 'use client';
 import { ArrowUp16Filled, ArrowDown16Filled } from '@fluentui/react-icons';
-import { cn } from '@/lib/utils';
 import { DELTA, SINGLE_SERIES } from '@/lib/reports/chart-theme';
 
 /**

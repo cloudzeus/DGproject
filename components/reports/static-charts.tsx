@@ -1,5 +1,5 @@
 'use client';
-import { INK, SINGLE_SERIES } from '@/lib/reports/chart-theme';
+import { SINGLE_SERIES } from '@/lib/reports/chart-theme';
 
 /**
  * Οριζόντιες μπάρες σύγκρισης κατηγοριών (αντί για pie). Μία σειρά ⇒ ένα χρώμα.
