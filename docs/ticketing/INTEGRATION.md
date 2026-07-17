@@ -2,7 +2,7 @@
 
 Κάθε εφαρμογή της DGsmart (e-shop, GDPR tool, custom app) μπορεί να στέλνει support tickets στο κεντρικό fluent-pm. Ο οδηγός απευθύνεται στον developer που ενσωματώνει τη φόρμα.
 
-> **Κατάσταση:** Το API περιγράφεται όπως σχεδιάστηκε στο [design spec](../superpowers/specs/2026-07-17-ticketing-system-design.md). Επιβεβαιώστε ότι έχει γίνει deploy πριν την ενσωμάτωση.
+> **Κατάσταση:** Υλοποιημένο (2026-07-17). Design spec: [2026-07-17-ticketing-system-design.md](../superpowers/specs/2026-07-17-ticketing-system-design.md).
 
 ## 1. Εγγραφή του project
 
@@ -53,7 +53,7 @@ Response `201`:
 { "code": "TKT-2026-0042", "publicToken": "clx...", "statusUrl": "https://pm.dgsmart.gr/t/clx..." }
 ```
 
-Σφάλματα: `401` λάθος key/code · `403` μη επιτρεπτό origin · `422` ελλιπή πεδία · `429` rate limit (10 tickets/ώρα ανά email). Διπλή υποβολή (ίδιο email+subject εντός 10') επιστρέφει το υπάρχον ticket με `200`.
+Σφάλματα: `401` λάθος key/code (`missing_credentials`/`unknown_source`/`invalid_key`) · `403` μη επιτρεπτό origin · `422` ελλιπή πεδία (`invalid_subject` ≤200, `invalid_body` ≤5000, `invalid_email`) · `429` rate limit (10 tickets/ώρα ανά email, 60/ώρα ανά πηγή). Διπλή υποβολή (ίδιο email+subject εντός 10') επιστρέφει το υπάρχον ticket με `200` και `"duplicate": true`.
 
 ### GET `/api/tickets/{code}?token={publicToken}` — κατάσταση
 
