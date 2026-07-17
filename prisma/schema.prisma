@@ -70,6 +70,7 @@ enum NotificationType {
   status_change
   question
   answer
+  approval
 }
 
 enum TaskQuestionAttachmentKind {
@@ -165,6 +166,7 @@ model User {
   // Relations
   ownedWorkspaces     Workspace[]              @relation("WorkspaceOwner")
   ownedProjects       Project[]                @relation("ProjectOwner")
+  approverProjects    Project[]                @relation("ProjectApprover")
   projectMemberships  ProjectMember[]
   assignedTasks       TaskAssignee[]
   createdTasks        Task[]                   @relation("TaskCreator")
@@ -261,6 +263,7 @@ model Project {
   // broken by updatedAt DESC. Set on drag-and-drop reorder.
   order             Int           @default(0)
   ownerId           String
+  approverId        String?
   sharepointSiteUrl String?
   teamsChannelId    String?
 
@@ -287,6 +290,7 @@ model Project {
 
   workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   owner         User              @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  approver      User?             @relation("ProjectApprover", fields: [approverId], references: [id], onDelete: SetNull)
   tasks         Task[]
   attachments   Attachment[]
   activities    Activity[]
@@ -297,6 +301,7 @@ model Project {
 
   @@index([workspaceId])
   @@index([ownerId])
+  @@index([approverId])
   @@index([status])
   @@index([updatedAt])
   @@index([order])
