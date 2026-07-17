@@ -179,7 +179,7 @@ export async function saveKnowledgeEntry(input: {
     where: { id: input.ticketId },
     select: {
       id: true, code: true, status: true, subject: true, reporterEmail: true, reporterName: true,
-      publicToken: true, taskId: true, aiCategory: true, createdAt: true, resolvedAt: true,
+      publicToken: true, taskId: true, aiCategory: true, createdAt: true, resolvedAt: true, sourceId: true,
       task: { select: { projectId: true } },
     },
   })
@@ -191,6 +191,7 @@ export async function saveKnowledgeEntry(input: {
     data: {
       ticketId: ticket.id,
       taskId: ticket.taskId,
+      sourceId: ticket.sourceId,
       projectId: ticket.task?.projectId ?? null,
       title: input.title.trim().slice(0, 190),
       problem: input.problem.trim().slice(0, 8000),
