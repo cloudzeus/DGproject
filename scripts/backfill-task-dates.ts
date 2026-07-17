@@ -32,14 +32,15 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { PrismaClient } from '@prisma/client';
+import { normalizeToBusinessHours, hasTimeComponent } from '../lib/business-hours';
 import {
-  BUSINESS_START_HOUR,
-  BUSINESS_START_MINUTE,
-  BUSINESS_END_HOUR,
-  BUSINESS_END_MINUTE,
-  normalizeToBusinessHours,
-  hasTimeComponent,
-} from '../lib/business-hours';
+  type Occupancy,
+  sameLocalDay,
+  atBusinessStart,
+  atBusinessEnd,
+  latestEndFor,
+  markBusy,
+} from '../lib/task-scheduling';
 
 function loadEnv() {
   for (const file of ['.env.local', '.env']) {
@@ -66,23 +67,6 @@ function fmt(d: Date | null): string {
   if (!d) return '—';
   return d.toLocaleString('el-GR', { timeZone: 'Europe/Athens', hour12: false });
 }
-function dayKey(d: Date): string {
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-function sameLocalDay(a: Date, b: Date): boolean {
-  return dayKey(a) === dayKey(b);
-}
-function atBusinessStart(day: Date): Date {
-  const d = new Date(day);
-  d.setHours(BUSINESS_START_HOUR, BUSINESS_START_MINUTE, 0, 0);
-  return d;
-}
-function atBusinessEnd(day: Date): Date {
-  const d = new Date(day);
-  d.setHours(BUSINESS_END_HOUR, BUSINESS_END_MINUTE, 0, 0);
-  return d;
-}
-
 type TaskRow = {
   id: string;
   title: string;
@@ -98,27 +82,6 @@ type TaskRow = {
 
 function usersOf(t: TaskRow): string[] {
   return Array.from(new Set([t.createdById, ...t.assignees.map((a) => a.userId)].filter(Boolean)));
-}
-
-/** Occupancy = latest busy end (ms) per `userId|dayKey`. Seeds the cascade so new slots land after existing work. */
-type Occupancy = Map<string, number>;
-function occKey(userId: string, day: Date): string {
-  return `${userId}|${dayKey(day)}`;
-}
-function latestEndFor(occ: Occupancy, users: string[], day: Date): number {
-  let max = -Infinity;
-  for (const u of users) {
-    const v = occ.get(occKey(u, day));
-    if (v !== undefined && v > max) max = v;
-  }
-  return max;
-}
-function markBusy(occ: Occupancy, users: string[], start: Date, end: Date) {
-  const k = end.getTime();
-  for (const u of users) {
-    const key = occKey(u, start);
-    occ.set(key, Math.max(occ.get(key) ?? -Infinity, k));
-  }
 }
 
 async function main() {
