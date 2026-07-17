@@ -1,153 +1,50 @@
 import { auth } from '@/auth';
-import { prisma } from '@/lib/prisma';
-import { DashboardClient, type DashboardTask, type DashboardActivity, type DashboardProject } from './dashboard-client';
+import { buildAttention } from '@/lib/dashboard/attention';
+import { buildMyDay } from '@/lib/dashboard/my-day';
+import { DashboardShell } from './dashboard-shell';
+import { AttentionZone } from './attention-zone';
+import { MyDayZone } from './my-day-zone';
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const session = await auth();
+
+  // Auth (unauthenticated / must-change-password) is already enforced by
+  // app/(app)/layout.tsx. Customers (userType='customer') have no dedicated
+  // dashboard view yet (see spec Ζώνη scope) — they fall through to the same
+  // member-scoped zones with mostly-empty attention/my-day lists, exactly as
+  // the previous dashboard behaved for them.
   const userId = session?.user?.id ?? '';
-  const displayName = session?.user?.name ?? session?.user?.email ?? 'there';
+  const displayName = session?.user?.name ?? session?.user?.email ?? 'εκεί';
   const firstName = displayName.split(' ')[0] ?? displayName;
+  const isPrivileged = session?.user?.role === 'admin' || session?.user?.role === 'manager';
 
   const now = new Date();
-  const weekAhead = new Date(now.getTime() + WEEK_MS);
-
-  const isPrivileged = session?.user?.role === 'admin' || session?.user?.role === 'manager';
-  const projectScope = isPrivileged
-    ? undefined
-    : { OR: [{ ownerId: userId }, { members: { some: { userId } } }] };
-
-  const allowedProjectIds = isPrivileged
-    ? null
-    : (await prisma.project.findMany({
-        where: projectScope,
-        select: { id: true },
-      })).map((p) => p.id);
-
-  const activityWhere = allowedProjectIds === null
-    ? {}
-    : {
-        OR: [
-          { projectId: { in: allowedProjectIds } },
-          { task: { projectId: { in: allowedProjectIds } } },
-        ],
-      };
-
-  const [
-    openAssigned,
-    completedCount,
-    teamCount,
-    activities,
-    activeProjectsRaw,
-  ] = await Promise.all([
-    prisma.task.findMany({
-      where: {
-        status: { not: 'done' },
-        assignees: { some: { userId } },
-      },
-      include: {
-        project: { select: { id: true, name: true, color: true } },
-        assignees: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
-      },
-      orderBy: { dueDate: 'asc' },
-    }),
-    prisma.task.count({
-      where: { status: 'done', assignees: { some: { userId } } },
-    }),
-    isPrivileged
-      ? prisma.user.count()
-      : prisma.user.count({
-          where: {
-            OR: [
-              { ownedProjects: { some: projectScope! } },
-              { projectMemberships: { some: { project: projectScope! } } },
-            ],
-          },
-        }),
-    prisma.activity.findMany({
-      where: activityWhere,
-      take: 10,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        actor: { select: { id: true, name: true, email: true, image: true } },
-        task: { select: { title: true } },
-      },
-    }),
-    prisma.project.findMany({
-      where: {
-        status: 'active',
-        ...(isPrivileged ? {} : projectScope!),
-      },
-      orderBy: [{ order: 'asc' }, { updatedAt: 'desc' }],
-      include: {
-        members: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
-        tasks: { select: { status: true } },
-      },
-    }),
-  ]);
-
-  const dueSoon: DashboardTask[] = openAssigned
-    .filter((t) => t.dueDate && t.dueDate.getTime() - now.getTime() < WEEK_MS)
-    .slice(0, 5)
-    .map((t) => ({
-      id: t.id,
-      title: t.title,
-      priority: t.priority,
-      dueDate: t.dueDate,
-      project: { id: t.project.id, name: t.project.name, color: t.project.color },
-      assignees: t.assignees.map((a) => ({
-        id: a.user.id,
-        name: a.user.name ?? a.user.email,
-        avatarUrl: a.user.image ?? undefined,
-      })),
-    }));
-
-  const activityList: DashboardActivity[] = activities.map((a) => ({
-    id: a.id,
-    action: a.action,
-    createdAt: a.createdAt,
-    actor: {
-      id: a.actor.id,
-      name: a.actor.name ?? a.actor.email,
-      avatarUrl: a.actor.image ?? undefined,
-    },
-    taskTitle: a.task?.title ?? null,
-  }));
-
-  const activeProjects: DashboardProject[] = activeProjectsRaw.map((p) => ({
-    id: p.id,
-    name: p.name,
-    description: p.description,
-    color: p.color,
-    status: p.status,
-    progress: p.progress,
-    taskCount: p.tasks.length,
-    completedTaskCount: p.tasks.filter((t) => t.status === 'done').length,
-    members: p.members.map((m) => ({
-      id: m.user.id,
-      name: m.user.name ?? m.user.email,
-      avatarUrl: m.user.image ?? undefined,
-    })),
-  }));
-
   const hour = now.getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const greeting = hour < 12 ? 'Καλημέρα' : hour < 18 ? 'Καλησπέρα' : 'Καλησπέρα';
+  const dateLabel = new Intl.DateTimeFormat('el-GR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(now);
+
+  const scope = { userId, isPrivileged, now };
+
+  const [attention, myDay] = await Promise.all([buildAttention(scope), buildMyDay(scope)]);
 
   return (
-    <DashboardClient
+    <DashboardShell
       greeting={greeting}
       firstName={firstName}
-      stats={{
-        myTasks: openAssigned.length,
-        completed: completedCount,
-        dueSoon: dueSoon.length,
-        team: teamCount,
-      }}
-      dueSoon={dueSoon}
-      activities={activityList}
-      activeProjects={activeProjects}
-      canReorder={session?.user?.role !== 'viewer'}
+      dateLabel={dateLabel}
+      main={
+        <>
+          <AttentionZone items={attention} />
+          <MyDayZone data={myDay} />
+        </>
+      }
+      aside={null}
     />
   );
 }
