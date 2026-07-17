@@ -1,17 +1,30 @@
 /**
- * Backfill task start/due times for tasks that were given a DATE but no TIME.
+ * Backfill task start/due times so tasks that were given a DATE but no real
+ * time-slot get scheduled into business hours (09:00–18:30) and, crucially,
+ * SEQUENCED one after another per person/day instead of piling up at the same
+ * instant.
  *
- * Rule (mirrors task creation): when a task has a date but no specific time, the
- * system should place it in business hours (09:00–18:30) at the next AVAILABLE
- * slot for its creator/assignees, with a minimum duration of 1h (or its
- * estimatedHours), and sync it to the assignee/creator calendar.
+ * A task "needs slotting" when it has a date anchor, is not done, and any of:
+ *   - the anchor sits at local midnight (00:00 — no time-of-day), OR
+ *   - it has a startDate but NO dueDate (no duration — the noon/"no time"
+ *     default), OR
+ *   - startDate === dueDate (zero-length).
+ * Properly scheduled tasks (start < due with a real time) are left untouched.
  *
- * DEFAULT = DRY RUN (reports only, writes nothing). Pass `--apply` to persist.
- * Pass `--calendar` (with --apply) to also re-sync affected tasks to Outlook.
+ * Placement:
+ *   - Multi-day (start & due on different days): PRESERVE the span — 09:00 on the
+ *     start day → 18:30 on the due day.
+ *   - Otherwise: next FREE business slot for the task's people that day, duration
+ *     = estimatedHours (min 1h), cascading after tasks already placed. A
+ *     deterministic in-memory occupancy map means the dry-run preview equals what
+ *     --apply writes.
  *
- * Run:  npx ts-node scripts/backfill-task-dates.ts            # dry run
- *       npx ts-node scripts/backfill-task-dates.ts --apply
- *       npx ts-node scripts/backfill-task-dates.ts --apply --calendar
+ * DEFAULT = DRY RUN. Pass `--apply` to persist. Pass `--calendar` (with --apply)
+ * to also re-sync affected tasks to Outlook.
+ *
+ *   npx tsx scripts/backfill-task-dates.ts
+ *   npx tsx scripts/backfill-task-dates.ts --apply
+ *   npx tsx scripts/backfill-task-dates.ts --apply --calendar
  *
  * Server timezone is Europe/Athens, so getHours()/setHours() are local business
  * time — matching lib/business-hours.ts and the create-time auto-slot logic.
@@ -28,7 +41,6 @@ import {
   hasTimeComponent,
 } from '../lib/business-hours';
 
-// Load DATABASE_URL etc. from .env(.local) before constructing the client.
 function loadEnv() {
   for (const file of ['.env.local', '.env']) {
     const p = join(process.cwd(), file);
@@ -36,19 +48,17 @@ function loadEnv() {
     for (const line of readFileSync(p, 'utf8').split('\n')) {
       const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
       if (!m) continue;
-      const key = m[1];
       let val = m[2].trim();
       if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
         val = val.slice(1, -1);
       }
-      if (process.env[key] === undefined) process.env[key] = val;
+      if (process.env[m[1]] === undefined) process.env[m[1]] = val;
     }
   }
 }
 loadEnv();
 
 const prisma = new PrismaClient();
-
 const APPLY = process.argv.includes('--apply');
 const CALENDAR = process.argv.includes('--calendar');
 
@@ -56,57 +66,11 @@ function fmt(d: Date | null): string {
   if (!d) return '—';
   return d.toLocaleString('el-GR', { timeZone: 'Europe/Athens', hour12: false });
 }
-
-/**
- * Next free business-hours slot on `targetDay` for the given users: 09:00, or
- * right after the latest same-day task (by dueDate) already scheduled for any of
- * them. Duration = max(durationHours, 1) hours. Mirrors computeAutoSlotForCreator.
- */
-async function computeSlot(
-  userIds: string[],
-  targetDay: Date,
-  durationHours: number,
-  excludeTaskId: string,
-): Promise<{ startDate: Date; dueDate: Date }> {
-  const dayStart = new Date(targetDay);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-
-  const uids = Array.from(new Set(userIds.filter(Boolean)));
-
-  const sameDayTasks = await prisma.task.findMany({
-    where: {
-      id: { not: excludeTaskId },
-      startDate: { gte: dayStart, lt: dayEnd },
-      dueDate: { not: null },
-      OR: [
-        { createdById: { in: uids } },
-        { assignees: { some: { userId: { in: uids } } } },
-      ],
-    },
-    select: { dueDate: true },
-  });
-
-  const baseline = new Date(dayStart);
-  baseline.setHours(BUSINESS_START_HOUR, BUSINESS_START_MINUTE, 0, 0);
-  let earliestStart = baseline.getTime();
-  for (const t of sameDayTasks) {
-    if (t.dueDate && t.dueDate.getTime() > earliestStart) earliestStart = t.dueDate.getTime();
-  }
-
-  const startNormalized = normalizeToBusinessHours(new Date(earliestStart));
-  const durationMs = Math.max(durationHours, 1) * 60 * 60 * 1000;
-  const dueDate = new Date(startNormalized.getTime() + durationMs);
-  return { startDate: startNormalized, dueDate };
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
-
 function sameLocalDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return dayKey(a) === dayKey(b);
 }
 function atBusinessStart(day: Date): Date {
   const d = new Date(day);
@@ -119,116 +83,167 @@ function atBusinessEnd(day: Date): Date {
   return d;
 }
 
-/**
- * Decide the corrected start/due for a no-time task.
- * - Multi-day (start & due on different days): PRESERVE the span — 09:00 on the
- *   start day → 18:30 on the due day. Never re-slot or shift a deliberate range.
- * - Single-day / single-date: auto-slot into the next free business slot with a
- *   1h minimum (or estimatedHours), matching task-creation behavior.
- */
-async function correctedSlot(
-  start: Date | null,
-  due: Date | null,
-  userIds: string[],
-  durationHours: number,
-  excludeTaskId: string,
-): Promise<{ startDate: Date; dueDate: Date }> {
-  if (start && due && !sameLocalDay(start, due)) {
-    return { startDate: atBusinessStart(start), dueDate: atBusinessEnd(due) };
+type TaskRow = {
+  id: string;
+  title: string;
+  status: string;
+  startDate: Date | null;
+  dueDate: Date | null;
+  estimatedHours: number | null;
+  createdById: string;
+  addToCalendar: boolean;
+  project: { name: string };
+  assignees: { userId: string }[];
+};
+
+function usersOf(t: TaskRow): string[] {
+  return Array.from(new Set([t.createdById, ...t.assignees.map((a) => a.userId)].filter(Boolean)));
+}
+
+/** Occupancy = latest busy end (ms) per `userId|dayKey`. Seeds the cascade so new slots land after existing work. */
+type Occupancy = Map<string, number>;
+function occKey(userId: string, day: Date): string {
+  return `${userId}|${dayKey(day)}`;
+}
+function latestEndFor(occ: Occupancy, users: string[], day: Date): number {
+  let max = -Infinity;
+  for (const u of users) {
+    const v = occ.get(occKey(u, day));
+    if (v !== undefined && v > max) max = v;
   }
-  const anchor = (due ?? start)!;
-  return computeSlot(userIds, anchor, durationHours, excludeTaskId);
+  return max;
+}
+function markBusy(occ: Occupancy, users: string[], start: Date, end: Date) {
+  const k = end.getTime();
+  for (const u of users) {
+    const key = occKey(u, start);
+    occ.set(key, Math.max(occ.get(key) ?? -Infinity, k));
+  }
 }
 
 async function main() {
-  console.log(`\n=== Task date/time backfill — ${APPLY ? 'APPLY' : 'DRY RUN'} ===\n`);
+  console.log(`\n=== Task date/time backfill & sequencing — ${APPLY ? 'APPLY' : 'DRY RUN'} ===\n`);
 
-  const tasks = await prisma.task.findMany({
+  const tasks = (await prisma.task.findMany({
     where: {
       project: { status: { not: 'archived' } },
+      status: { not: 'done' },
       OR: [{ startDate: { not: null } }, { dueDate: { not: null } }],
     },
     select: {
       id: true,
       title: true,
+      status: true,
       startDate: true,
       dueDate: true,
       estimatedHours: true,
       createdById: true,
       addToCalendar: true,
-      outlookEventId: true,
       project: { select: { name: true } },
       assignees: { select: { userId: true } },
     },
-    orderBy: { createdAt: 'asc' },
-  });
+    orderBy: [{ startDate: 'asc' }, { createdAt: 'asc' }],
+  })) as TaskRow[];
 
-  // A task "needs a time" when it has a date anchor but NO time-of-day was set,
-  // i.e. the anchor (dueDate preferred, else startDate) sits at local midnight.
-  const needsFix = tasks.filter((t) => {
+  const needsFix = (t: TaskRow): boolean => {
     const anchor = t.dueDate ?? t.startDate;
-    return anchor != null && !hasTimeComponent(anchor);
-  });
+    if (!anchor) return false;
+    if (!hasTimeComponent(anchor)) return true; // midnight → no time set
+    if (t.startDate && !t.dueDate) return true; // no duration (noon default)
+    if (t.startDate && t.dueDate && t.startDate.getTime() === t.dueDate.getTime()) return true; // zero-length
+    return false;
+  };
 
-  console.log(`Scanned ${tasks.length} dated tasks in active projects.`);
-  console.log(`→ ${needsFix.length} have a date but no time (midnight) and will be scheduled.\n`);
+  const fixlist = tasks.filter(needsFix);
 
-  let calendarCandidates = 0;
+  // Seed occupancy from the STABLE (already properly-scheduled) tasks so we
+  // cascade after them, not on top of them.
+  const occ: Occupancy = new Map();
+  for (const t of tasks) {
+    if (needsFix(t)) continue;
+    if (t.startDate && t.dueDate) markBusy(occ, usersOf(t), t.startDate, t.dueDate);
+  }
+
+  console.log(`Scanned ${tasks.length} dated, non-done tasks in active projects.`);
+  console.log(`→ ${fixlist_count(fixlist)} need scheduling/sequencing.\n`);
+
   const preview: string[] = [];
+  const updates: { id: string; startDate: Date; dueDate: Date; addToCalendar: boolean }[] = [];
+  let calendarCount = 0;
 
-  for (const t of needsFix) {
-    const durationHours = t.estimatedHours && t.estimatedHours > 0 ? t.estimatedHours : 1;
-    const userIds = [t.createdById, ...t.assignees.map((a) => a.userId)];
-    const slot = await correctedSlot(t.startDate, t.dueDate, userIds, durationHours, t.id);
+  for (const t of fixlist) {
+    let newStart: Date;
+    let newDue: Date;
 
-    if (t.addToCalendar) calendarCandidates++;
-
-    if (preview.length < 25) {
-      preview.push(
-        `  • [${t.project.name}] ${t.title}\n` +
-          `      start ${fmt(t.startDate)} → ${fmt(slot.startDate)}\n` +
-          `      due   ${fmt(t.dueDate)} → ${fmt(slot.dueDate)}` +
-          (t.addToCalendar ? '   (calendar)' : ''),
-      );
+    if (t.startDate && t.dueDate && !sameLocalDay(t.startDate, t.dueDate)) {
+      // Multi-day: preserve the span, just set business hours.
+      newStart = atBusinessStart(t.startDate);
+      newDue = atBusinessEnd(t.dueDate);
+    } else {
+      const anchor = (t.dueDate ?? t.startDate)!;
+      const users = usersOf(t);
+      const baseline = atBusinessStart(anchor).getTime();
+      const earliest = Math.max(baseline, latestEndFor(occ, users, anchor));
+      newStart = normalizeToBusinessHours(new Date(earliest));
+      const durationHours = t.estimatedHours && t.estimatedHours > 0 ? t.estimatedHours : 1;
+      newDue = new Date(newStart.getTime() + durationHours * 3600 * 1000);
+      markBusy(occ, users, newStart, newDue);
     }
 
-    if (APPLY) {
-      await prisma.task.update({
-        where: { id: t.id },
-        data: { startDate: slot.startDate, dueDate: slot.dueDate },
-      });
+    updates.push({ id: t.id, startDate: newStart, dueDate: newDue, addToCalendar: t.addToCalendar });
+    if (t.addToCalendar) calendarCount++;
+
+    if (preview.length < 40) {
+      preview.push(
+        `  • [${t.project.name.slice(0, 26)}] ${t.title.slice(0, 40)}\n` +
+          `      ${fmt(t.startDate)} / ${fmt(t.dueDate)}  →  ${fmt(newStart)} / ${fmt(newDue)}` +
+          (t.addToCalendar ? '  (cal)' : ''),
+      );
     }
   }
 
   console.log(preview.join('\n'));
-  if (needsFix.length > 25) console.log(`  … and ${needsFix.length - 25} more`);
+  if (fixlist.length > 40) console.log(`  … and ${fixlist.length - 40} more`);
+  console.log(`\n${calendarCount} of these have addToCalendar=true.`);
 
-  console.log(`\n${calendarCandidates} of these have addToCalendar=true.`);
-
-  if (APPLY && CALENDAR) {
-    console.log('\nRe-syncing calendars for affected tasks…');
-    // Imported lazily so the dry run never touches Outlook.
-    const { syncTaskCalendar } = await import('../lib/task-calendar-sync');
-    let ok = 0;
-    let failed = 0;
-    for (const t of needsFix) {
-      if (!t.addToCalendar) continue;
-      try {
-        await syncTaskCalendar(t.id);
-        ok++;
-      } catch (e) {
-        failed++;
-        console.warn(`  calendar sync failed for ${t.id}: ${e instanceof Error ? e.message : e}`);
-      }
+  if (APPLY) {
+    for (const u of updates) {
+      await prisma.task.update({
+        where: { id: u.id },
+        data: { startDate: u.startDate, dueDate: u.dueDate },
+      });
     }
-    console.log(`Calendar sync: ${ok} ok, ${failed} failed.`);
-  } else if (APPLY) {
-    console.log('\n(Skipped calendar sync — pass --calendar to also update Outlook.)');
+    console.log(`\nApplied ${updates.length} updates to the database.`);
+
+    if (CALENDAR) {
+      console.log('Re-syncing calendars…');
+      const { syncTaskCalendar } = await import('../lib/task-calendar-sync');
+      let ok = 0;
+      let failed = 0;
+      for (const u of updates) {
+        if (!u.addToCalendar) continue;
+        try {
+          await syncTaskCalendar(u.id);
+          ok++;
+        } catch (e) {
+          failed++;
+          console.warn(`  sync failed ${u.id}: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+      console.log(`Calendar sync: ${ok} ok, ${failed} failed.`);
+    } else {
+      console.log('(Skipped calendar sync — pass --calendar to also update Outlook.)');
+    }
   } else {
     console.log('\nDRY RUN — nothing was written. Re-run with --apply to persist.');
   }
 
   await prisma.$disconnect();
+}
+
+// Small helper kept separate so the count is obvious in the summary line.
+function fixlist_count(list: unknown[]): number {
+  return list.length;
 }
 
 main().catch(async (e) => {
