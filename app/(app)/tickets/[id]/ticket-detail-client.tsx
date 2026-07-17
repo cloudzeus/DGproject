@@ -71,6 +71,7 @@ function eventLabel(type: string, payload: Record<string, unknown> | null): stri
     case 'task_status': return `Κατάσταση εργασίας: ${String(payload?.status ?? '')}`
     case 'emailed': return 'Στάλθηκε email στον χρήστη'
     case 'kb_draft': return 'Δημιουργήθηκε πρόχειρο για τη γνωσιακή βάση'
+    case 'resolution_written': return 'Καταγράφηκε η λύση'
     case 'closed': return 'Έκλεισε'
     case 'rejected': return `Απορρίφθηκε${payload?.reason ? `: ${String(payload.reason)}` : ''}`
     case 'note': return 'Επεξεργασία από διαχειριστή'

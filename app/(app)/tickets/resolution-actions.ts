@@ -11,7 +11,9 @@ import { maskPII } from '@/lib/tickets/mask'
 // completing the task is usually NOT a triager (spec §1).
 async function requireUser(): Promise<string> {
   const session = await auth()
-  if (!session?.user?.id) throw new Error('Απαιτείται σύνδεση.')
+  if (!session?.user?.id || session.user.userType === 'customer') {
+    throw new Error('Απαιτείται σύνδεση μέλους ομάδας.')
+  }
   return session.user.id
 }
 

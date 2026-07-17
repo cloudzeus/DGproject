@@ -1,19 +1,28 @@
 import Link from 'next/link'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
-import type { Prisma } from '@prisma/client'
+import type { Prisma, TicketCategory } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
+
+const CATEGORY_OPTIONS: { value: TicketCategory; label: string }[] = [
+  { value: 'bug', label: '🐞 Σφάλμα' },
+  { value: 'feature', label: '✨ Νέα λειτουργία' },
+  { value: 'support', label: '🛟 Υποστήριξη' },
+  { value: 'question', label: '❓ Ερώτηση' },
+  { value: 'billing', label: '💶 Χρέωση' },
+  { value: 'other', label: '📋 Άλλο' },
+]
 
 export default async function KnowledgePage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; source?: string; project?: string }>
+  searchParams: Promise<{ q?: string; source?: string; project?: string; category?: string; pub?: string }>
 }) {
   const session = await auth()
   const role = session?.user?.role
   const canEdit = role === 'admin' || role === 'manager'
-  const { q, source, project } = await searchParams
+  const { q, source, project, category, pub } = await searchParams
 
   const where: Prisma.KnowledgeEntryWhereInput = {}
   if (q) {
@@ -26,6 +35,10 @@ export default async function KnowledgePage({
   }
   if (source) where.sourceId = source
   if (project) where.projectId = project
+  if (category && CATEGORY_OPTIONS.some((c) => c.value === category)) {
+    where.category = category as TicketCategory
+  }
+  if (pub === '1') where.isPublic = true
 
   const [entries, sources, projects] = await Promise.all([
     prisma.knowledgeEntry.findMany({ where, orderBy: { createdAt: 'desc' }, take: 100 }),
@@ -72,6 +85,15 @@ export default async function KnowledgePage({
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
+        <select name="category" defaultValue={category ?? ''} className="rounded-md border border-neutral-300 px-2 py-2 text-sm">
+          <option value="">Όλες οι κατηγορίες</option>
+          {CATEGORY_OPTIONS.map((c) => (
+            <option key={c.value} value={c.value}>{c.label}</option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-2 text-sm">
+          <input type="checkbox" name="pub" value="1" defaultChecked={pub === '1'} /> Μόνο δημόσιες
+        </label>
         <button
           type="submit"
           className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-black/5"
