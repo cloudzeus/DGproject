@@ -46,7 +46,7 @@ export async function sendTicketReceivedEmail(input: TicketEmailInput) {
 }
 
 export async function sendTicketStatusEmail(
-  input: TicketEmailInput & { statusLabel: string; detail?: string }
+  input: TicketEmailInput & { statusLabel: string; detail?: string; resolutionTime?: string | null }
 ) {
   const url = statusUrl(input.publicToken)
   const html = emailLayout({
@@ -58,13 +58,16 @@ export async function sendTicketStatusEmail(
     },
     body: `
       <p style="font-size:14px;line-height:1.6;">Η κατάσταση του αιτήματός σας άλλαξε σε: <b>${input.statusLabel}</b>.</p>
-      ${input.detail ? quote({ body: input.detail, tone: 'info' }) : ''}`,
+      ${input.detail ? quote({ body: input.detail, tone: 'info' }) : ''}
+      ${input.resolutionTime ? metaTable([{ label: 'Χρόνος επίλυσης', value: input.resolutionTime }]) : ''}`,
     actions: [{ label: 'Προβολή εξέλιξης', url }],
   })
   return safeSend(input.to, `[${input.code}] ${input.statusLabel}`, html)
 }
 
-export async function sendTicketResolvedEmail(input: TicketEmailInput) {
+export async function sendTicketResolvedEmail(
+  input: TicketEmailInput & { resolutionTime?: string | null }
+) {
   const url = statusUrl(input.publicToken)
   const html = emailLayout({
     recipientName: input.reporterName,
@@ -73,7 +76,9 @@ export async function sendTicketResolvedEmail(input: TicketEmailInput) {
       eyebrow: { text: input.code },
       title: input.subject,
     },
-    body: `<p style="font-size:14px;line-height:1.6;">Το αίτημά σας ολοκληρώθηκε. Αν το πρόβλημα επιμένει ή έχετε νέες ερωτήσεις, απαντήστε σε αυτό το email ή υποβάλετε νέο αίτημα.</p>`,
+    body: `
+      <p style="font-size:14px;line-height:1.6;">Το αίτημά σας ολοκληρώθηκε. Αν το πρόβλημα επιμένει ή έχετε νέες ερωτήσεις, απαντήστε σε αυτό το email ή υποβάλετε νέο αίτημα.</p>
+      ${input.resolutionTime ? metaTable([{ label: 'Χρόνος επίλυσης', value: input.resolutionTime }]) : ''}`,
     actions: [{ label: 'Προβολή αιτήματος', url }],
     footerNote: 'Ευχαριστούμε για την επικοινωνία.',
   })

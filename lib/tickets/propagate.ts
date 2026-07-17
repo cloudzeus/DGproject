@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { sendTicketStatusEmail, sendTicketResolvedEmail } from '@/lib/tickets/emails'
+import { formatDurationGr } from '@/lib/tickets/format-duration'
 
 // Reporter-facing labels/details per interesting task status.
 const STATUS_EMAIL: Record<string, { label: string; detail: string }> = {
@@ -19,7 +20,7 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
       where: { taskId },
       select: {
         id: true, code: true, status: true, subject: true, reporterEmail: true,
-        reporterName: true, publicToken: true,
+        reporterName: true, publicToken: true, createdAt: true,
         events: { where: { type: 'task_status' }, orderBy: { createdAt: 'desc' }, take: 1 },
       },
     })
@@ -38,9 +39,10 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
     })
 
     if (newStatus === 'done') {
+      const resolvedAt = new Date()
       await prisma.ticket.update({
         where: { id: ticket.id },
-        data: { status: 'resolved', resolvedAt: new Date() },
+        data: { status: 'resolved', resolvedAt },
       })
       await sendTicketResolvedEmail({
         to: ticket.reporterEmail,
@@ -48,6 +50,7 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
         code: ticket.code,
         subject: ticket.subject,
         publicToken: ticket.publicToken,
+        resolutionTime: formatDurationGr(ticket.createdAt, resolvedAt),
       })
       void import('@/lib/tickets/kb')
         .then((m) => m.generateKbDraft(ticket.id))

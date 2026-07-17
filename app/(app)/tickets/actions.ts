@@ -9,6 +9,7 @@ import { normalizeToBusinessHours } from '@/lib/business-hours'
 import { getUserLoads } from '@/lib/task-scheduling'
 import { sendTicketStatusEmail, sendTicketRejectedEmail } from '@/lib/tickets/emails'
 import { analyzeTicket } from '@/lib/tickets/triage'
+import { formatDurationGr } from '@/lib/tickets/format-duration'
 import type { TaskPriority, TicketCategory } from '@prisma/client'
 
 // Ticket triage is an admin/manager surface (spec §6).
@@ -178,7 +179,7 @@ export async function saveKnowledgeEntry(input: {
     where: { id: input.ticketId },
     select: {
       id: true, code: true, status: true, subject: true, reporterEmail: true, reporterName: true,
-      publicToken: true, taskId: true, aiCategory: true,
+      publicToken: true, taskId: true, aiCategory: true, createdAt: true, resolvedAt: true,
       task: { select: { projectId: true } },
     },
   })
@@ -214,6 +215,7 @@ export async function saveKnowledgeEntry(input: {
     publicToken: ticket.publicToken,
     statusLabel: 'Το αίτημα έκλεισε',
     detail: 'Το αίτημά σας ολοκληρώθηκε και αρχειοθετήθηκε. Ευχαριστούμε για την επικοινωνία.',
+    resolutionTime: formatDurationGr(ticket.createdAt, ticket.resolvedAt ?? new Date()),
   })
 
   revalidatePath('/tickets')
