@@ -211,4 +211,15 @@ export async function notifyTaskStatusChange(params: {
       Array.from(notified),
     );
   }
+
+  // 5. Ticket propagation → if this task came from a support ticket, mirror the
+  //    status onto the ticket and email the reporter. All three status-change
+  //    mutation paths funnel through this function, so this is the single hook
+  //    point. Dynamic import keeps the ticket module out of non-ticket flows.
+  try {
+    const { propagateTicketStatus } = await import('@/lib/tickets/propagate');
+    await propagateTicketStatus(taskId, to);
+  } catch (e) {
+    console.error('[notifications] ticket propagation failed:', e);
+  }
 }
