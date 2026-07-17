@@ -2,9 +2,15 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { buildAttention } from '@/lib/dashboard/attention';
 import { buildMyDay } from '@/lib/dashboard/my-day';
+import { buildCapacity } from '@/lib/dashboard/capacity';
+import { buildRadar } from '@/lib/dashboard/radar';
+import { buildPulse } from '@/lib/dashboard/pulse';
 import { DashboardShell } from './dashboard-shell';
 import { AttentionZone } from './attention-zone';
 import { MyDayZone } from './my-day-zone';
+import { CapacityZone } from './capacity-zone';
+import { RadarZone } from './radar-zone';
+import { PulseZone } from './pulse-zone';
 import type { QuickActionProject } from './quick-actions';
 
 export const dynamic = 'force-dynamic';
@@ -37,9 +43,12 @@ export default async function DashboardPage() {
     ? {}
     : { OR: [{ ownerId: userId }, { members: { some: { userId } } }] };
 
-  const [attention, myDay, editableProjects, allUsers] = await Promise.all([
+  const [attention, myDay, capacity, radar, pulse, editableProjects, allUsers] = await Promise.all([
     buildAttention(scope),
     buildMyDay(scope),
+    buildCapacity(scope),
+    buildRadar(scope),
+    buildPulse(scope),
     prisma.project.findMany({
       where: projectWhere,
       orderBy: { name: 'asc' },
@@ -88,9 +97,11 @@ export default async function DashboardPage() {
         <>
           <AttentionZone items={attention} />
           <MyDayZone data={myDay} />
+          <CapacityZone rows={capacity} projects={quickActionProjects} />
+          <RadarZone days={radar} />
         </>
       }
-      aside={null}
+      aside={<PulseZone data={pulse} />}
     />
   );
 }

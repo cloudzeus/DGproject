@@ -16,6 +16,8 @@ type CreateProps = {
   projects: BoardProjectOption[];
   defaultProjectId?: string;
   defaultStatus?: TaskStatus;
+  /** Preselects these users as assignees (e.g. the capacity zone's «Ανάθεση» button). */
+  defaultAssigneeIds?: string[];
   onClose: () => void;
 };
 
@@ -35,7 +37,7 @@ export function BoardTaskModal(props: Props) {
   return <CreateModal {...props} />;
 }
 
-function CreateModal({ projects, defaultProjectId, defaultStatus, onClose }: CreateProps) {
+function CreateModal({ projects, defaultProjectId, defaultStatus, defaultAssigneeIds, onClose }: CreateProps) {
   const [projectId, setProjectId] = useState<string>(defaultProjectId ?? projects[0]?.id ?? '');
 
   const members = useMemo(
@@ -43,16 +45,16 @@ function CreateModal({ projects, defaultProjectId, defaultStatus, onClose }: Cre
     [projects, projectId],
   );
 
-  const initial: TaskFormInitial | undefined = defaultStatus
+  const initial: TaskFormInitial | undefined = defaultStatus || (defaultAssigneeIds && defaultAssigneeIds.length > 0)
     ? {
         title: '',
         description: null,
-        status: defaultStatus,
+        status: defaultStatus ?? 'todo',
         priority: 'medium',
         startDate: null,
         dueDate: null,
         estimatedHours: null,
-        assigneeIds: [],
+        assigneeIds: defaultAssigneeIds ?? [],
       }
     : undefined;
 
