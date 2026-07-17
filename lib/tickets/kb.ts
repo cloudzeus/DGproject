@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { maskPII } from '@/lib/tickets/mask'
 
 /**
  * When a ticket's task completes, ask DeepSeek to draft a KnowledgeEntry
@@ -31,23 +32,18 @@ export async function generateKbDraft(ticketId: string): Promise<void> {
   })
   if (!ticket) return
 
-  const mask = (t: string) =>
-    t
-      .replace(/[^\s@]+@[^\s@]+\.[^\s@]{2,}/g, '[email]')
-      .replace(/(?:\+?\d[\d\s\-()]{8,}\d)/g, '[τηλέφωνο]')
-
   const userMsg = `ΑΡΧΙΚΟ ΑΙΤΗΜΑ ΠΕΛΑΤΗ:
-${mask(ticket.subject)}
-${mask(ticket.body).slice(0, 2000)}
+${maskPII(ticket.subject)}
+${maskPII(ticket.body).slice(0, 2000)}
 
 ΤΕΧΝΙΚΗ ΑΝΑΛΥΣΗ:
-${mask(ticket.aiDescription ?? '—').slice(0, 2000)}
+${maskPII(ticket.aiDescription ?? '—').slice(0, 2000)}
 
 ΕΡΓΑΣΙΑ ΠΟΥ ΟΛΟΚΛΗΡΩΘΗΚΕ:
-${ticket.task ? `${ticket.task.title}\n${mask(ticket.task.description ?? '')}` : '—'}
+${ticket.task ? `${ticket.task.title}\n${maskPII(ticket.task.description ?? '')}` : '—'}
 
 ΣΧΟΛΙΑ ΟΜΑΔΑΣ ΚΑΤΑ ΤΗΝ ΕΠΙΛΥΣΗ:
-${ticket.task?.comments.map((c) => `- ${mask(c.content).slice(0, 300)}`).join('\n') || '(κανένα)'}
+${ticket.task?.comments.map((c) => `- ${maskPII(c.content).slice(0, 300)}`).join('\n') || '(κανένα)'}
 
 Γράψε εγγραφή γνωσιακής βάσης στα Ελληνικά. JSON: {"title": string, "problem": string, "solution": string, "tags": string[]}`
 
