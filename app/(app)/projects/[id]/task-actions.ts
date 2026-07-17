@@ -507,6 +507,17 @@ export async function createTask(projectId: string, formData: FormData) {
   await syncTaskCalendar(created.id);
   await syncTaskTeams(created.id);
   await logTaskActivity(created.id, projectId, actorId, 'created');
+  await notifyApprover(
+    projectId,
+    actorId,
+    {
+      title: 'Νέα εργασία',
+      message: `Δημιουργήθηκε η εργασία «${input.title}».`,
+      type: 'assignment',
+      link: '/board',
+    },
+    input.assigneeIds,
+  );
   if (input.assigneeIds.length > 0) {
     await notifyAssignees(created.id, input.assigneeIds, actorId, 'assigned');
     await notifyTaskAssignment(created.id, input.assigneeIds, actorId);
@@ -537,6 +548,33 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
     },
   });
   const previousAssigneeIds = new Set(previous?.assignees.map((a) => a.userId) ?? []);
+
+  // Approval gate: block edit-form status changes into `done` when the project
+  // has an approver and the editor is not approver/owner/global-admin.
+  {
+    const gateProject = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { approverId: true, ownerId: true },
+    });
+    const gateSession = await auth();
+    const gateActorId = gateSession?.user?.id ?? '';
+    const gateRole = gateSession?.user?.role ?? 'member';
+    if (
+      gateProject &&
+      isApprovalGatedTransition(gateProject.approverId, previous?.status ?? null, input.status) &&
+      !canApprove({
+        approverId: gateProject.approverId,
+        ownerId: gateProject.ownerId,
+        userId: gateActorId,
+        userRole: gateRole,
+      })
+    ) {
+      return {
+        ok: false,
+        error: 'Μόνο ο υπεύθυνος έγκρισης (approver) μπορεί να εγκρίνει αυτή την εργασία.',
+      };
+    }
+  }
 
   // Validate dependencies (same project, no cycles, no self-reference).
   const cycleErr = await validateNoDependencyCycle(projectId, taskId, input.dependencyIds);
@@ -641,6 +679,17 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
   if (addedAssigneeIds.length > 0) {
     await notifyAssignees(taskId, addedAssigneeIds, actorId, 'added');
     await notifyTaskAssignment(taskId, addedAssigneeIds, actorId);
+    await notifyApprover(
+      projectId,
+      actorId,
+      {
+        title: 'Αλλαγή ανάθεσης',
+        message: `Άλλαξε η ανάθεση στην εργασία.`,
+        type: 'assignment',
+        link: '/board',
+      },
+      addedAssigneeIds,
+    );
     await logTaskActivity(taskId, projectId, actorId, 'assigned', {
       userIds: addedAssigneeIds,
     });
