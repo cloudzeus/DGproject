@@ -3,8 +3,14 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { sendMail } from '@/lib/graph-mail';
+import { sendMail, sendMailWithAttachments, type MailAttachment } from '@/lib/graph-mail';
 import { buildHiddenTagFooter } from '@/lib/email-tag';
+
+export type SendProjectEmailAttachment = {
+  name: string;
+  contentType: string;
+  dataBase64: string;
+};
 
 export type SendProjectEmailInput = {
   projectId: string;
@@ -14,7 +20,18 @@ export type SendProjectEmailInput = {
   cc: string[];
   subject: string;
   bodyHtml: string;
+  attachments?: SendProjectEmailAttachment[];
 };
+
+// Όρια συνημμένων — ευθυγραμμισμένα με το direct attachment POST του Graph
+// (~3MB/αρχείο)· μεγαλύτερα αρχεία θέλουν upload sessions (μελλοντική επέκταση).
+const MAX_ATTACHMENTS = 10;
+const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
+
+function base64Bytes(b64: string): number {
+  return Math.floor((b64.length * 3) / 4);
+}
 
 // Sends an email from the current user's Microsoft mailbox on behalf of a
 // project (and optionally a specific task or question thread), then persists
@@ -70,10 +87,41 @@ export async function sendProjectEmail(input: SendProjectEmailInput): Promise<{ 
   const subject = input.subject.trim();
   if (subject.length === 0) return { ok: false, error: 'Το θέμα είναι κενό.' };
 
+  // Validation συνημμένων πριν από οποιαδήποτε κλήση Graph.
+  const attachments: MailAttachment[] = [];
+  if (input.attachments && input.attachments.length > 0) {
+    if (input.attachments.length > MAX_ATTACHMENTS) {
+      return { ok: false, error: `Έως ${MAX_ATTACHMENTS} συνημμένα ανά email.` };
+    }
+    let total = 0;
+    for (const a of input.attachments) {
+      const name = a.name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 200).trim();
+      if (!name) return { ok: false, error: 'Μη έγκυρο όνομα συνημμένου.' };
+      const bytes = base64Bytes(a.dataBase64);
+      if (bytes === 0) return { ok: false, error: `Το «${name}» είναι κενό.` };
+      if (bytes > MAX_ATTACHMENT_BYTES) {
+        return { ok: false, error: `Το «${name}» ξεπερνά τα 3MB ανά αρχείο.` };
+      }
+      total += bytes;
+      if (total > MAX_TOTAL_BYTES) {
+        return { ok: false, error: 'Τα συνημμένα ξεπερνούν συνολικά τα 20MB.' };
+      }
+      attachments.push({
+        name,
+        contentType: a.contentType || 'application/octet-stream',
+        contentBase64: a.dataBase64,
+      });
+    }
+  }
+
   const bodyWithTag = `${input.bodyHtml}\n${buildHiddenTagFooter(project.projectCode, input.taskId ?? null)}`;
 
   try {
-    await sendMail(session.user.id, { subject, bodyHtml: bodyWithTag, to, cc });
+    if (attachments.length > 0) {
+      await sendMailWithAttachments(session.user.id, { subject, bodyHtml: bodyWithTag, to, cc }, attachments);
+    } else {
+      await sendMail(session.user.id, { subject, bodyHtml: bodyWithTag, to, cc });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Αποτυχία αποστολής.';
     // Persist a failed-send row so the user can see the attempt in the history.
@@ -111,6 +159,10 @@ export async function sendProjectEmail(input: SendProjectEmailInput): Promise<{ 
       bodyHtml: bodyWithTag,
       bodyPreview: input.bodyHtml.replace(/<[^>]+>/g, '').slice(0, 280),
       sentAt: new Date(),
+      appliedNote:
+        attachments.length > 0
+          ? `συνημμένα (${attachments.length}): ${attachments.map((a) => a.name).join(', ').slice(0, 400)}`
+          : null,
     },
   });
 

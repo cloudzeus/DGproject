@@ -211,3 +211,56 @@ export async function sendMail(
   });
 }
 
+export type MailAttachment = {
+  name: string;
+  contentType: string;
+  // Raw file bytes, base64-encoded.
+  contentBase64: string;
+};
+
+// Send with attachments via the draft flow: create draft → attach each file →
+// send. The direct /me/sendMail payload caps around 4MB total, while a draft
+// accepts one POSTed fileAttachment of up to ~3MB per request — so the draft
+// path covers "many medium files" (the caller enforces per-file/total limits).
+// The sent message lands in Sent Items like any Outlook mail.
+export async function sendMailWithAttachments(
+  userId: string,
+  msg: {
+    subject: string;
+    bodyHtml: string;
+    to: string[];
+    cc?: string[];
+  },
+  attachments: MailAttachment[],
+): Promise<void> {
+  const token = await getMailAccessToken(userId);
+  const draft = (await graphFetch(token, '/me/messages', {
+    method: 'POST',
+    body: JSON.stringify({
+      subject: msg.subject,
+      body: { contentType: 'HTML', content: msg.bodyHtml },
+      toRecipients: msg.to.map((address) => ({ emailAddress: { address } })),
+      ccRecipients: (msg.cc ?? []).map((address) => ({ emailAddress: { address } })),
+    }),
+  })) as { id: string };
+
+  try {
+    for (const a of attachments) {
+      await graphFetch(token, `/me/messages/${draft.id}/attachments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          '@odata.type': '#microsoft.graph.fileAttachment',
+          name: a.name,
+          contentType: a.contentType,
+          contentBytes: a.contentBase64,
+        }),
+      });
+    }
+    await graphFetch(token, `/me/messages/${draft.id}/send`, { method: 'POST' });
+  } catch (err) {
+    // Best effort: don't leave half-built drafts in the user's mailbox.
+    await graphFetch(token, `/me/messages/${draft.id}`, { method: 'DELETE' }).catch(() => {});
+    throw err;
+  }
+}
+

@@ -10,6 +10,8 @@ import {
   TextUnderline20Regular,
   Link20Regular,
   TextBulletList20Regular,
+  Attach20Regular,
+  Document20Regular,
 } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 
@@ -48,8 +50,31 @@ type Props = {
     cc: string[];
     subject: string;
     bodyHtml: string;
+    attachments?: { name: string; contentType: string; dataBase64: string }[];
   }) => Promise<{ ok: boolean; error?: string }>;
 };
+
+// Ίδια όρια με το server action (email-actions.ts) — εδώ για άμεσο feedback.
+const MAX_ATTACHMENTS = 10;
+const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
 
 export function EmailComposerModal({
   open,
@@ -66,13 +91,16 @@ export function EmailComposerModal({
   const [subject, setSubject] = useState(defaultSubject);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (open) {
       setTo(defaultTo);
       setCc([]);
       setSubject(defaultSubject);
+      setFiles([]);
       setError(null);
       // Reset editor content when re-opened.
       requestAnimationFrame(() => {
@@ -105,6 +133,30 @@ export function EmailComposerModal({
     if (url) exec('createLink', url);
   }
 
+  function handlePickFiles(picked: FileList | null) {
+    if (!picked || picked.length === 0) return;
+    setError(null);
+    const next = [...files];
+    for (const f of Array.from(picked)) {
+      if (next.some((x) => x.name === f.name && x.size === f.size)) continue;
+      if (f.size > MAX_ATTACHMENT_BYTES) {
+        setError(`Το «${f.name}» ξεπερνά τα 3MB ανά αρχείο.`);
+        continue;
+      }
+      if (next.length >= MAX_ATTACHMENTS) {
+        setError(`Έως ${MAX_ATTACHMENTS} συνημμένα ανά email.`);
+        break;
+      }
+      if (next.reduce((a, x) => a + x.size, 0) + f.size > MAX_TOTAL_BYTES) {
+        setError('Τα συνημμένα ξεπερνούν συνολικά τα 20MB.');
+        break;
+      }
+      next.push(f);
+    }
+    setFiles(next);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
   async function handleSend() {
     setError(null);
     if (to.length === 0) {
@@ -121,6 +173,23 @@ export function EmailComposerModal({
       return;
     }
     setSending(true);
+    let attachments: { name: string; contentType: string; dataBase64: string }[] | undefined;
+    try {
+      attachments =
+        files.length > 0
+          ? await Promise.all(
+              files.map(async (f) => ({
+                name: f.name,
+                contentType: f.type || 'application/octet-stream',
+                dataBase64: await fileToBase64(f),
+              })),
+            )
+          : undefined;
+    } catch {
+      setSending(false);
+      setError('Αποτυχία ανάγνωσης συνημμένων.');
+      return;
+    }
     const result = await onSend({
       projectId: context.projectId,
       taskId: context.taskId ?? null,
@@ -129,6 +198,7 @@ export function EmailComposerModal({
       cc,
       subject: subject.trim(),
       bodyHtml,
+      attachments,
     });
     setSending(false);
     if (result.ok) {
@@ -214,6 +284,56 @@ export function EmailComposerModal({
               suppressContentEditableWarning
               className="min-h-[180px] max-h-[40vh] overflow-y-auto px-3 py-2 border border-black/10 rounded-b-md text-sm focus:outline-none focus:ring-2 focus:ring-fluent-blue-200 prose prose-sm max-w-none"
             />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-fluent-neutral-70">
+                Συνημμένα{files.length > 0 && ` (${files.length}/${MAX_ATTACHMENTS} · ${formatSize(files.reduce((a, f) => a + f.size, 0))})`}
+              </label>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-1 text-xs font-medium text-fluent-blue-600 hover:underline"
+              >
+                <Attach20Regular className="h-3.5 w-3.5" />
+                Προσθήκη αρχείων
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => handlePickFiles(e.target.files)}
+              />
+            </div>
+            {files.length === 0 ? (
+              <p className="text-[11px] text-fluent-neutral-50">
+                Έως {MAX_ATTACHMENTS} αρχεία, 3MB το καθένα (σύνολο 20MB).
+              </p>
+            ) : (
+              <ul className="flex flex-wrap gap-1.5">
+                {files.map((f) => (
+                  <li
+                    key={`${f.name}-${f.size}`}
+                    className="inline-flex items-center gap-1.5 pl-2 pr-1 h-7 rounded-full bg-fluent-neutral-6 border border-black/5 text-xs text-fluent-neutral-80"
+                    title={f.name}
+                  >
+                    <Document20Regular className="h-3.5 w-3.5 text-fluent-neutral-60 shrink-0" />
+                    <span className="max-w-[180px] truncate">{f.name}</span>
+                    <span className="text-fluent-neutral-50 tabular-nums">{formatSize(f.size)}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFiles(files.filter((x) => x !== f))}
+                      aria-label={`Αφαίρεση ${f.name}`}
+                      className="h-5 w-5 rounded-full hover:bg-black/10 flex items-center justify-center text-fluent-neutral-60"
+                    >
+                      <Dismiss20Regular className="h-3 w-3" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {error && (
