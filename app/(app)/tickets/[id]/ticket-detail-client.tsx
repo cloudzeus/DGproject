@@ -455,6 +455,7 @@ function ResolutionSection({ ticketId, initial }: { ticketId: string; initial: s
             onClick={() => {
               setText(original)
               setOriginal(null)
+              setSaved(false)
             }}
             className="text-xs text-fluent-blue-600 hover:underline"
           >
