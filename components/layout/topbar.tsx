@@ -14,7 +14,7 @@ import {
   Search20Regular, Alert20Regular, Apps20Regular,
   QuestionCircle20Regular, Add16Filled,
   Person20Regular, Settings20Regular, SignOut20Regular,
-  Navigation20Regular,
+  Navigation20Regular, CheckmarkCircle16Regular,
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -410,7 +410,9 @@ function NotificationsFlyout({
                   !n.read && 'bg-fluent-blue-50/50',
                 )}
               >
-                {!n.read ? (
+                {n.type === 'approval' ? (
+                  <CheckmarkCircle16Regular className="h-4 w-4 text-fluent-blue-600 mt-0.5 shrink-0" />
+                ) : !n.read ? (
                   <span className="h-2 w-2 rounded-full bg-fluent-blue-500 mt-1.5 shrink-0" />
                 ) : (
                   <span className="h-2 w-2 shrink-0" />
