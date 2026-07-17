@@ -327,23 +327,24 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
       await notifyTaskCompleted(taskId, actorId);
     }
 
-    // Firehose: approver hears about every status change (deduped against the
-    // decision/request notifications already sent above).
-    await notifyApprover(
-      projectId,
-      actorId,
-      {
-        title: 'Αλλαγή κατάστασης εργασίας',
-        message: `Η εργασία «${taskMeta.title}»: ${previous.status} → ${status}.`,
-        type: 'status_change',
-        link: '/board',
-      },
-      // The approver already got the request (review) or decision (done/reject)
-      // notification for these transitions — skip the firehose duplicate.
-      entersReview(from, status) || status === 'done' || isRejection(from, status)
-        ? [project.approverId ?? '']
-        : [],
-    );
+    // Firehose: approver hears about every status change. Dedup ONLY on
+    // entersReview — the only transition where the approver already received a
+    // notification (the "Εργασία για έγκριση" call). On done/reject the decision
+    // notifications go to creator+assignees, NOT the approver, so the approver
+    // must still be informed here. Skip entirely when no approver is set.
+    if (project.approverId) {
+      await notifyApprover(
+        projectId,
+        actorId,
+        {
+          title: 'Αλλαγή κατάστασης εργασίας',
+          message: `Η εργασία «${taskMeta.title}»: ${previous.status} → ${status}.`,
+          type: 'status_change',
+          link: '/board',
+        },
+        entersReview(from, status) ? [project.approverId] : [],
+      );
+    }
   }
 
   revalidatePath(`/projects/${projectId}`);
@@ -474,17 +475,24 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
     if (status === 'done' && from !== 'done') {
       await notifyTaskCompleted(taskId, userId);
     }
-    await notifyApprover(
-      task.projectId,
-      userId,
-      {
-        title: 'Αλλαγή κατάστασης εργασίας',
-        message: `Η εργασία «${previous.title}»: ${from} → ${status}.`,
-        type: 'status_change',
-        link: '/board',
-      },
-      entersReview(from, status) || status === 'done' || isRejection(from, status) ? [approverId ?? ''] : [],
-    );
+    // Firehose: approver hears about every status change. Dedup ONLY on
+    // entersReview — that is the only transition where the approver already got
+    // a notification (the "Εργασία για έγκριση" call above). On done/reject the
+    // decision notifications go to creator+assignees, NOT the approver, so the
+    // approver must still hear about it here. Skip entirely when no approver.
+    if (approverId) {
+      await notifyApprover(
+        task.projectId,
+        userId,
+        {
+          title: 'Αλλαγή κατάστασης εργασίας',
+          message: `Η εργασία «${previous.title}»: ${from} → ${status}.`,
+          type: 'status_change',
+          link: '/board',
+        },
+        entersReview(from, status) ? [approverId] : [],
+      );
+    }
   }
 
   revalidatePath('/board');
