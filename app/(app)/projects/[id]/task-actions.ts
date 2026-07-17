@@ -663,18 +663,23 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
   const session = await auth();
   const actorRole = session?.user?.role ?? 'member';
 
-  const [previous, project, taskMeta] = await Promise.all([
+  const [previous, project] = await Promise.all([
     prisma.task.findUnique({
       where: { id: taskId },
-      select: { status: true, inProgressStartedAt: true, inProgressAccumulatedMs: true },
+      select: {
+        status: true,
+        inProgressStartedAt: true,
+        inProgressAccumulatedMs: true,
+        title: true,
+        createdById: true,
+      },
     }),
     prisma.project.findUnique({
       where: { id: projectId },
       select: { approverId: true, ownerId: true, name: true },
     }),
-    prisma.task.findUnique({ where: { id: taskId }, select: { title: true, createdById: true } }),
   ]);
-  if (!project || !taskMeta) return { ok: false, error: 'Δεν βρέθηκε.' };
+  if (!previous || !project) return { ok: false, error: 'Δεν βρέθηκε.' };
 
   const from = previous?.status ?? null;
 
@@ -716,7 +721,7 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
         actorId,
         {
           title: 'Εργασία για έγκριση',
-          message: `Η εργασία «${taskMeta.title}» στο έργο ${project.name} περιμένει την έγκρισή σου.`,
+          message: `Η εργασία «${previous.title}» στο έργο ${project.name} περιμένει την έγκρισή σου.`,
           type: 'approval',
           link: '/board',
         },
@@ -730,7 +735,7 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
         where: { taskId },
         select: { userId: true },
       });
-      const recipients = new Set<string>([taskMeta.createdById, ...assignees.map((a) => a.userId)]);
+      const recipients = new Set<string>([previous.createdById, ...assignees.map((a) => a.userId)]);
       recipients.delete(actorId);
       const decided = status === 'done';
       await createNotifications(
@@ -738,8 +743,8 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
           userId,
           title: decided ? 'Εργασία εγκρίθηκε' : 'Ζητήθηκαν αλλαγές',
           message: decided
-            ? `Η εργασία «${taskMeta.title}» εγκρίθηκε.`
-            : `Ζητήθηκαν αλλαγές στην εργασία «${taskMeta.title}».`,
+            ? `Η εργασία «${previous.title}» εγκρίθηκε.`
+            : `Ζητήθηκαν αλλαγές στην εργασία «${previous.title}».`,
           type: 'approval' as const,
           link: '/board',
         })),
@@ -750,21 +755,24 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
       await notifyTaskCompleted(taskId, actorId);
     }
 
-    // Firehose: approver hears about every status change (deduped against the
-    // decision/request notifications already sent above).
-    await notifyApprover(
-      projectId,
-      actorId,
-      {
-        title: 'Αλλαγή κατάστασης εργασίας',
-        message: `Η εργασία «${taskMeta.title}»: ${previous.status} → ${status}.`,
-        type: 'status_change',
-        link: '/board',
-      },
-      entersReview(from, status) || status === 'done' || isRejection(from, status)
-        ? [project.approverId ?? '']
-        : [],
-    );
+    // Firehose: approver hears about every status change. Dedup only on
+    // entersReview, where the approver already got the "request" notification
+    // above; on done/reject the decision notifications went to creator +
+    // assignees (never the approver), so the approver is informed via this
+    // firehose. When the actor IS the approver, notifyApprover self-suppresses.
+    if (project.approverId) {
+      await notifyApprover(
+        projectId,
+        actorId,
+        {
+          title: 'Αλλαγή κατάστασης εργασίας',
+          message: `Η εργασία «${previous.title}»: ${previous.status} → ${status}.`,
+          type: 'status_change',
+          link: '/board',
+        },
+        entersReview(from, status) ? [project.approverId ?? ''] : [],
+      );
+    }
   }
 
   revalidatePath(`/projects/${projectId}`);
