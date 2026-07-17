@@ -2,8 +2,38 @@
 
 import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { addDays, differenceInCalendarDays, startOfDay, format, isSameMonth, isWeekend } from 'date-fns';
+import { ChevronDown16Regular as ChevronDown16 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { BUSINESS_START_HOUR, BUSINESS_END_HOUR } from '@/lib/business-hours';
+
+// Task status → visual metadata for the expanded left-column detail rows.
+const STATUS_LABEL: Record<string, string> = {
+  backlog: 'Backlog',
+  todo: 'Προς εκτέλεση',
+  in_progress: 'Σε εξέλιξη',
+  review: 'Σε έλεγχο',
+  done: 'Ολοκληρώθηκε',
+};
+const STATUS_DOT: Record<string, string> = {
+  backlog: '#9AA0A6',
+  todo: '#616161',
+  in_progress: '#0078D4',
+  review: '#8764B8',
+  done: '#107C41',
+};
+
+/** Compact "start – due" label (e.g. "17 Ιουλ – 19 Ιουλ"); falls back gracefully. */
+function formatTaskRange(t: GanttTask): string {
+  const fmt = (d: Date) => format(d, 'd MMM');
+  if (t.startDate && t.dueDate) {
+    const s = fmt(t.startDate);
+    const e = fmt(t.dueDate);
+    return s === e ? s : `${s} – ${e}`;
+  }
+  if (t.dueDate) return `→ ${fmt(t.dueDate)}`;
+  if (t.startDate) return `${fmt(t.startDate)} →`;
+  return 'Χωρίς ημερομηνία';
+}
 
 export type GanttAssignee = { id: string; name: string; avatarUrl?: string };
 
@@ -70,7 +100,40 @@ type Props = {
   onReschedule?: (taskId: string, startDate: Date, dueDate: Date) => void;
   onClickTask?: (task: GanttTask) => void;
   onReassign?: (task: GanttTask) => void;
+  /** Set of row ids that are collapsed (show only the project summary bar). */
+  collapsed?: Set<string>;
+  /** Toggle a project row between collapsed and expanded (per-task lanes). */
+  onToggleRow?: (rowId: string) => void;
 };
+
+/**
+ * Vertical layout for one project row, driven by collapse state.
+ * - Every row has a clickable header band of height ROW_HEIGHT.
+ * - Collapsed: header only (a single summary bar renders inside it). height = ROW_HEIGHT.
+ * - Expanded: header + one lane per task (+12px bottom pad). Task lanes are offset
+ *   down by ROW_HEIGHT so they sit below the header, on both the left labels and
+ *   the right bars (and the dependency-arrow layer) — keeping all three aligned.
+ */
+const HEADER_H = ROW_HEIGHT;
+function rowLayout(row: GanttRow, isCollapsed: boolean): { lanes: number; height: number } {
+  const lanes = isCollapsed ? 0 : row.tasks.length;
+  const height = HEADER_H + (isCollapsed ? 0 : row.tasks.length * ROW_HEIGHT + 12);
+  return { lanes, height };
+}
+
+/** Earliest start / latest end across a project's dated tasks, for the collapsed summary bar. */
+function projectSpan(row: GanttRow): { start: Date; end: Date } | null {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const t of row.tasks) {
+    const d = resolveDates(t);
+    if (!d) continue;
+    if (d.start.getTime() < min) min = d.start.getTime();
+    if (d.end.getTime() > max) max = d.end.getTime();
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  return { start: new Date(min), end: new Date(max) };
+}
 
 function resolveDates(task: GanttTask): { start: Date; end: Date } | null {
   if (!task.startDate && !task.dueDate) return null;
@@ -81,8 +144,9 @@ function resolveDates(task: GanttTask): { start: Date; end: Date } | null {
   return { start, end };
 }
 
-export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule, onClickTask, onReassign }: Props) {
+export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule, onClickTask, onReassign, collapsed, onToggleRow }: Props) {
   const DAY_WIDTH = DAY_WIDTH_BY_ZOOM[zoom];
+  const isCollapsed = (id: string) => collapsed?.has(id) ?? false;
   const allTasks = rows.flatMap((r) => r.tasks);
   const computed = allTasks
     .map((t) => ({ task: t, dates: resolveDates(t) }))
@@ -157,19 +221,56 @@ export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule,
           style={{ width: LABEL_WIDTH }}
         >
           <div className="h-[68px] border-b border-black/5" />
-          {rows.map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center gap-2 px-4 border-b border-black/5"
-              style={{ height: r.tasks.length > 0 ? r.tasks.length * ROW_HEIGHT + 12 : ROW_HEIGHT }}
-            >
-              {r.color && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: r.color }} />}
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-fluent-neutral-90 truncate">{r.label}</div>
-                {r.sublabel && <div className="text-[11px] text-fluent-neutral-60 truncate">{r.sublabel}</div>}
+          {rows.map((r) => {
+            const rowCollapsed = isCollapsed(r.id);
+            const { height } = rowLayout(r, rowCollapsed);
+            return (
+              <div key={r.id} className="border-b border-black/5" style={{ height }}>
+                {/* Project header — click to expand/collapse */}
+                <button
+                  type="button"
+                  onClick={() => onToggleRow?.(r.id)}
+                  className="w-full flex items-center gap-2 px-3 text-left hover:bg-fluent-neutral-4 transition-colors"
+                  style={{ height: HEADER_H }}
+                  aria-expanded={!rowCollapsed}
+                >
+                  <ChevronDown16
+                    className={`h-4 w-4 shrink-0 text-fluent-neutral-60 transition-transform ${rowCollapsed ? '-rotate-90' : ''}`}
+                  />
+                  {r.color && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: r.color }} />}
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-fluent-neutral-90 truncate">{r.label}</div>
+                    {r.sublabel && <div className="text-[11px] text-fluent-neutral-60 truncate">{r.sublabel}</div>}
+                  </div>
+                </button>
+                {/* Expanded: one detail row per task, aligned to its bar lane on the right */}
+                {!rowCollapsed &&
+                  r.tasks.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onClickTask?.(t)}
+                      className="w-full flex items-center gap-2 pl-9 pr-3 text-left border-t border-black/5 hover:bg-fluent-neutral-4 transition-colors"
+                      style={{ height: ROW_HEIGHT }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: STATUS_DOT[t.status] ?? '#9AA0A6' }} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-medium text-fluent-neutral-90 truncate">{t.title}</div>
+                        <div className="text-[10px] text-fluent-neutral-60 truncate">
+                          {formatTaskRange(t)} · {STATUS_LABEL[t.status] ?? t.status}
+                        </div>
+                      </div>
+                      {t.assignees[0] && (
+                        <Avatar
+                          user={{ name: t.assignees[0].name, avatarUrl: t.assignees[0].avatarUrl }}
+                          size="xs"
+                        />
+                      )}
+                    </button>
+                  ))}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-visible">
@@ -269,6 +370,7 @@ export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule,
                 <GanttRowGrid
                   key={r.id}
                   row={r}
+                  collapsed={isCollapsed(r.id)}
                   rangeStart={range.start}
                   totalDays={totalDays}
                   dayWidth={DAY_WIDTH}
@@ -277,10 +379,12 @@ export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule,
                   onReschedule={onReschedule}
                   onClickTask={onClickTask}
                   onReassign={onReassign}
+                  onToggleRow={onToggleRow}
                 />
               ))}
               <DependencyArrowsLayer
                 rows={rows}
+                collapsed={collapsed}
                 rangeStart={range.start}
                 dayWidth={DAY_WIDTH}
                 zoom={zoom}
@@ -301,12 +405,14 @@ export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule,
  */
 function DependencyArrowsLayer({
   rows,
+  collapsed,
   rangeStart,
   dayWidth,
   zoom,
   totalWidth,
 }: {
   rows: GanttRow[];
+  collapsed?: Set<string>;
   rangeStart: Date;
   dayWidth: number;
   zoom: GanttZoom;
@@ -318,41 +424,46 @@ function DependencyArrowsLayer({
   let yOffset = 0;
   let totalHeight = 0;
   for (const row of rows) {
-    const lanes = row.tasks.length;
-    const rowHeight = Math.max(ROW_HEIGHT, lanes * ROW_HEIGHT + 12);
+    const rowCollapsed = collapsed?.has(row.id) ?? false;
+    const { height: rowHeight } = rowLayout(row, rowCollapsed);
 
-    row.tasks.forEach((task, idx) => {
-      const dates = resolveDates(task);
-      if (!dates) return;
+    // Collapsed rows have no per-task lanes → their tasks get no anchor and any
+    // arrow touching them is skipped below.
+    if (!rowCollapsed) {
+      row.tasks.forEach((task, idx) => {
+        const dates = resolveDates(task);
+        if (!dates) return;
 
-      // Match GanttBar's positioning logic
-      const startOffset = differenceInCalendarDays(dates.start, rangeStart);
-      const durationDays = Math.max(1, differenceInCalendarDays(dates.end, dates.start) + 1);
+        // Match GanttBar's positioning logic
+        const startOffset = differenceInCalendarDays(dates.start, rangeStart);
+        const durationDays = Math.max(1, differenceInCalendarDays(dates.end, dates.start) + 1);
 
-      const rawStart = task.startDate;
-      const rawDue = task.dueDate;
-      const hasTime =
-        zoom === 'day' &&
-        ((rawStart && (rawStart.getHours() !== 0 || rawStart.getMinutes() !== 0)) ||
-          (rawDue && (rawDue.getHours() !== 0 || rawDue.getMinutes() !== 0)));
+        const rawStart = task.startDate;
+        const rawDue = task.dueDate;
+        const hasTime =
+          zoom === 'day' &&
+          ((rawStart && (rawStart.getHours() !== 0 || rawStart.getMinutes() !== 0)) ||
+            (rawDue && (rawDue.getHours() !== 0 || rawDue.getMinutes() !== 0)));
 
-      let left = startOffset * dayWidth;
-      let width = durationDays * dayWidth - 4;
-      if (hasTime && rawStart && rawDue) {
-        const startMin = rawStart.getHours() * 60 + rawStart.getMinutes();
-        const endMin = rawDue.getHours() * 60 + rawDue.getMinutes();
-        const startDayOffset = differenceInCalendarDays(rawStart, rangeStart);
-        const endDayOffset = differenceInCalendarDays(rawDue, rangeStart);
-        left = startDayOffset * dayWidth + (startMin / (24 * 60)) * dayWidth;
-        const endPx = endDayOffset * dayWidth + (endMin / (24 * 60)) * dayWidth;
-        width = Math.max(24, endPx - left - 2);
-      }
-      const top = idx * ROW_HEIGHT + 6;
-      // Mid-bar Y. Bars render with `flex` filling lane height; vertical center
-      // ~= top + (ROW_HEIGHT - top-padding) / 2. Using 22 matches the rendered look.
-      const y = yOffset + top + 22;
-      positions.set(task.id, { left, right: left + width, y });
-    });
+        let left = startOffset * dayWidth;
+        let width = durationDays * dayWidth - 4;
+        if (hasTime && rawStart && rawDue) {
+          const startMin = rawStart.getHours() * 60 + rawStart.getMinutes();
+          const endMin = rawDue.getHours() * 60 + rawDue.getMinutes();
+          const startDayOffset = differenceInCalendarDays(rawStart, rangeStart);
+          const endDayOffset = differenceInCalendarDays(rawDue, rangeStart);
+          left = startDayOffset * dayWidth + (startMin / (24 * 60)) * dayWidth;
+          const endPx = endDayOffset * dayWidth + (endMin / (24 * 60)) * dayWidth;
+          width = Math.max(24, endPx - left - 2);
+        }
+        // Lanes are offset below the header band; mirror GanttRowGrid's layout.
+        const top = HEADER_H + idx * ROW_HEIGHT + 6;
+        // Mid-bar Y. Bars render with `flex` filling lane height; vertical center
+        // ~= top + (ROW_HEIGHT - top-padding) / 2. Using 22 matches the rendered look.
+        const y = yOffset + top + 22;
+        positions.set(task.id, { left, right: left + width, y });
+      });
+    }
 
     yOffset += rowHeight;
   }
@@ -427,6 +538,7 @@ function DependencyArrowsLayer({
 
 function GanttRowGrid({
   row,
+  collapsed,
   rangeStart,
   totalDays,
   dayWidth,
@@ -435,8 +547,10 @@ function GanttRowGrid({
   onReschedule,
   onClickTask,
   onReassign,
+  onToggleRow,
 }: {
   row: GanttRow;
+  collapsed?: boolean;
   rangeStart: Date;
   totalDays: number;
   dayWidth: number;
@@ -445,9 +559,21 @@ function GanttRowGrid({
   onReschedule?: (taskId: string, startDate: Date, dueDate: Date) => void;
   onClickTask?: (task: GanttTask) => void;
   onReassign?: (task: GanttTask) => void;
+  onToggleRow?: (rowId: string) => void;
 }) {
-  const lanes = row.tasks.length;
-  const height = Math.max(ROW_HEIGHT, lanes * ROW_HEIGHT + 12);
+  const isCollapsed = collapsed ?? false;
+  const { height } = rowLayout(row, isCollapsed);
+
+  // Collapsed summary bar geometry (spans the project's earliest start → latest end).
+  const span = isCollapsed ? projectSpan(row) : null;
+  let summaryLeft = 0;
+  let summaryWidth = 0;
+  if (span) {
+    const startOffset = differenceInCalendarDays(span.start, rangeStart);
+    const durationDays = Math.max(1, differenceInCalendarDays(span.end, span.start) + 1);
+    summaryLeft = startOffset * dayWidth;
+    summaryWidth = Math.max(dayWidth, durationDays * dayWidth - 4);
+  }
 
   return (
     <div className="relative border-b border-black/5" style={{ height }}>
@@ -473,20 +599,39 @@ function GanttRowGrid({
         })}
       </div>
       <div className="relative" style={{ height }}>
-        {row.tasks.map((task, idx) => (
-          <GanttBar
-            key={task.id}
-            task={task}
-            rangeStart={rangeStart}
-            dayWidth={dayWidth}
-            zoom={zoom}
-            lane={idx}
-            canEdit={canEdit}
-            onReschedule={onReschedule}
-            onClickTask={onClickTask}
-            onReassign={onReassign}
-          />
-        ))}
+        {isCollapsed ? (
+          span && (
+            <button
+              type="button"
+              onClick={() => onToggleRow?.(row.id)}
+              title={`${row.label} — ${row.tasks.length} εργασίες`}
+              className="absolute rounded-md opacity-80 hover:opacity-100 transition-opacity"
+              style={{
+                left: summaryLeft,
+                width: summaryWidth,
+                top: (HEADER_H - 16) / 2,
+                height: 16,
+                background: row.color ?? '#0078D4',
+              }}
+            />
+          )
+        ) : (
+          row.tasks.map((task, idx) => (
+            <GanttBar
+              key={task.id}
+              task={task}
+              rangeStart={rangeStart}
+              dayWidth={dayWidth}
+              zoom={zoom}
+              lane={idx}
+              topOffset={HEADER_H}
+              canEdit={canEdit}
+              onReschedule={onReschedule}
+              onClickTask={onClickTask}
+              onReassign={onReassign}
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -503,6 +648,7 @@ function GanttBar({
   dayWidth,
   zoom,
   lane,
+  topOffset = 0,
   canEdit,
   onReschedule,
   onClickTask,
@@ -513,6 +659,8 @@ function GanttBar({
   dayWidth: number;
   zoom: GanttZoom;
   lane: number;
+  /** Extra vertical offset (e.g. the project header band) added above the lane. */
+  topOffset?: number;
   canEdit: boolean;
   onReschedule?: (taskId: string, startDate: Date, dueDate: Date) => void;
   onClickTask?: (task: GanttTask) => void;
@@ -553,7 +701,7 @@ function GanttBar({
     const endPx = endDayOffset * dayWidth + (endMin / (24 * 60)) * dayWidth;
     width = Math.max(24, endPx - left - 2);
   }
-  const top = lane * ROW_HEIGHT + 6;
+  const top = topOffset + lane * ROW_HEIGHT + 6;
 
   const color = statusColor(task.status);
 

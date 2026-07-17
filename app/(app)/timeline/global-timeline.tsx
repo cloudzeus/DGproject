@@ -8,6 +8,8 @@ import {
   PersonSwap20Regular,
   ChevronLeft20Regular,
   ChevronRight20Regular,
+  ChevronDown16Regular,
+  ChevronUp16Regular,
 } from '@fluentui/react-icons';
 import { Gantt, type GanttTask, type GanttRow, type GanttZoom } from '@/components/gantt/gantt';
 import { Avatar } from '@/components/ui/avatar';
@@ -68,6 +70,19 @@ export function GlobalTimeline({ rows, users, canEdit }: Props) {
   const [filterUser, setFilterUser] = useState<string>('all');
   const [zoom, setZoom] = useState<GanttZoom>('month');
   const [anchor, setAnchor] = useState<Date>(() => new Date());
+  // Projects start collapsed (summary bar only); expand to reveal per-task rows.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(rows.map((r) => r.id)));
+
+  const toggleRow = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allCollapsed = collapsed.size >= rows.length && rows.length > 0;
+  const toggleAll = () =>
+    setCollapsed(allCollapsed ? new Set() : new Set(rows.map((r) => r.id)));
 
   const filtered = rows.map((p) => ({
     id: p.id,
@@ -108,6 +123,17 @@ export function GlobalTimeline({ rows, users, canEdit }: Props) {
             </button>
           ))}
         </div>
+        <button
+          onClick={toggleAll}
+          className="text-xs h-8 px-3 rounded-md font-medium text-fluent-neutral-70 hover:bg-fluent-neutral-4 border border-fluent-neutral-20 inline-flex items-center gap-1.5"
+        >
+          {allCollapsed ? (
+            <ChevronDown16Regular className="h-4 w-4" />
+          ) : (
+            <ChevronUp16Regular className="h-4 w-4" />
+          )}
+          {allCollapsed ? 'Ανάπτυξη όλων' : 'Σύμπτυξη όλων'}
+        </button>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setAnchor((a) => shiftAnchor(a, zoom, -1))}
@@ -166,6 +192,8 @@ export function GlobalTimeline({ rows, users, canEdit }: Props) {
           anchorDate={anchor}
           onReschedule={handleReschedule}
           onClickTask={(t) => setEditing(t)}
+          collapsed={collapsed}
+          onToggleRow={toggleRow}
         />
       )}
 
