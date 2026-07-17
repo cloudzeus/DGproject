@@ -4,8 +4,12 @@ import { verifyTicketSource, isOriginAllowed, checkRateLimit } from '@/lib/ticke
 import { nextTicketCode } from '@/lib/tickets/codes'
 import { sendTicketReceivedEmail } from '@/lib/tickets/emails'
 import { appUrl } from '@/lib/email-templates'
+import { sniffImage } from '@/lib/tickets/image-sniff'
+import { uploadFileToCDN } from '@/lib/bunnycdn'
+import { randomUUID } from 'crypto'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
@@ -35,11 +39,20 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return json({ error: auth.error }, auth.status)
   const source = auth.source
 
+  const contentType = req.headers.get('content-type') ?? ''
   let body: Record<string, unknown>
-  try {
-    body = await req.json()
-  } catch {
-    return json({ error: 'invalid_json' }, 422)
+  let files: File[] = []
+  if (contentType.includes('multipart/form-data')) {
+    let fd: FormData
+    try { fd = await req.formData() } catch { return json({ error: 'invalid_form' }, 422) }
+    body = {
+      subject: fd.get('subject'), body: fd.get('body'),
+      reporterEmail: fd.get('reporterEmail'), reporterName: fd.get('reporterName'),
+      originUrl: fd.get('originUrl'),
+    }
+    files = fd.getAll('files').filter((f): f is File => f instanceof File && f.size > 0)
+  } else {
+    try { body = await req.json() } catch { return json({ error: 'invalid_json' }, 422) }
   }
 
   const subject = String(body.subject ?? '').trim()
@@ -51,6 +64,18 @@ export async function POST(req: NextRequest) {
   if (!subject || subject.length > 200) return json({ error: 'invalid_subject' }, 422)
   if (!text || text.length > 5000) return json({ error: 'invalid_body' }, 422)
   if (!EMAIL_RE.test(reporterEmail)) return json({ error: 'invalid_email' }, 422)
+
+  const MAX_FILES = 3, MAX_FILE_BYTES = 5 * 1024 * 1024, MAX_TOTAL_BYTES = 15 * 1024 * 1024
+  if (files.length > MAX_FILES) return json({ error: 'too_many_files' }, 422)
+  if (files.reduce((s, f) => s + f.size, 0) > MAX_TOTAL_BYTES) return json({ error: 'files_too_large' }, 413)
+  const checked: { buffer: Buffer; name: string; mime: string; ext: string; size: number }[] = []
+  for (const f of files) {
+    if (f.size > MAX_FILE_BYTES) return json({ error: 'file_too_large' }, 413)
+    const buffer = Buffer.from(await f.arrayBuffer())
+    const sniff = sniffImage(buffer)
+    if (!sniff) return json({ error: 'invalid_file_type' }, 422)
+    checked.push({ buffer, name: f.name.replace(/[^\w.\-]+/g, '_').slice(0, 120), mime: sniff.mime, ext: sniff.ext, size: f.size })
+  }
 
   // Rate limits: per source and per reporter email (spec §5)
   if (!checkRateLimit(`src:${source.id}`, 60, 3_600_000)) return json({ error: 'rate_limited' }, 429)
@@ -98,6 +123,28 @@ export async function POST(req: NextRequest) {
   }
   if (!ticket) return json({ error: 'internal' }, 500)
 
+  // Best-effort attachment uploads — a failed upload never fails the submission.
+  let attachmentCount = 0
+  for (const f of checked) {
+    try {
+      const uploaded = await uploadFileToCDN({
+        file: f.buffer,
+        filename: `${randomUUID()}.${f.ext}`,
+        folder: `tickets/${ticket.code}`,
+        contentType: f.mime,
+      })
+      await prisma.ticketAttachment.create({
+        data: { ticketId: ticket.id, name: f.name, size: f.size, mimeType: f.mime, url: uploaded.url },
+      })
+      attachmentCount++
+    } catch (err) {
+      console.error('[tickets] attachment upload failed:', err)
+      await prisma.ticketEvent.create({
+        data: { ticketId: ticket.id, type: 'note', payload: JSON.stringify({ upload_failed: f.name }) },
+      }).catch(() => {})
+    }
+  }
+
   // Fire-and-forget: confirmation email + LLM triage. Neither blocks the response.
   void sendTicketReceivedEmail({
     to: reporterEmail,
@@ -111,7 +158,7 @@ export async function POST(req: NextRequest) {
     .catch((err) => console.error('[tickets] analyze kick failed:', err))
 
   return json(
-    { code: ticket.code, publicToken: ticket.publicToken, statusUrl: appUrl(`/t/${ticket.publicToken}`) },
+    { code: ticket.code, publicToken: ticket.publicToken, statusUrl: appUrl(`/t/${ticket.publicToken}`), attachments: attachmentCount },
     201
   )
 }
