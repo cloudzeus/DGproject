@@ -10,6 +10,7 @@ import {
   updateTicketAi,
   saveKnowledgeEntry,
 } from '../actions'
+import { polishSolution, saveResolution } from '../resolution-actions'
 import type { TaskPriority, TicketCategory, TicketStatus } from '@prisma/client'
 
 type TicketView = {
@@ -33,6 +34,7 @@ type TicketView = {
   aiReasoning: string | null
   aiConfidence: number | null
   aiError: string | null
+  resolutionSummary: string | null
   task: { id: string; title: string; status: string; projectId: string; projectName: string } | null
 }
 
@@ -337,6 +339,11 @@ export function TicketDetailClient({ ticket, projects, users, events, kbDraft, k
           </div>
         )}
 
+        {/* ─── Resolution ─── */}
+        {(ticket.status === 'converted' || ticket.status === 'resolved') && (
+          <ResolutionSection ticketId={ticket.id} initial={ticket.resolutionSummary} />
+        )}
+
         {/* ─── Knowledge Base ─── */}
         {kbSaved ? (
           <div className="rounded-lg border border-black/5 bg-white shadow-fluent-2 p-5 text-sm">
@@ -377,6 +384,83 @@ export function TicketDetailClient({ ticket, projects, users, events, kbDraft, k
             </button>
           </div>
         ) : null}
+      </div>
+    </div>
+  )
+}
+
+function ResolutionSection({ ticketId, initial }: { ticketId: string; initial: string | null }) {
+  const [text, setText] = useState(initial ?? '')
+  const [original, setOriginal] = useState<string | null>(null) // pre-polish text, for undo
+  const [saved, setSaved] = useState(Boolean(initial))
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  const polish = () =>
+    startTransition(async () => {
+      setError(null)
+      const res = await polishSolution({ ticketId, text })
+      if (res.ok) {
+        setOriginal(text)
+        setText(res.text)
+      } else setError(res.error)
+    })
+
+  const save = () =>
+    startTransition(async () => {
+      setError(null)
+      const res = await saveResolution({ ticketId, text })
+      if (res.ok) setSaved(true)
+      else setError(res.error)
+    })
+
+  return (
+    <div className="rounded-lg border border-black/5 bg-white shadow-fluent-2 p-5">
+      <h2 className="text-sm font-semibold text-fluent-neutral-90 mb-1">🛠️ Λύση</h2>
+      <p className="text-xs text-fluent-neutral-60 mb-3">
+        Περιγραφή της λύσης από τον τεχνικό — τροφοδοτεί το προσχέδιο της γνωσιακής βάσης.
+      </p>
+      <textarea
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value)
+          setSaved(false)
+        }}
+        maxLength={4000}
+        rows={5}
+        placeholder="Τι προκαλούσε το πρόβλημα και πώς λύθηκε; Γράψτε ελεύθερα — μπορείτε μετά να το βελτιώσετε με AI."
+        className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm leading-relaxed focus:border-fluent-blue-500 focus:outline-none"
+      />
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={polish}
+          disabled={pending || text.trim().length < 10}
+          className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-fluent-neutral-80 hover:bg-black/5 disabled:opacity-50"
+        >
+          ✨ Βελτίωση με AI
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={pending || !text.trim() || saved}
+          className="rounded-md bg-fluent-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-fluent-blue-700 disabled:opacity-50"
+        >
+          {saved ? 'Αποθηκεύτηκε ✓' : pending ? 'Αποθήκευση…' : 'Αποθήκευση'}
+        </button>
+        {original !== null && (
+          <button
+            type="button"
+            onClick={() => {
+              setText(original)
+              setOriginal(null)
+            }}
+            className="text-xs text-fluent-blue-600 hover:underline"
+          >
+            Επαναφορά αρχικού
+          </button>
+        )}
       </div>
     </div>
   )

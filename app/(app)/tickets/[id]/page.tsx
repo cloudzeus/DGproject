@@ -93,6 +93,7 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
           aiReasoning: ticket.aiReasoning,
           aiConfidence: ticket.aiConfidence,
           aiError: ticket.aiError,
+          resolutionSummary: ticket.resolutionSummary,
           task: ticket.task
             ? { id: ticket.task.id, title: ticket.task.title, status: ticket.task.status, projectId: ticket.task.projectId, projectName: ticket.task.project.name }
             : null,
