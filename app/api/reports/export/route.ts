@@ -397,9 +397,9 @@ export async function GET(req: NextRequest) {
   const rawTab = sp.get('tab') ?? 'overview';
   const isPrivilegedForCsv = session.user.role === 'admin' || session.user.role === 'manager';
   const stampForCsv = todayStamp();
-  const hasPeriodParams = Boolean(sp.get('period') || sp.get('from'));
+  const explicitLegacyFormat = sp.get('format') === 'xlsx' || sp.get('format') === 'docx';
 
-  if (rawTab === 'tasks' || rawTab === 'tickets' || ((rawTab === 'overview' || rawTab === 'projects' || rawTab === 'users') && hasPeriodParams)) {
+  if (!explicitLegacyFormat) {
     const { range, prev } = resolveRange({
       period: sp.get('period') ?? undefined,
       from: sp.get('from') ?? undefined,
@@ -441,7 +441,7 @@ export async function GET(req: NextRequest) {
         d.rows.map((u) => [u.name, u.email, u.completedInPeriod, u.completedDelta, u.trackedHours, u.avgCycleHours, u.onTimePct, u.activeLoad, u.overdue, u.ticketsResolved]),
       );
     }
-    // rawTab === 'overview' με period params
+    // rawTab === 'overview' (και οτιδήποτε άλλο) — default CSV
     const d = await buildOverviewReport(scope);
     return csvResponse(
       `overview-report-${stampForCsv}.csv`,
@@ -450,10 +450,14 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Fallthrough: παλιό xlsx/docx path (χωρίς period params, tabs overview/projects/users μόνο)
+  // Fallthrough: παλιό xlsx/docx path — μόνο με ρητό format=xlsx|docx.
   const url = new URL(req.url);
   const format = url.searchParams.get('format');
   const tab = parseTab(url.searchParams.get('tab'));
+
+  if (tab === 'users' && !isPrivilegedForCsv) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
 
   if (format !== 'xlsx' && format !== 'docx') {
     return NextResponse.json({ error: 'Invalid format' }, { status: 400 });
