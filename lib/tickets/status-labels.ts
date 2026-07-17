@@ -45,6 +45,12 @@ export function publicEventLabel(type: string, payload: Record<string, unknown> 
       return 'Το αίτημα έκλεισε'
     case 'rejected':
       return 'Το αίτημα απορρίφθηκε'
+    case 'clarification_requested':
+      return 'Ζητήθηκε διευκρίνιση'
+    case 'reporter_replied':
+      return 'Λάβαμε την απάντησή σας'
+    case 'merged':
+      return 'Το αίτημα συγχωνεύθηκε με άλλο'
     default:
       return null
   }

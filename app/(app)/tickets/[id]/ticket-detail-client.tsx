@@ -75,6 +75,10 @@ function eventLabel(type: string, payload: Record<string, unknown> | null): stri
     case 'closed': return 'Έκλεισε'
     case 'rejected': return `Απορρίφθηκε${payload?.reason ? `: ${String(payload.reason)}` : ''}`
     case 'note': return 'Επεξεργασία από διαχειριστή'
+    case 'clarification_requested': return 'Ζητήθηκε διευκρίνιση'
+    case 'reporter_replied': return 'Απάντησε ο πελάτης'
+    case 'merged': return 'Συγχωνεύθηκε'
+    case 'absorbed': return 'Απορρόφησε συγχωνευμένο ticket'
     default: return type
   }
 }
