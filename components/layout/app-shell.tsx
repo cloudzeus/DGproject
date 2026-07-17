@@ -21,7 +21,7 @@ interface Props {
   userType?: UserType;
   projects: ProjectLink[];
   user: TopBarUser;
-  badges?: { questions?: number };
+  badges?: { questions?: number; tickets?: number };
   children: React.ReactNode;
 }
 

@@ -23,7 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const userId = session.user.id;
   const isPrivileged = role === 'admin' || role === 'manager';
 
-  const [user, sidebarProjects, pendingQuestions] = await Promise.all([
+  const [user, sidebarProjects, pendingQuestions, pendingTickets] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: { name: true, email: true, image: true, role: true, userType: true, azureAdId: true },
@@ -42,6 +42,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     prisma.taskQuestion.count({
       where: { askedToId: userId, answer: null },
     }),
+    isPrivileged
+      ? prisma.ticket.count({ where: { status: { in: ['new', 'analyzing', 'triaged'] } } })
+      : Promise.resolve(0),
   ]);
 
   if (!user) {
@@ -59,7 +62,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         image: user.image,
         microsoftConnected: Boolean(user.azureAdId),
       }}
-      badges={{ questions: pendingQuestions }}
+      badges={{ questions: pendingQuestions, tickets: pendingTickets }}
     >
       {children}
     </AppShell>

@@ -17,6 +17,7 @@ import {
   ChatBubblesQuestion24Regular, ChatBubblesQuestion24Filled,
   Video24Regular, Video24Filled,
   Tag24Regular, Tag24Filled,
+  TicketDiagonal24Regular, TicketDiagonal24Filled,
   Wrench24Regular, Wrench24Filled,
   ChevronRight16Regular,
   Add16Regular,
@@ -29,6 +30,7 @@ const nav = [
   { href: '/projects', label: 'Έργα', Regular: Folder24Regular, Filled: Folder24Filled, badgeKey: undefined },
   { href: '/teams-meetings', label: 'Teams Συσκέψεις', Regular: Video24Regular, Filled: Video24Filled, badgeKey: undefined },
   { href: '/questions', label: 'Ερωτήσεις', Regular: ChatBubblesQuestion24Regular, Filled: ChatBubblesQuestion24Filled, badgeKey: 'questions' as const },
+  { href: '/tickets', label: 'Tickets', Regular: TicketDiagonal24Regular, Filled: TicketDiagonal24Filled, badgeKey: 'tickets' as const },
   { href: '/timeline', label: 'Χρονοδιάγραμμα', Regular: CalendarLtr24Regular, Filled: CalendarLtr24Filled, badgeKey: undefined },
   { href: '/calendar', label: 'Ημερολόγιο', Regular: Calendar24Regular, Filled: Calendar24Filled, badgeKey: undefined },
   { href: '/files', label: 'Αρχεία', Regular: DocumentMultiple24Regular, Filled: DocumentMultiple24Filled, badgeKey: undefined },
@@ -41,7 +43,7 @@ type UserType = 'employee' | 'customer' | 'supplier' | undefined;
 
 type ProjectLink = { id: string; name: string; color: string };
 
-type Badges = { questions?: number };
+type Badges = { questions?: number; tickets?: number };
 
 // Nav items hidden from external customer users. Aligned with the server-side
 // guards in lib/auth.config.ts so the sidebar never advertises a path the
@@ -70,7 +72,9 @@ export function Sidebar({
   const isAdmin = userRole === 'admin';
   const isManagerOrAdmin = userRole === 'admin' || userRole === 'manager';
   const isCustomer = userType === 'customer';
-  const visibleNav = isCustomer ? nav.filter((n) => !CUSTOMER_HIDDEN_HREFS.has(n.href)) : nav;
+  // Tickets triage is an admin/manager surface only.
+  const roleNav = isManagerOrAdmin ? nav : nav.filter((n) => n.href !== '/tickets');
+  const visibleNav = isCustomer ? roleNav.filter((n) => !CUSTOMER_HIDDEN_HREFS.has(n.href)) : roleNav;
 
   return (
     <aside className="mica w-64 flex flex-col border-r border-black/5 h-screen sticky top-0">
