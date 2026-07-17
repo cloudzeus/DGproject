@@ -1,111 +1,146 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Flag20Filled } from '@fluentui/react-icons';
+import { CalendarLtr20Regular, Flag16Filled } from '@fluentui/react-icons';
+import { AvatarStack } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import type { RadarDay } from '@/lib/dashboard/types';
+import type { RadarData, RadarSpan } from '@/lib/dashboard/types';
 
-export function RadarZone({ days }: { days: RadarDay[] }) {
-  const [expandedDay, setExpandedDay] = useState<string | null>(null);
-  const expanded = days.find((d) => d.dayIso === expandedDay) ?? null;
+/**
+ * Greedy lane packing: κάθε μπάρα μπαίνει στην πρώτη «λωρίδα» που δεν
+ * επικαλύπτεται με την προηγούμενη μπάρα της λωρίδας.
+ */
+function packLanes(spans: RadarSpan[]): RadarSpan[][] {
+  const lanes: RadarSpan[][] = [];
+  const sorted = [...spans].sort((a, b) => a.startCol - b.startCol || b.endCol - a.endCol);
+  for (const s of sorted) {
+    const lane = lanes.find((l) => l[l.length - 1].endCol < s.startCol);
+    if (lane) lane.push(s);
+    else lanes.push([s]);
+  }
+  return lanes;
+}
+
+export function RadarZone({ data }: { data: RadarData }) {
+  const { days, spans } = data;
+  const lanes = packLanes(spans);
+  const hasDeadlines = days.some((d) => d.projectDeadlines.length > 0);
 
   return (
     <motion.section
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay: 0.15 }}
+      transition={{ duration: 0.35, delay: 0.1 }}
       className="bg-white rounded-xl border border-black/5 shadow-fluent-2 overflow-hidden"
     >
-      <div className="px-5 py-4 border-b border-black/5">
-        <h2 className="font-display text-lg font-semibold text-fluent-neutral-95">Ραντάρ προθεσμιών</h2>
-        <p className="text-xs text-fluent-neutral-60 mt-0.5">Επόμενες 7 ημέρες</p>
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-black/5">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-fluent-blue-100 text-fluent-blue-700">
+          <CalendarLtr20Regular className="h-4 w-4" />
+        </span>
+        <h2 className="font-display text-sm font-semibold text-fluent-neutral-95">Εβδομάδα με μια ματιά</h2>
+        <span className="ml-auto text-[11px] text-fluent-neutral-50 tabular-nums">{spans.length} tasks</span>
       </div>
 
       <div className="overflow-x-auto">
-        <div className="grid grid-cols-7 min-w-[640px] divide-x divide-black/5">
-          {days.map((day) => (
-            <button
-              key={day.dayIso}
-              type="button"
-              onClick={() => setExpandedDay((cur) => (cur === day.dayIso ? null : day.dayIso))}
-              className={cn(
-                'flex flex-col text-left px-2 py-3 min-h-[140px] align-top hover:bg-fluent-neutral-4 transition-colors',
-                expandedDay === day.dayIso && 'bg-fluent-blue-50/60',
-              )}
-            >
-              <span
+        <div className="min-w-[720px]">
+          <div className="grid grid-cols-7 border-b border-black/5">
+            {days.map((d) => (
+              <div
+                key={d.dayIso}
                 className={cn(
-                  'text-[11px] font-semibold capitalize mb-1.5 self-start rounded-full px-1.5 py-0.5',
-                  day.isToday ? 'bg-fluent-blue-600 text-white' : 'text-fluent-neutral-70',
+                  'px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide',
+                  d.isToday ? 'text-fluent-blue-700' : 'text-fluent-neutral-50',
+                  d.isWeekend && 'bg-fluent-neutral-4/70',
                 )}
               >
-                {day.label}
-              </span>
+                {d.isToday ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-fluent-blue-600" />
+                    {d.label}
+                  </span>
+                ) : (
+                  d.label
+                )}
+              </div>
+            ))}
+          </div>
 
-              {day.tasks.length === 0 && day.projectDeadlines.length === 0 ? (
-                <span className="text-xs text-fluent-neutral-40">—</span>
-              ) : (
-                <div className="flex flex-col gap-1 w-full">
-                  {day.tasks.slice(0, 4).map((t) => (
-                    <span
-                      key={t.id}
-                      title={t.title}
-                      className="flex items-center gap-1.5 text-[11px] text-fluent-neutral-80 truncate"
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: t.projectColor }} />
-                      <span className="truncate">{t.title}</span>
-                    </span>
-                  ))}
-                  {day.tasks.length > 4 && (
-                    <span className="text-[10px] text-fluent-neutral-50">+{day.tasks.length - 4} ακόμη</span>
+          <div className="relative">
+            <div className="absolute inset-0 grid grid-cols-7 pointer-events-none">
+              {days.map((d) => (
+                <div
+                  key={d.dayIso}
+                  className={cn(
+                    'border-r border-black/[0.04] last:border-r-0',
+                    d.isWeekend && 'bg-fluent-neutral-4/70',
+                    d.isToday && 'bg-fluent-blue-50/40',
                   )}
-                  {day.projectDeadlines.map((p) => (
-                    <span
+                />
+              ))}
+            </div>
+
+            {spans.length === 0 ? (
+              <p className="relative py-8 text-center text-sm text-fluent-neutral-50">
+                Καμία προθεσμία τις επόμενες 7 ημέρες.
+              </p>
+            ) : (
+              <div className="relative py-3 space-y-2">
+                {lanes.map((lane, li) => (
+                  <div key={li} className="grid grid-cols-7" style={{ minHeight: 52 }}>
+                    {lane.map((s) => (
+                      <Link
+                        key={s.id}
+                        href={s.href}
+                        title={`${s.title} · ${s.projectName}`}
+                        style={{ gridColumn: `${s.startCol + 1} / ${s.endCol + 2}` }}
+                        className="group mx-1 flex items-center gap-2 rounded-lg bg-white border border-black/5 shadow-fluent-2 pr-2 py-1.5 hover:shadow-fluent-8 hover:-translate-y-px transition-all overflow-hidden"
+                      >
+                        <span
+                          className="self-stretch w-1.5 shrink-0 rounded-full my-0.5 ml-1"
+                          style={{ background: s.color }}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-semibold text-fluent-neutral-90 group-hover:text-fluent-blue-700">
+                            {s.title}
+                          </span>
+                          <span className="block truncate text-[10px] text-fluent-neutral-50">{s.rangeLabel}</span>
+                        </span>
+                        {s.assignees.length > 0 && (
+                          <span className="shrink-0">
+                            <AvatarStack users={s.assignees} max={3} size="xs" />
+                          </span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {hasDeadlines && (
+            <div className="grid grid-cols-7 border-t border-black/5">
+              {days.map((d) => (
+                <div key={d.dayIso} className={cn('px-1.5 py-1.5 min-h-[28px]', d.isWeekend && 'bg-fluent-neutral-4/70')}>
+                  {d.projectDeadlines.map((p) => (
+                    <Link
                       key={p.id}
-                      title={`Προθεσμία έργου: ${p.name}`}
-                      className="flex items-center gap-1.5 text-[11px] font-medium text-fluent-accent-red truncate"
+                      href={`/projects/${p.id}`}
+                      title={`Deadline: ${p.name}`}
+                      className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-semibold hover:bg-fluent-neutral-6 truncate"
+                      style={{ color: p.color }}
                     >
-                      <Flag20Filled className="h-3 w-3 shrink-0" style={{ color: p.color }} />
+                      <Flag16Filled className="h-3 w-3 shrink-0" />
                       <span className="truncate">{p.name}</span>
-                    </span>
+                    </Link>
                   ))}
                 </div>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {expanded && (
-        <div className="border-t border-black/5 px-5 py-4 bg-fluent-neutral-4/50">
-          <p className="text-xs font-semibold text-fluent-neutral-80 capitalize mb-2">{expanded.label}</p>
-          {expanded.tasks.length === 0 && expanded.projectDeadlines.length === 0 ? (
-            <p className="text-xs text-fluent-neutral-60">Καμία προθεσμία αυτή την ημέρα.</p>
-          ) : (
-            <ul className="space-y-1.5">
-              {expanded.tasks.map((t) => (
-                <li key={t.id} className="flex items-center gap-2 text-sm">
-                  <span className="h-2 w-2 rounded-full shrink-0" style={{ background: t.projectColor }} />
-                  <Link href={t.href} className="min-w-0 flex-1 truncate text-fluent-neutral-90 hover:text-fluent-blue-600">
-                    {t.title}
-                  </Link>
-                  <span className="shrink-0 text-xs text-fluent-neutral-50">{t.projectName}</span>
-                </li>
               ))}
-              {expanded.projectDeadlines.map((p) => (
-                <li key={p.id} className="flex items-center gap-2 text-sm">
-                  <Flag20Filled className="h-4 w-4 shrink-0" style={{ color: p.color }} />
-                  <span className="min-w-0 flex-1 truncate font-medium text-fluent-accent-red">
-                    Προθεσμία έργου: {p.name}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            </div>
           )}
         </div>
-      )}
+      </div>
     </motion.section>
   );
 }

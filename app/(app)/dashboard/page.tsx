@@ -98,7 +98,7 @@ export default async function DashboardPage() {
           <AttentionZone items={attention} />
           <MyDayZone data={myDay} />
           <CapacityZone rows={capacity} projects={quickActionProjects} />
-          <RadarZone days={radar} />
+          <RadarZone data={radar} />
         </>
       }
       aside={<PulseZone data={pulse} />}

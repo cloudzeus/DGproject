@@ -35,9 +35,24 @@ export type RadarDay = {
   dayIso: string          // YYYY-MM-DD
   label: string           // «Δευ 21»
   isToday: boolean
-  tasks: { id: string; title: string; projectName: string; projectColor: string; href: string }[]
+  isWeekend: boolean
   projectDeadlines: { id: string; name: string; color: string }[]
 }
+
+/** Mini-Gantt: μπάρα task που απλώνεται σε στήλες ημερών (0–6, clamped). */
+export type RadarSpan = {
+  id: string
+  title: string
+  href: string
+  color: string
+  projectName: string
+  startCol: number
+  endCol: number
+  rangeLabel: string
+  assignees: { name: string; avatarUrl?: string }[]
+}
+
+export type RadarData = { days: RadarDay[]; spans: RadarSpan[] }
 
 export type PulseData = {
   kpis: {

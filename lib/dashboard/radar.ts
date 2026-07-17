@@ -1,7 +1,11 @@
 import { prisma } from '@/lib/prisma'
-import type { DashScope, RadarDay } from './types'
+import type { DashScope, RadarData } from './types'
 
-export async function buildRadar(scope: DashScope): Promise<RadarDay[]> {
+/**
+ * Mini-Gantt δεδομένα 7 ημερών: tasks ως spans (start→due, clamped στο
+ * παράθυρο) με χρώμα project + assignees, συν deadlines έργων ανά ημέρα.
+ */
+export async function buildRadar(scope: DashScope): Promise<RadarData> {
   const now = scope.now ?? new Date()
   const start = new Date(now); start.setHours(0, 0, 0, 0)
   const end = new Date(start.getTime() + 7 * 86_400_000 - 1)
@@ -11,9 +15,20 @@ export async function buildRadar(scope: DashScope): Promise<RadarDay[]> {
 
   const [tasks, projects] = await Promise.all([
     prisma.task.findMany({
-      where: { status: { not: 'done' }, dueDate: { gte: start, lte: end }, project: projectWhere },
-      select: { id: true, title: true, dueDate: true, project: { select: { name: true, color: true } } },
+      // Ό,τι ΤΕΜΝΕΙ το παράθυρο: ξεκίνησε πριν το τέλος ΚΑΙ λήγει μετά την αρχή.
+      where: {
+        status: { not: 'done' },
+        dueDate: { not: null, gte: start },
+        OR: [{ startDate: { lte: end } }, { startDate: null }],
+        project: projectWhere,
+      },
+      select: {
+        id: true, title: true, startDate: true, dueDate: true,
+        project: { select: { name: true, color: true } },
+        assignees: { select: { user: { select: { name: true, email: true, image: true } } } },
+      },
       orderBy: { dueDate: 'asc' },
+      take: 20,
     }),
     prisma.project.findMany({
       where: { ...projectWhere, dueDate: { gte: start, lte: end }, status: { notIn: ['completed', 'archived'] } },
@@ -21,21 +36,44 @@ export async function buildRadar(scope: DashScope): Promise<RadarDay[]> {
     }),
   ])
 
+  const dayIdx = (d: Date) => Math.floor((d.getTime() - start.getTime()) / 86_400_000)
+  const clamp = (n: number) => Math.max(0, Math.min(6, n))
+  const rangeFmt = new Intl.DateTimeFormat('el-GR', { day: 'numeric', month: 'short' })
+
+  const spans = tasks
+    .filter((t) => t.dueDate && dayIdx(t.dueDate) >= 0)
+    .map((t) => {
+      const s = t.startDate ? clamp(dayIdx(t.startDate)) : clamp(dayIdx(t.dueDate!))
+      const e = clamp(dayIdx(t.dueDate!))
+      return {
+        id: t.id,
+        title: t.title,
+        href: `/board?task=${t.id}`,
+        color: t.project.color,
+        projectName: t.project.name,
+        startCol: Math.min(s, e),
+        endCol: Math.max(s, e),
+        rangeLabel: `${t.startDate ? rangeFmt.format(t.startDate) : ''}${t.startDate ? ' – ' : ''}${rangeFmt.format(t.dueDate!)}`,
+        assignees: t.assignees.map((a) => ({
+          name: a.user.name ?? a.user.email,
+          avatarUrl: a.user.image ?? undefined,
+        })),
+      }
+    })
+
   const fmt = new Intl.DateTimeFormat('el-GR', { weekday: 'short', day: 'numeric' })
-  const days: RadarDay[] = []
-  for (let i = 0; i < 7; i++) {
+  const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(start.getTime() + i * 86_400_000)
-    const key = d.toISOString().slice(0, 10)
-    const sameDay = (x: Date) => x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate()
-    days.push({
-      dayIso: key,
+    return {
+      dayIso: d.toISOString().slice(0, 10),
       label: fmt.format(d),
       isToday: i === 0,
-      tasks: tasks.filter((t) => t.dueDate && sameDay(t.dueDate)).map((t) => ({
-        id: t.id, title: t.title, projectName: t.project.name, projectColor: t.project.color, href: `/board?task=${t.id}`,
-      })),
-      projectDeadlines: projects.filter((p) => p.dueDate && sameDay(p.dueDate)).map((p) => ({ id: p.id, name: p.name, color: p.color })),
-    })
-  }
-  return days
+      isWeekend: d.getDay() === 0 || d.getDay() === 6,
+      projectDeadlines: projects
+        .filter((p) => p.dueDate && dayIdx(p.dueDate) === i)
+        .map((p) => ({ id: p.id, name: p.name, color: p.color })),
+    }
+  })
+
+  return { days, spans }
 }

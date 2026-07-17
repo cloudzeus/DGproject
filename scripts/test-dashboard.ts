@@ -72,8 +72,8 @@ async function main() {
     JSON.stringify(capacity)
 
     const radar = await buildRadar(scope)
-    console.log('radar days:', radar.length)
-    assert.equal(radar.length, 7)
+    console.log('radar days:', radar.days.length, 'spans:', radar.spans.length)
+    assert.equal(radar.days.length, 7)
     JSON.stringify(radar)
 
     const pulse = await buildPulse(scope)
