@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-28T06:24:02.560Z",
+  "timestamp": "2026-07-18T06:06:58.246Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -19,12 +19,8 @@
     {
       "status": "M",
       "path": ".planning/HANDOFF.json"
-    },
-    {
-      "status": "M",
-      "path": "app/(app)/dashboard/page.tsx"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\nf4aaee9 transcript improovements\n8f62c1f all teams meetings\na5504ae fix(mail): use NEXTAUTH_URL for callback redirect when behind reverse proxy\ne969651 fix(mail): remove prompt=consent so admin-granted scopes don't 90094\nf8de3e0 feat(mail): in-app email send buttons on tasks and question threads"
+  "context_notes": "Recent commits:\nc5c6f85 style(dashboard): capacity zone redesign — aligned grid rows, scrollable list with fade, segmented sort control, summary chips\n3a96863 feat(dashboard): radar zone as mini-Gantt — task spans with project colors, lane packing, assignee avatars, weekend/today tinting\n19aca61 style(dashboard): visual identity pass — colored kind badges, grouped attention items, accent KPI tiles, activity avatars, project-colored bars\nd34972a feat(dashboard): capacity, deadline radar and pulse zones\n44903c1 feat(dashboard): quick actions bar and command palette"
 }
