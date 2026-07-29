@@ -3,6 +3,28 @@ import { NextRequest, NextResponse } from "next/server";
 
 const publicRoutes = ["/auth/signin", "/auth/signup", "/"];
 
+// Auth.js session cookie names, across the v4/v5 prefixes, the __Secure- variant
+// used over HTTPS, and the .0/.1 chunks written when a session exceeds 4KB.
+const SESSION_COOKIE_RE =
+  /^(__Secure-)?(authjs|next-auth)\.session-token(\.\d+)?$/;
+
+/**
+ * A session cookie that survives `auth()` returning null cannot be decrypted —
+ * the usual cause is AUTH_SECRET having been rotated while browsers still hold
+ * cookies sealed with the old one. Auth.js logs a JWTSessionError and treats the
+ * request as anonymous, but the cookie stays put and is replayed (and re-logged)
+ * on every subsequent request. Expiring it here makes secret rotation
+ * self-healing instead of requiring each user to clear cookies by hand.
+ */
+function clearStaleSessionCookies(request: NextRequest, response: NextResponse) {
+  for (const cookie of request.cookies.getAll()) {
+    if (SESSION_COOKIE_RE.test(cookie.name)) {
+      response.cookies.delete({ name: cookie.name, path: "/" });
+    }
+  }
+  return response;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -25,7 +47,7 @@ export async function proxy(request: NextRequest) {
   if (!session?.user) {
     const signInUrl = new URL("/auth/signin", request.url);
     signInUrl.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(signInUrl);
+    return clearStaleSessionCookies(request, NextResponse.redirect(signInUrl));
   }
 
   const role = (session.user as any).role || "member";

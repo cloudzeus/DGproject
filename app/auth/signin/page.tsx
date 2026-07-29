@@ -4,7 +4,20 @@ import { FormEvent, Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
-import { useTranslation } from 'react-i18next';
+
+// Auth.js redirects back here with ?error=<code> when a provider flow fails.
+// Without a mapping the user gets bounced to a blank form with no explanation.
+const INVALID_CREDENTIALS = 'Λάθος email ή κωδικός πρόσβασης.';
+
+const PROVIDER_ERRORS: Record<string, string> = {
+    OAuthCallbackError:
+        'Η σύνδεση με Microsoft απέτυχε. Επικοινώνησε με τον διαχειριστή — τα διαπιστευτήρια της εφαρμογής χρειάζονται ανανέωση.',
+    OAuthSignin: 'Δεν ήταν δυνατή η έναρξη της σύνδεσης με Microsoft. Δοκίμασε ξανά.',
+    OAuthAccountNotLinked:
+        'Το email αυτό είναι ήδη συνδεδεμένο με διαφορετικό τρόπο σύνδεσης.',
+    AccessDenied: 'Δεν έχεις πρόσβαση σε αυτή την εφαρμογή.',
+    Configuration: 'Πρόβλημα ρύθμισης της σύνδεσης. Επικοινώνησε με τον διαχειριστή.',
+};
 
 export default function SignInPage() {
     return (
@@ -17,7 +30,6 @@ export default function SignInPage() {
 function SignInInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { t } = useTranslation();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -25,6 +37,11 @@ function SignInInner() {
 
     const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
     const passwordChanged = searchParams.get('changed') === '1';
+    const providerError = searchParams.get('error');
+    const providerErrorMessage = providerError
+        ? (PROVIDER_ERRORS[providerError] ?? 'Η σύνδεση απέτυχε. Δοκίμασε ξανά.')
+        : '';
+    const visibleError = error || providerErrorMessage;
 
     async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -39,12 +56,12 @@ function SignInInner() {
             });
 
             if (result?.error) {
-                setError(t('auth.invalid_credentials'));
+                setError(INVALID_CREDENTIALS);
             } else if (result?.ok) {
                 router.push(callbackUrl);
             }
         } catch (err) {
-            setError(t('auth.invalid_credentials'));
+            setError(INVALID_CREDENTIALS);
         } finally {
             setIsLoading(false);
         }
@@ -55,19 +72,19 @@ function SignInInner() {
             <div className="w-full max-w-md">
                 <div className="bg-white rounded-lg shadow-xl p-8">
                     <div className="text-center mb-8">
-                        <h1 className="text-3xl font-bold text-gray-900">{t('auth.signin')}</h1>
+                        <h1 className="text-3xl font-bold text-gray-900">Σύνδεση</h1>
                         <p className="text-gray-600 mt-2">A-Sisyphus</p>
                     </div>
 
-                    {passwordChanged && !error && (
+                    {passwordChanged && !visibleError && (
                         <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 text-sm">
                             Ο κωδικός σου άλλαξε επιτυχώς. Συνδέσου με τον νέο σου κωδικό.
                         </div>
                     )}
 
-                    {error && (
-                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-                            {error}
+                    {visibleError && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm">
+                            {visibleError}
                         </div>
                     )}
 
@@ -87,14 +104,14 @@ function SignInInner() {
 
                     <div className="flex items-center gap-3 my-4">
                         <div className="flex-1 h-px bg-gray-200" />
-                        <span className="text-[11px] uppercase tracking-wider text-gray-500">{t('auth.or') ?? 'ή'}</span>
+                        <span className="text-[11px] uppercase tracking-wider text-gray-500">ή</span>
                         <div className="flex-1 h-px bg-gray-200" />
                     </div>
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                {t('auth.email')}
+                                Διεύθυνση Email
                             </label>
                             <input
                                 type="email"
@@ -107,7 +124,7 @@ function SignInInner() {
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                {t('auth.password')}
+                                Κωδικός Πρόσβασης
                             </label>
                             <input
                                 type="password"
@@ -124,15 +141,15 @@ function SignInInner() {
                             disabled={isLoading}
                             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition"
                         >
-                            {isLoading ? t('common.loading') : t('auth.signin')}
+                            {isLoading ? 'Φόρτωση...' : 'Σύνδεση'}
                         </Button>
                     </form>
 
                     <div className="mt-6 text-center">
                         <p className="text-sm text-gray-600">
-                            {t('auth.no_account')}{' '}
+                            Δεν έχεις λογαριασμό;{' '}
                             <a href="/auth/signup" className="text-blue-600 hover:text-blue-700 font-medium">
-                                {t('auth.signup')}
+                                Δημιουργία Λογαριασμού
                             </a>
                         </p>
                     </div>

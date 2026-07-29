@@ -30,9 +30,6 @@
     "exceljs": "^4.4.0",
     "form-data": "^4.0.0",
     "framer-motion": "^10.0.0",
-    "i18next": "^23.7.0",
-    "i18next-browser-languagedetector": "^7.2.0",
-    "i18next-http-backend": "^3.0.6",
     "iconv-lite": "^0.6.3",
     "lucide-react": "^0.263.0",
     "mailgun.js": "^10.2.0",
@@ -40,7 +37,6 @@
     "next-auth": "^5.0.0-beta.31",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-i18next": "^13.5.0",
     "recharts": "^3.9.2",
     "tailwind-merge": "^2.0.0"
   },
