@@ -36,72 +36,169 @@ contacts, or anything else about it.
 
 ## Goals
 
-- Add a company by ΑΦΜ, pulling its details from SoftOne where they exist.
+- Add a company by ΑΦΜ, pulling its official details automatically.
 - Companies that are **not** in SoftOne are fully supported — local-only is a first-class
   state, not a degraded one.
+- Import the full customer list from SoftOne in one pass.
 - Manage companies and their contacts from an admin page.
 - Associate users with a company, replacing the free-text columns.
+
+## Prior art: the damask app
+
+`cloudzeus/damask` already solves this in production. Its `Trdr` and `Contact` models
+(`prisma/schema.prisma:269-376`) and its ΑΦΜ lookup (`src/lib/aade.ts`,
+`src/lib/trdr/aade-map.ts`) are the reference. Two conventions come from there and are worth
+adopting wholesale:
+
+- **SoftOne-sourced columns keep SoftOne's own names and casing** — `TRDR`, `NAME`, `AFM`,
+  `ADDRESS`, `ZIP`, `CITY`, `PHONE01`, `ISACTIVE`. Sync becomes a direct field copy with no
+  translation layer to get wrong. App-only and ΑΑΔΕ-sourced columns stay camelCase, so the
+  origin of every column is readable at a glance.
+- **`AFM` is indexed but NOT unique.** SoftOne legitimately holds several `TRDR` rows against
+  one ΑΦΜ (branches, historical records). `TRDR` is the unique key. Treating ΑΦΜ as unique
+  would make the bulk import fail on real data.
+
+## ΑΦΜ → στοιχεία εταιρίας
+
+The lookup service is **`POST https://vat.wwa.gr/afm2info`** with body `{ "afm": "094019245" }`
+— your own hosted wrapper over the ΑΑΔΕ registry. No credentials, no SOAP, no TAXISnet keys.
+
+This replaces the earlier plan of looking companies up through SoftOne. The difference
+matters: SoftOne can only tell you about companies already in the ERP, whereas this service
+resolves **any** Greek ΑΦΜ, which is exactly the case where a human would otherwise be typing
+everything by hand.
+
+Verified live against ΑΦΜ `094019245`:
+
+```
+basic_rec: afm, onomasia, commer_title, doy, doy_descr, legal_status_descr,
+           postal_address, postal_address_no, postal_zip_code,
+           postal_area_description, regist_date, deactivation_flag,
+           deactivation_flag_descr, firm_flag_descr, stop_date,
+           i_ni_flag_descr, normal_vat_system_flag
+firm_act_tab.item[]: firm_act_code, firm_act_descr, firm_act_kind, firm_act_kind_descr
+```
+
+**Missing values arrive as XML nil markers, not JSON null.** The live response returns
+`commer_title` and `stop_date` as `{"$": {"xsi:nil": "true"}}`. The tolerant coercer from
+damask's `aade-map.ts` handles that shape (plus the `{"_": "value"}` text-node form) and must
+be ported as-is — the simpler coercer in damask's `aade.ts` is not sufficient.
+
+Mapping:
+
+| Company | basic_rec |
+|---|---|
+| `NAME` | `onomasia` |
+| `ADDRESS` | `postal_address` + `postal_address_no` |
+| `ZIP` | `postal_zip_code` |
+| `CITY` | `postal_area_description` |
+| `IRSDATA` | `doy` (κωδικός ΔΟΥ) |
+| `appLegalForm` | `legal_status_descr` |
+| `foundingDate` | `regist_date` |
+| `aadeStatus` | `deactivation_flag_descr` |
+| `aadeFirmKind` | `firm_flag_descr` |
+| `JOBTYPETRD` | περιγραφή της κύριας δραστηριότητας |
+
+`firm_act_kind === '1'` marks the primary activity. Active company means
+`deactivation_flag === '1'` **and** no `stop_date`.
+
+SoftOne remains the source for `TRDR` / `CODE` linkage and for the bulk import, but it is no
+longer on the critical path for creating a company.
 
 ## Model
 
 ```prisma
-enum CompanySource {
-  manual    // typed in by hand
-  softone   // pulled from a SoftOne CUSTOMER record
-}
-
 model Company {
-  id    String @id @default(cuid())
-  afm   String @unique          // Α.Φ.Μ. — the natural key, and how lookup happens
-  name  String
+  id String @id @default(cuid())
 
-  // Optional SoftOne linkage. Null means the company exists only here, which is
-  // an expected and fully supported state.
-  softoneCustomerId Int?     @unique   // CUSTOMER.TRDR
-  softoneCode       String?            // CUSTOMER.CODE
-  softoneSyncedAt   DateTime?
-  source            CompanySource @default(manual)
+  // ── SoftOne mirror (ονόματα πεδίων αυτούσια από το TRDR) ──
+  /// null = η εταιρία υπάρχει μόνο εδώ, δεν έχει συγχρονιστεί με SoftOne.
+  TRDR       Int?      @unique
+  /// 13 = Πελάτης, 12 = Προμηθευτής
+  SODTYPE    Int       @default(13)
+  CODE       String?
+  NAME       String
+  AFM        String?
+  /// κωδ. ΔΟΥ
+  IRSDATA    String?
+  /// επάγγελμα, free text
+  JOBTYPETRD String?
+  ADDRESS    String?
+  ZIP        String?
+  DISTRICT   String?
+  CITY       String?
+  COUNTRY    Int?
+  PHONE01    String?
+  PHONE02    String?
+  FAX        String?
+  EMAIL      String?
+  WEBPAGE    String?
+  ISACTIVE   Int       @default(1)
+  REMARKS    String?   @db.Text
+  /// τελευταία μεταβολή στο SoftOne
+  UPDDATE    DateTime?
+  syncedAt   DateTime?
 
-  doy        String?
-  address    String?
-  city       String?
-  postalCode String?
-  country    String?  @default("GR")
-  phone      String?
-  email      String?
-  website    String?
-  notes      String?  @db.Text
-  isActive   Boolean  @default(true)
+  // ── ΑΑΔΕ (vat.wwa.gr/afm2info) ──
+  foundingDate DateTime?
+  aadeStatus   String?
+  aadeFirmKind String?
+  appLegalForm String?
+  aadeSyncedAt DateTime?
+
+  // ── app-only ──
+  appNotes String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   contacts        Contact[]
   users           User[]
-  primaryProjects Project[]        @relation("ProjectPrimaryCompany")
+  activities      CompanyActivity[]
+  primaryProjects Project[]         @relation("ProjectPrimaryCompany")
   projectRoles    ProjectCompany[]
 
-  @@index([name])
-  @@index([isActive])
+  @@index([AFM])
+  @@index([NAME])
+  @@index([SODTYPE, ISACTIVE])
+}
+
+/// Δραστηριότητες (ΚΑΔ) από την ΑΑΔΕ. Μία κύρια, πολλές δευτερεύουσες.
+model CompanyActivity {
+  id          String  @id @default(cuid())
+  companyId   String
+  code        String?
+  description String?
+  /// 'PRIMARY' | 'SECONDARY'
+  kind        String
+  order       Int     @default(0)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }
 
 model Contact {
   id        String  @id @default(cuid())
   companyId String
-  firstName String
-  lastName  String
+  name      String
+  position  String?
   email     String?
   phone     String?
   mobile    String?
-  jobTitle  String?          // θέση / ρόλος στην εταιρία
   isPrimary Boolean @default(false)
   notes     String? @db.Text
 
-  // A contact may optionally be promoted to a portal account. Null = no login.
+  // Mirror του CUSPRSN/SUPPRSN (S1 person-on-trader link), για μελλοντικό sync επαφών.
+  PRSN      Int?
+  TRDBRANCH Int?
+  LINENUM   Int?
+
+  /// Προαιρετικός λογαριασμός portal. Null = η επαφή δεν συνδέεται.
   userId String? @unique
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user    User?   @relation("ContactUser", fields: [userId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -110,6 +207,29 @@ model Contact {
   @@index([email])
 }
 ```
+
+`Contact.userId` is the "optional login" hinge. A contact is a person we know about; a user
+is a person who can sign in. Promoting a contact creates a `User` with
+`userType = 'customer'`, `companyId` set, and the existing `mustChangePassword` temp-password
+flow — no new onboarding machinery. Same idiom as damask's `approveAccessRequest`.
+
+## Bulk import from SoftOne
+
+A one-pass import of every customer, re-runnable as a refresh:
+
+```
+s1('GetTable', { TABLE: 'TRDR', FIELDS: 'TRDR,SODTYPE,CODE,NAME,AFM,IRSDATA,JOBTYPETRD,
+                 ADDRESS,ZIP,DISTRICT,CITY,COUNTRY,PHONE01,PHONE02,FAX,EMAIL,WEBPAGE,
+                 ISACTIVE,REMARKS,UPDDATE',
+                 FILTER: 'SODTYPE=13' })
+```
+
+with a `getBrowserInfo`/`getBrowserData` paginated fallback if `GetTable` is unavailable for
+the tenant — the same two-strategy shape damask uses in `src/lib/s1-sync.ts:114-126`.
+
+Upsert is keyed on `TRDR`. Following damask's `partner-upsert.ts` rule: **an update never
+overwrites an existing value with null or blank.** A company enriched locally from the ΑΑΔΕ
+must not be flattened by a sparse ERP row.
 
 ## Projects ↔ companies
 
@@ -127,8 +247,8 @@ enum ProjectCompanyRole {
 
 model Project {
   // …
-  primaryCompanyId String?   // the client: ERP TRDR source, and the only
-                             // company that sees this project in the portal
+  primaryCompanyId String?   // ο πελάτης: πηγή του PRJC.TRDR και ο μόνος
+                             // που βλέπει το έργο στο portal
   primaryCompany   Company?  @relation("ProjectPrimaryCompany",
                                fields: [primaryCompanyId], references: [id],
                                onDelete: SetNull)
@@ -150,7 +270,7 @@ model ProjectCompany {
 }
 ```
 
-Note there is no `client` value in the role enum, and no `isPrimary` boolean. The client *is*
+There is no `client` value in the role enum, and no `isPrimary` boolean. The client *is*
 `primaryCompanyId`. This is deliberate: portal scoping reads `primaryCompanyId` and nothing
 else, so a partner or subcontractor **cannot** be exposed by a mis-set flag — the leak is
 impossible by construction rather than prevented by remembering to check. MySQL also cannot
@@ -162,65 +282,33 @@ an appropriate role if it should stay associated, then set the new `primaryCompa
 admin UI presents both in a single list with the client marked, so the split is invisible to
 the user.
 
-`PRJC.TRDR` in `syncProjectToSoftOne` comes from
-`primaryCompany.softoneCustomerId` — SoftOne's PRJC accepts one TRDR, and the client is
-unambiguously it. When the primary company has no SoftOne linkage, `TRDR` is null, exactly as
-it is today for projects with no customer.
-
-`Contact.userId` is the "optional login" hinge. A contact is a person we know about; a user
-is a person who can sign in. Promoting a contact creates a `User` with
-`userType = 'customer'`, `companyId` set, and the existing `mustChangePassword` temp-password
-flow — no new onboarding machinery.
-
-## ΑΦΜ lookup
-
-The identity chain is SoftOne's own: **`CUSTOMER` is the object, `TRDR` is the key.** A
-company in our database is linked to the ERP by `Company.softoneCustomerId = CUSTOMER.TRDR`,
-the same key `Project` sync already writes into `PRJC.TRDR`
-(`lib/softone-contacts.ts:434`) and that `User.softoneCustomerId` uses for contact rows.
-One key, one meaning, across all three.
-
-`lib/softone-lookup.ts` already resolves a 9-digit input to an exact `CUSTOMER.AFM` match via
-`getBrowserInfo`, exposed at `/api/softone/lookup`. It returns only `id (TRDR), code, name,
-afm, city`, so a second call is needed for the full record:
-
-```
-softoneLookup({ source: 'customer', q: afm })  →  TRDR
-s1('getData', { OBJECT: 'CUSTOMER', KEY: TRDR })  →  address, ΔΟΥ, phones, email
-```
-
-A new `lib/companies/softone-import.ts` wraps both into
-`lookupCompanyByAfm(afm): Promise<CompanyDraft | null>`, returning `null` when the ΑΦΜ is not
-in the ERP. **`null` is not an error** — the admin form simply falls through to manual entry
-with the ΑΦΜ prefilled.
-
-Per the global SoftOne rules: official services only, two-step auth, cached daily `clientID`,
-Windows-1253 decoding — all already handled by `lib/softone.ts`.
+`PRJC.TRDR` in `syncProjectToSoftOne` comes from `primaryCompany.TRDR` — SoftOne's PRJC
+accepts one TRDR, and the client is unambiguously it. When the primary company has no SoftOne
+linkage, `TRDR` is null, exactly as it is today for projects with no customer.
 
 ## Admin pages
 
 | Route | Content |
 | --- | --- |
-| `/admin/companies` | List + search by name/ΑΦΜ, badge for SoftOne-linked vs local-only |
-| `/admin/companies/new` | ΑΦΜ field → «Αναζήτηση» → prefilled form, or manual entry if not found |
-| `/admin/companies/[id]` | Edit details; contacts CRUD; linked users; projects (as client and in other roles); «Επαναφόρτωση από SoftOne» when linked |
-
-The project form gains a company picker: one field for the client
-(`primaryCompanyId`) and a repeatable row for additional companies with a role. Both search
-the local `Company` table, not SoftOne.
+| `/admin/companies` | List + search by name/ΑΦΜ, badge for SoftOne-linked vs local-only, «Εισαγωγή από SoftOne» |
+| `/admin/companies/new` | ΑΦΜ field → «Αναζήτηση» (ΑΑΔΕ) → prefilled form, or manual entry |
+| `/admin/companies/[id]` | Edit details; contacts CRUD; linked users; projects as client and in other roles; «Ανανέωση από ΑΑΔΕ» |
 
 These follow the existing `app/(app)/admin/*` conventions (see `ticket-sources` and `users`),
 admin-only, Greek UI.
 
+The project form gains a company picker: one field for the client (`primaryCompanyId`) and a
+repeatable row for additional companies with a role. Both search the local `Company` table.
+
 ## Migration
 
-1. Add `Company`, `Contact` and `ProjectCompany` tables; add `User.companyId` and
-   `Project.primaryCompanyId` (both nullable).
+1. Add `Company`, `CompanyActivity`, `Contact`, `ProjectCompany` tables; add `User.companyId`
+   and `Project.primaryCompanyId` (both nullable).
 2. Backfill: for each distinct non-null `User.companyAfm`, create a `Company` with that ΑΦΜ,
-   taking `name` from `companyName` and `softoneCustomerId` from the user. Link every
-   matching user via `companyId`.
+   taking `NAME` from `companyName` and `TRDR` from `softoneCustomerId`. Link every matching
+   user via `companyId`. Where an ΑΦΜ maps to more than one row, prefer the active one.
 3. Backfill `Project.primaryCompanyId` from `customerUserId → User.companyId`.
-4. Point `syncProjectToSoftOne` at `primaryCompany.softoneCustomerId` instead of
+4. Point `syncProjectToSoftOne` at `primaryCompany.TRDR` instead of
    `customerUserId → User.softoneCustomerId`.
 5. Update the ~5 files that read the old columns (`admin/users/*`,
    `components/admin/user-management.tsx`, `lib/softone-contacts.ts`) to read through the
@@ -231,7 +319,9 @@ admin-only, Greek UI.
 
 `Project.customerUserId` is **kept**. It now means "primary contact for this project"
 (the mailto default), while `primaryCompanyId` means "which company the project is delivered
-to". Distinct concepts that were previously conflated in one column.
+to". Distinct concepts that were previously conflated in one column. Note it is currently
+never *set* by any UI — only read — so the company picker is the first way to assign a client
+from the interface.
 
 ---
 
@@ -382,14 +472,19 @@ sees only questions addressed to them. No schema change.
 
 **Companies (A)**
 
-- `lookupCompanyByAfm` returns a draft for a known ΑΦΜ, `null` for an unknown one, and
-  surfaces SoftOne transport errors distinctly from "not found".
+- The ΑΑΔΕ mapper turns the live response shape into a `Company` patch, coercing
+  `{"$":{"xsi:nil":"true"}}` and `{"_":"value"}` to null/value correctly, and normalizing
+  `firm_act_tab.item` whether it arrives as array, single object, or absent.
+- `aadeLookup` returns `null` for an ΑΦΜ absent from the registry and throws a typed error
+  for timeout/HTTP failure — the two cases must not be conflated.
 - A company can be created, edited and given contacts with no SoftOne linkage at all.
+- The SoftOne bulk import upserts on `TRDR`, tolerates duplicate ΑΦΜ across rows, and never
+  overwrites a populated field with a blank one.
 - Promoting a contact to a user sets `userType='customer'`, `companyId`, and
   `mustChangePassword`.
-- The backfill migration is idempotent and produces one `Company` per distinct ΑΦΜ.
+- The backfill migration is idempotent and links every user that has an ΑΦΜ.
 - `syncProjectToSoftOne` writes `PRJC.TRDR` from the primary company, and null when that
-  company has no `softoneCustomerId`.
+  company has no `TRDR`.
 - A company cannot be attached twice to the same project (`@@unique`), and the client is not
   duplicated as a `ProjectCompany` row.
 
@@ -397,8 +492,8 @@ sees only questions addressed to them. No schema change.
 
 - **Scope unit tests** — null `companyId` yields `null` scope; two seeded companies cannot
   see each other; a project with `primaryCompanyId = null` appears for nobody; a contact's
-  email matches that company's tickets; **a company attached to a project only as
-  partner/subcontractor does not see that project**.
+  email matches that company's tickets; a company attached only as partner/subcontractor does
+  not see that project.
 - **Route guard tests** — a customer session against `/dashboard`, `/admin`, `/reports`,
   `/api/reports` is redirected or refused; an employee session against `/portal` is
   redirected.
@@ -415,6 +510,9 @@ sees only questions addressed to them. No schema change.
 - **Pushing companies to SoftOne** is out of scope. Local-only companies stay local. If
   write-back is wanted later it belongs next to `syncUserToSoftOne` in
   `lib/softone-contacts.ts`.
+- **ΓΕΜΗ enrichment** — damask also pulls ΓΕΜΗ open data (`arGemi`, `gemiStatus`,
+  `gemiObjective`…). Not included here; the ΑΑΔΕ service covers what a PM app needs. The
+  model leaves room to add it later without restructuring.
 - **Azure AD for customers** — customers sign in with credentials. External clients are not
   in the tenant, so the Microsoft button is irrelevant to them; leaving it visible is
   acceptable but slightly confusing.
@@ -423,5 +521,5 @@ sees only questions addressed to them. No schema change.
 
 Auth defects on the sign-in path were fixed separately in `aacacce`: the page rendered raw
 i18n keys, provider errors were never surfaced, and undecryptable session cookies were never
-cleared. Azure AD sign-in remains broken until the app's client secret is regenerated —
-`AADSTS7000222`, the secret expired.
+cleared. Azure AD sign-in and the SoftOne connection both fail from the local `.env`, whose
+credentials have not been refreshed since 11 May — the deployment holds newer ones.

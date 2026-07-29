@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Να προστίθεται εταιρία με ΑΦΜ (με άντληση στοιχείων από το SoftOne `CUSTOMER`/`TRDR` όπου υπάρχουν), να διαχειρίζεται με τις επαφές της από admin σελίδα, και να συσχετίζεται με χρήστες και έργα.
+**Goal:** Να προστίθεται εταιρία με ΑΦΜ (στοιχεία από την υπηρεσία ΑΑΔΕ `vat.wwa.gr/afm2info`), να εισάγονται μαζικά όλοι οι πελάτες από το SoftOne, να διαχειρίζονται με τις επαφές τους από admin σελίδα, και να συσχετίζονται με χρήστες και έργα.
 
-**Architecture:** Νέα models `Company`, `Contact`, `ProjectCompany`. Η εταιρία έχει φυσικό κλειδί το ΑΦΜ· η σύνδεση με SoftOne (`softoneCustomerId = CUSTOMER.TRDR`) είναι **προαιρετική** — τοπική-μόνο εταιρία είναι πλήρως υποστηριζόμενη κατάσταση. Το έργο αποκτά `primaryCompanyId` (ο πελάτης — πηγή του `PRJC.TRDR` και το μόνο που θα βλέπει το portal στη Φάση Β) και `ProjectCompany[]` για συνεργάτες/υπεργολάβους. Τα free-text `User.companyName/companyAfm` αντικαθίστανται από σχέση `User.companyId`.
+**Architecture:** Νέα models `Company`, `CompanyActivity`, `Contact`, `ProjectCompany`, με το σχήμα του `Trdr`/`Contact` της εφαρμογής **damask** (`cloudzeus/damask`, `prisma/schema.prisma:269-376`). Τα πεδία που προέρχονται από SoftOne κρατούν τα ονόματα του SoftOne αυτούσια (`TRDR`, `NAME`, `AFM`, `ADDRESS`, `ZIP`, `CITY`, `PHONE01`, `ISACTIVE`) — το sync γίνεται απευθείας αντιγραφή χωρίς μεταφραστικό στρώμα. Τα app-only και ΑΑΔΕ πεδία μένουν camelCase. Το `TRDR` είναι το unique κλειδί· **το `AFM` ΔΕΝ είναι unique** γιατί το SoftOne κρατά νόμιμα πολλαπλές γραμμές ανά ΑΦΜ.
 
-**Tech Stack:** Next.js App Router (server components + server actions), Prisma/MySQL (**shadow DB ΣΠΑΣΜΕΝΟ** → migrations με `prisma migrate dev --create-only` + `prisma migrate deploy`), SoftOne Web Services μέσω `lib/softone.ts` (`s1()`), tests με `node:test` μέσω `npx tsx --test`, Fluent/DG design tokens.
+**Tech Stack:** Next.js App Router (server components + server actions), Prisma/MySQL (**shadow DB ΣΠΑΣΜΕΝΟ** → `prisma migrate dev --create-only` + `prisma migrate deploy`), υπηρεσία ΑΑΔΕ `POST https://vat.wwa.gr/afm2info` (χωρίς credentials), SoftOne μέσω `lib/softone.ts` (`s1()`), tests με `node:test` μέσω `npx tsx --test`, Fluent/DG design tokens.
 
-**Προαπαιτούμενο:** Τα SoftOne credentials στο τοπικό `.env` είναι ξεπερασμένα (`Login fails due to invalid login credentials`). Το Task 1 χρειάζεται ζωντανή σύνδεση — ανανέωσε `SOFTONE_USERNAME`/`SOFTONE_PASSWORD`/`SOFTONE_APP_ID` από το deployment πριν ξεκινήσεις. Τα Tasks 2-10 δεν χρειάζονται SoftOne.
+**Προαπαιτούμενο:** Τα SoftOne credentials στο τοπικό `.env` είναι ξεπερασμένα (`Login fails due to invalid login credentials`). Χρειάζονται μόνο για το **Task 6** (μαζική εισαγωγή). Όλα τα υπόλοιπα tasks τρέχουν χωρίς SoftOne — η ΑΑΔΕ δεν θέλει credentials.
 
 ---
 
@@ -17,110 +17,32 @@
 **Create**
 | Αρχείο | Ευθύνη |
 |---|---|
-| `lib/companies/afm.ts` | Validation ΑΦΜ (μήκος + checksum ΓΓΠΣ). Καθαρή συνάρτηση, καμία I/O. |
+| `lib/companies/afm.ts` | Κανονικοποίηση + έλεγχος ΑΦΜ. Καθαρές συναρτήσεις, καμία I/O. |
 | `lib/companies/__tests__/afm.test.ts` | Tests του παραπάνω. |
-| `lib/companies/softone-import.ts` | `lookupCompanyByAfm(afm)` → `CompanyDraft | null`. Μοναδικό σημείο που ξέρει τα ονόματα πεδίων του `CUSTOMER`. |
-| `lib/companies/__tests__/softone-import.test.ts` | Tests του mapper με fixture, χωρίς δίκτυο. |
+| `lib/companies/aade-map.ts` | Καθαρός mapper ΑΑΔΕ → Company patch + nil coercion. Καμία I/O. |
+| `lib/companies/__tests__/aade-map.test.ts` | Tests του mapper με fixtures της πραγματικής απόκρισης. |
+| `lib/companies/aade.ts` | Network client προς `vat.wwa.gr/afm2info`. |
+| `lib/companies/softone-import.ts` | Μαζική εισαγωγή πελατών από `TRDR`. |
+| `scripts/import-companies-from-softone.ts` | CLI wrapper της μαζικής εισαγωγής. |
 | `app/(app)/admin/companies/page.tsx` | Λίστα + αναζήτηση. |
-| `app/(app)/admin/companies/companies-client.tsx` | Client UI λίστας. |
-| `app/(app)/admin/companies/actions.ts` | Server actions: company CRUD, contact CRUD, promote-to-user, ΑΦΜ lookup. |
+| `app/(app)/admin/companies/companies-client.tsx` | Client UI λίστας + φόρμα δημιουργίας. |
+| `app/(app)/admin/companies/actions.ts` | Server actions. |
 | `app/(app)/admin/companies/[id]/page.tsx` | Καρτέλα εταιρίας. |
 | `app/(app)/admin/companies/[id]/company-detail-client.tsx` | Client UI καρτέλας + επαφές. |
-| `scripts/probe-softone-customer.ts` | Διαγνωστικό: τυπώνει τα πεδία του `CUSTOMER`. Μένει στο repo ως εργαλείο. |
 
 **Modify**
 | Αρχείο | Αλλαγή |
 |---|---|
-| `prisma/schema.prisma` | Νέα models/enums, `User.companyId`, `Project.primaryCompanyId`. |
-| `lib/softone-contacts.ts:406-440` | `PRJC.TRDR` από `primaryCompany` αντί για `customerUserId → User`. |
-| `app/(app)/admin/users/page.tsx` | Διάβασμα εταιρίας μέσω σχέσης. |
-| `app/(app)/admin/users/actions.ts` | Αποθήκευση `companyId`. |
-| `components/admin/user-management.tsx` | Picker τοπικής εταιρίας αντί για SoftOne combobox. |
-| `components/layout/sidebar.tsx` | Link «Εταιρίες» στο admin nav. |
-| `app/(app)/projects/project-form.tsx` | Πεδίο πελάτη + συσχετιζόμενες εταιρίες με ρόλο. |
+| `prisma/schema.prisma` | Νέα models, `User.companyId`, `Project.primaryCompanyId`. |
+| `lib/softone-contacts.ts:406-440` | `PRJC.TRDR` από `primaryCompany.TRDR`. |
+| `app/(app)/admin/users/page.tsx` + `actions.ts` | Σχέση εταιρίας. |
+| `components/admin/user-management.tsx` | Picker τοπικής εταιρίας για customers. |
+| `components/layout/sidebar.tsx` | Link «Εταιρίες». |
+| `app/(app)/projects/project-form.tsx` | Πεδίο πελάτη. |
 
 ---
 
-### Task 1: Καρφώσε το mapping των πεδίων του SoftOne `CUSTOMER`
-
-Ο σκοπός είναι να μη μαντέψουμε ονόματα πεδίων. Το script τυπώνει ό,τι επιστρέφει πραγματικά το ERP.
-
-**Files:**
-- Create: `scripts/probe-softone-customer.ts`
-
-- [ ] **Step 1: Γράψε το probe script**
-
-```ts
-// scripts/probe-softone-customer.ts
-// Διαγνωστικό: τυπώνει τα ονόματα πεδίων ενός CUSTOMER record ώστε το
-// lib/companies/softone-import.ts να χτιστεί πάνω σε πραγματικά δεδομένα.
-// Τρέξε: npx tsx --env-file=.env scripts/probe-softone-customer.ts [ΑΦΜ]
-import { softoneLookup } from '@/lib/softone-lookup'
-import { s1 } from '@/lib/softone'
-
-async function main() {
-  const afm = process.argv[2] ?? ''
-  const rows = await softoneLookup({ source: 'customer', q: afm, limit: 1 })
-  if (!rows.length) {
-    console.log(afm ? `Δεν βρέθηκε CUSTOMER με ΑΦΜ ${afm}` : 'Δεν επιστράφηκε κανένας CUSTOMER')
-    return
-  }
-  console.log('lookup row:', rows[0])
-
-  const res = await s1('getData', { OBJECT: 'CUSTOMER', KEY: String(rows[0].id) })
-  if (!res.success) {
-    console.log('getData failed:', res.error, 'code', res.errorcode)
-    return
-  }
-  const cust = (res.data?.CUSTOMER?.[0] ?? {}) as Record<string, unknown>
-  console.log('\nΌλα τα πεδία:')
-  console.log(Object.keys(cust).sort().join(', '))
-  console.log('\nΤιμές (μόνο μη-κενά):')
-  for (const k of Object.keys(cust).sort()) {
-    const v = cust[k]
-    if (v !== null && v !== '' && v !== 0) console.log(`  ${k} = ${JSON.stringify(v)}`)
-  }
-}
-
-main().catch((e) => console.error('ERROR:', e instanceof Error ? e.message : e))
-```
-
-- [ ] **Step 2: Τρέξ' το με πραγματικό ΑΦΜ πελάτη**
-
-Run: `npx tsx --env-file=.env scripts/probe-softone-customer.ts 999999999` (βάλε υπαρκτό ΑΦΜ)
-Expected: λίστα πεδίων. Αν βγάλει `Login fails due to invalid login credentials`, ανανέωσε πρώτα τα SoftOne credentials στο `.env`.
-
-- [ ] **Step 3: Σημείωσε το mapping**
-
-Γράψε στο τέλος αυτού του αρχείου (ή σε σχόλιο μέσα στο `softone-import.ts` στο Task 4) ποια πεδία αντιστοιχούν σε τι. Το **αναμενόμενο** mapping, που πρέπει να επιβεβαιωθεί από το output:
-
-| Company | CUSTOMER |
-|---|---|
-| `softoneCustomerId` | `TRDR` |
-| `softoneCode` | `CODE` |
-| `name` | `NAME` |
-| `afm` | `AFM` |
-| `doy` | `IRSDATA` |
-| `address` | `ADDRESS` |
-| `city` | `CITY` |
-| `postalCode` | `ZIP` |
-| `country` | `COUNTRY` |
-| `phone` | `PHONE01` |
-| `email` | `EMAIL` |
-| `website` | `WEBPAGE` |
-
-Αν κάποιο δεν υπάρχει στο output, χρησιμοποίησε το πραγματικό όνομα και ενημέρωσε τον πίνακα.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add scripts/probe-softone-customer.ts docs/superpowers/plans/2026-07-29-companies-contacts.md
-git commit -m "chore(softone): add CUSTOMER field probe script"
-```
-
----
-
-### Task 2: Validation ΑΦΜ
+### Task 1: Έλεγχος ΑΦΜ
 
 **Files:**
 - Create: `lib/companies/afm.ts`
@@ -132,34 +54,33 @@ git commit -m "chore(softone): add CUSTOMER field probe script"
 // lib/companies/__tests__/afm.test.ts
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeAfm, isValidAfm } from '../afm'
+import { normalizeAfm, isValidAfm, hasValidChecksum } from '../afm'
 
-test('normalizeAfm αφαιρεί κενά, παύλες και prefix EL/GR', () => {
-  assert.equal(normalizeAfm(' 094014201 '), '094014201')
-  assert.equal(normalizeAfm('EL094014201'), '094014201')
-  assert.equal(normalizeAfm('el-094-014-201'), '094014201')
+test('normalizeAfm κρατά μόνο ψηφία', () => {
+  assert.equal(normalizeAfm(' 094019245 '), '094019245')
+  assert.equal(normalizeAfm('EL094019245'), '094019245')
+  assert.equal(normalizeAfm('el-094-019-245'), '094019245')
 })
 
-test('isValidAfm δέχεται έγκυρα ΑΦΜ', () => {
-  // Πραγματικά έγκυρα κατά checksum ΓΓΠΣ
-  assert.equal(isValidAfm('094014201'), true)
-  assert.equal(isValidAfm('997276654'), true)
-})
-
-test('isValidAfm απορρίπτει λάθος checksum', () => {
-  assert.equal(isValidAfm('094014202'), false)
-  assert.equal(isValidAfm('123456789'), false)
-})
-
-test('isValidAfm απορρίπτει λάθος μήκος ή μη-ψηφία', () => {
+test('isValidAfm ελέγχει μόνο μορφή 9 ψηφίων', () => {
+  assert.equal(isValidAfm('094019245'), true)
+  assert.equal(isValidAfm('123456789'), true) // λάθος checksum αλλά σωστή μορφή
   assert.equal(isValidAfm('12345678'), false)
   assert.equal(isValidAfm('1234567890'), false)
-  assert.equal(isValidAfm('09401420A'), false)
+  assert.equal(isValidAfm('09401924A'), false)
   assert.equal(isValidAfm(''), false)
 })
 
-test('isValidAfm απορρίπτει το 000000000', () => {
-  assert.equal(isValidAfm('000000000'), false)
+test('hasValidChecksum εφαρμόζει τον αλγόριθμο ΓΓΠΣ', () => {
+  assert.equal(hasValidChecksum('094019245'), true)
+  assert.equal(hasValidChecksum('094014201'), true)
+  assert.equal(hasValidChecksum('123456789'), false)
+  assert.equal(hasValidChecksum('000000000'), false)
+})
+
+test('hasValidChecksum απορρίπτει λάθος μορφή χωρίς να σκάει', () => {
+  assert.equal(hasValidChecksum('abc'), false)
+  assert.equal(hasValidChecksum(''), false)
 })
 ```
 
@@ -170,37 +91,34 @@ Expected: FAIL — `Cannot find module '../afm'`
 
 - [ ] **Step 3: Υλοποίησε**
 
+Σημείωση σχεδιασμού: το checksum είναι **προειδοποίηση, όχι φραγμός**. Το damask ελέγχει μόνο τη μορφή· κρατάμε τον έλεγχο ψηφίου ελέγχου για να πιάνουμε τυπογραφικά, αλλά δεν μπλοκάρουμε την καταχώριση — η υπηρεσία ΑΑΔΕ είναι η τελική αυθεντία για το αν υπάρχει το ΑΦΜ.
+
 ```ts
 // lib/companies/afm.ts
 
-/**
- * Καθαρίζει ένα ΑΦΜ όπως το πληκτρολογεί ο χρήστης: κενά, παύλες, τελείες
- * και το προαιρετικό EL/GR prefix του VIES.
- */
+/** Κρατά μόνο ψηφία — ανέχεται prefix χώρας ("EL094019245" → "094019245"). */
 export function normalizeAfm(input: string): string {
-  return input
-    .trim()
-    .toUpperCase()
-    .replace(/^(EL|GR)/, '')
-    .replace(/[^0-9]/g, '')
+  return String(input ?? '').replace(/\D+/g, '')
+}
+
+/** Έλεγχος μορφής: ακριβώς 9 ψηφία μετά την κανονικοποίηση. */
+export function isValidAfm(input: string): boolean {
+  return /^\d{9}$/.test(normalizeAfm(input))
 }
 
 /**
- * Έλεγχος εγκυρότητας ΑΦΜ με τον αλγόριθμο checksum της ΓΓΠΣ:
- * τα 8 πρώτα ψηφία σταθμίζονται με 2^8…2^1, το άθροισμα mod 11 mod 10
- * πρέπει να ισούται με το 9ο ψηφίο.
+ * Ψηφίο ελέγχου ΓΓΠΣ: τα 8 πρώτα ψηφία σταθμίζονται με 2^8…2^1,
+ * το άθροισμα mod 11 mod 10 ισούται με το 9ο ψηφίο.
  *
- * Δέχεται ήδη-normalized ή ακατέργαστη είσοδο.
+ * Χρησιμοποιείται ως ΠΡΟΕΙΔΟΠΟΙΗΣΗ στο UI, όχι ως φραγμός.
  */
-export function isValidAfm(input: string): boolean {
+export function hasValidChecksum(input: string): boolean {
   const afm = normalizeAfm(input)
   if (!/^\d{9}$/.test(afm)) return false
   if (afm === '000000000') return false
 
   let sum = 0
-  for (let i = 0; i < 8; i++) {
-    sum += Number(afm[i]) * 2 ** (8 - i)
-  }
+  for (let i = 0; i < 8; i++) sum += Number(afm[i]) * 2 ** (8 - i)
   return (sum % 11) % 10 === Number(afm[8])
 }
 ```
@@ -208,32 +126,353 @@ export function isValidAfm(input: string): boolean {
 - [ ] **Step 4: Τρέξε τα tests**
 
 Run: `npx tsx --test lib/companies/__tests__/afm.test.ts`
-Expected: PASS — 5 tests
+Expected: PASS — 4 tests
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add lib/companies/afm.ts lib/companies/__tests__/afm.test.ts
-git commit -m "feat(companies): add Greek AFM normalization and checksum validation"
+git commit -m "feat(companies): add Greek AFM normalization and validation"
 ```
 
 ---
 
-### Task 3: Prisma schema + migration
+### Task 2: Mapper ΑΑΔΕ (καθαρός, με nil coercion)
+
+Το κρίσιμο κομμάτι. Η ζωντανή απόκριση επιστρέφει κενές τιμές ως XML nil markers
+(`{"$":{"xsi:nil":"true"}}`), **όχι** ως JSON null — επιβεβαιωμένο με ΑΦΜ `094019245`.
+
+**Files:**
+- Create: `lib/companies/aade-map.ts`
+- Test: `lib/companies/__tests__/aade-map.test.ts`
+
+- [ ] **Step 1: Γράψε το failing test**
+
+```ts
+// lib/companies/__tests__/aade-map.test.ts
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { s, mapAadeResponse } from '../aade-map'
+
+test('s() κανονικοποιεί nil markers σε null', () => {
+  assert.equal(s({ $: { 'xsi:nil': 'true' } }), null)
+  assert.equal(s({ '@_xsi:nil': 'true' }), null)
+  assert.equal(s({ _: '  τιμή  ' }), 'τιμή')
+  assert.equal(s('  κείμενο '), 'κείμενο')
+  assert.equal(s('   '), null)
+  assert.equal(s(null), null)
+  assert.equal(s(undefined), null)
+  assert.equal(s(42), '42')
+})
+
+// Πραγματικό σχήμα απόκρισης για ΑΦΜ 094019245 (ΟΤΕ ΑΕ)
+const RAW = {
+  basic_rec: {
+    afm: '094019245',
+    onomasia: 'ΟΡΓΑΝΙΣΜΟΣ ΤΗΛΕΠΙΚΟΙΝΩΝΙΩΝ ΤΗΣ ΕΛΛΑΔΟΣ ΑΝΩΝΥΜΗ ΕΤΑΙΡΕΙΑ',
+    commer_title: { $: { 'xsi:nil': 'true' } },
+    doy: '1190',
+    doy_descr: 'ΚΕΦΟΔΕ ΑΤΤΙΚΗΣ',
+    legal_status_descr: 'ΑΕ',
+    postal_address: 'ΛΕΩΦΟΡΟΣ ΚΗΦΙΣΙΑΣ',
+    postal_address_no: '99',
+    postal_zip_code: '15124',
+    postal_area_description: 'ΜΑΡΟΥΣΙ',
+    regist_date: '1949-11-26',
+    deactivation_flag: '1',
+    deactivation_flag_descr: 'ΕΝΕΡΓΟΣ ΑΦΜ',
+    firm_flag_descr: 'ΕΠΙΤΗΔΕΥΜΑΤΙΑΣ',
+    stop_date: { $: { 'xsi:nil': 'true' } },
+  },
+  firm_act_tab: {
+    item: [
+      { firm_act_code: '61900000', firm_act_descr: 'ΑΛΛΕΣ ΥΠΗΡΕΣΙΕΣ ΤΗΛΕΠΙΚΟΙΝΩΝΙΩΝ', firm_act_kind: '1' },
+      { firm_act_code: '62010000', firm_act_descr: 'ΠΡΟΓΡΑΜΜΑΤΙΣΜΟΣ', firm_act_kind: '2' },
+    ],
+  },
+}
+
+test('mapAadeResponse αντιστοιχεί τα πεδία', () => {
+  const r = mapAadeResponse(RAW)!
+  assert.equal(r.company.NAME, 'ΟΡΓΑΝΙΣΜΟΣ ΤΗΛΕΠΙΚΟΙΝΩΝΙΩΝ ΤΗΣ ΕΛΛΑΔΟΣ ΑΝΩΝΥΜΗ ΕΤΑΙΡΕΙΑ')
+  assert.equal(r.company.ADDRESS, 'ΛΕΩΦΟΡΟΣ ΚΗΦΙΣΙΑΣ 99')
+  assert.equal(r.company.ZIP, '15124')
+  assert.equal(r.company.CITY, 'ΜΑΡΟΥΣΙ')
+  assert.equal(r.company.IRSDATA, '1190')
+  assert.equal(r.company.appLegalForm, 'ΑΕ')
+  assert.equal(r.company.aadeStatus, 'ΕΝΕΡΓΟΣ ΑΦΜ')
+  assert.equal(r.company.aadeFirmKind, 'ΕΠΙΤΗΔΕΥΜΑΤΙΑΣ')
+  assert.equal(r.company.foundingDate?.toISOString().slice(0, 10), '1949-11-26')
+  assert.equal(r.company.JOBTYPETRD, 'ΑΛΛΕΣ ΥΠΗΡΕΣΙΕΣ ΤΗΛΕΠΙΚΟΙΝΩΝΙΩΝ')
+  assert.equal(r.isActive, true)
+  assert.equal(r.doyDescr, 'ΚΕΦΟΔΕ ΑΤΤΙΚΗΣ')
+})
+
+test('mapAadeResponse κανονικοποιεί τις δραστηριότητες', () => {
+  const r = mapAadeResponse(RAW)!
+  assert.equal(r.activities.length, 2)
+  assert.equal(r.activities[0].kind, 'PRIMARY')
+  assert.equal(r.activities[0].code, '61900000')
+  assert.equal(r.activities[1].kind, 'SECONDARY')
+})
+
+test('firm_act_tab.item δέχεται μονό object ή απουσία', () => {
+  const single = mapAadeResponse({
+    basic_rec: { afm: '094019245', onomasia: 'Χ' },
+    firm_act_tab: { item: { firm_act_code: '1', firm_act_descr: 'Α', firm_act_kind: '1' } },
+  })!
+  assert.equal(single.activities.length, 1)
+
+  const none = mapAadeResponse({ basic_rec: { afm: '094019245', onomasia: 'Χ' } })!
+  assert.equal(none.activities.length, 0)
+})
+
+test('mapAadeResponse επιστρέφει null όταν λείπει το basic_rec/afm', () => {
+  assert.equal(mapAadeResponse({}), null)
+  assert.equal(mapAadeResponse({ basic_rec: {} }), null)
+})
+
+test('ανενεργό ΑΦΜ όταν υπάρχει stop_date', () => {
+  const r = mapAadeResponse({
+    basic_rec: { afm: '094019245', onomasia: 'Χ', deactivation_flag: '1', stop_date: '2020-01-01' },
+  })!
+  assert.equal(r.isActive, false)
+})
+```
+
+- [ ] **Step 2: Τρέξε το test για να δεις ότι αποτυγχάνει**
+
+Run: `npx tsx --test lib/companies/__tests__/aade-map.test.ts`
+Expected: FAIL — `Cannot find module '../aade-map'`
+
+- [ ] **Step 3: Υλοποίησε**
+
+```ts
+// lib/companies/aade-map.ts
+/**
+ * Καθαρός mapper ΑΑΔΕ (vat.wwa.gr/afm2info) → Company patch.
+ * ΚΑΜΙΑ εξάρτηση σε fetch/prisma/ρολόι — δοκιμάζεται απομονωμένα.
+ * Ported από cloudzeus/damask src/lib/trdr/aade-map.ts.
+ */
+
+/**
+ * Coercer για nil markers: κάποιες XML→JSON μετατροπές αναπαριστούν την
+ * απούσα τιμή ως αντικείμενο αντί για JSON null.
+ *   - { $: { 'xsi:nil': 'true' } }   (SOAP→JSON — ΕΠΙΒΕΒΑΙΩΜΕΝΟ στη ζωντανή απόκριση)
+ *   - { '@_xsi:nil': 'true' }        (xml2js attribute-prefix)
+ *   - { _: 'πραγματική τιμή' }       (SOAP→JSON text node)
+ */
+export function s(v: unknown): string | null {
+  if (v == null) return null
+  if (typeof v === 'string') return v.trim() || null
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    if (o['@_xsi:nil'] === 'true') return null
+    const dollar = o.$ as Record<string, unknown> | undefined
+    if (dollar && (dollar['xsi:nil'] === 'true' || dollar.nil === 'true')) return null
+    if (typeof o._ === 'string') return o._.trim() || null
+  }
+  return null
+}
+
+export type AadeFirmActRaw = {
+  firm_act_code?: unknown
+  firm_act_descr?: unknown
+  firm_act_kind?: unknown
+}
+
+export type AadeRawResponse = {
+  basic_rec?: Record<string, unknown>
+  firm_act_tab?: { item?: AadeFirmActRaw | AadeFirmActRaw[] }
+}
+
+export type CompanyActivityDraft = {
+  code: string | null
+  description: string | null
+  kind: 'PRIMARY' | 'SECONDARY'
+  order: number
+}
+
+/** Τα πεδία της Company που γεμίζει η ΑΑΔΕ. */
+export type AadeCompanyPatch = {
+  NAME: string
+  ADDRESS: string | null
+  ZIP: string | null
+  CITY: string | null
+  /** κωδ. ΔΟΥ (basic_rec.doy) */
+  IRSDATA: string | null
+  /** περιγραφή κύριας δραστηριότητας */
+  JOBTYPETRD: string | null
+  appLegalForm: string | null
+  foundingDate: Date | null
+  aadeStatus: string | null
+  aadeFirmKind: string | null
+}
+
+export type AadeMapped = {
+  company: AadeCompanyPatch
+  activities: CompanyActivityDraft[]
+  /** Ονομασία ΔΟΥ — για εμφάνιση, δεν αποθηκεύεται ως πεδίο. */
+  doyDescr: string | null
+  /** deactivation_flag === '1' ΚΑΙ χωρίς stop_date. */
+  isActive: boolean
+}
+
+function toDate(v: string | null): Date | null {
+  if (!v) return null
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
+ * Μετατρέπει την ακατέργαστη απόκριση σε Company patch + δραστηριότητες.
+ * `null` όταν λείπει το basic_rec/afm — δηλαδή το ΑΦΜ δεν βρέθηκε στο μητρώο.
+ */
+export function mapAadeResponse(raw: AadeRawResponse): AadeMapped | null {
+  const b = raw?.basic_rec
+  if (!b || !s(b.afm)) return null
+
+  const item = raw?.firm_act_tab?.item
+  const items: AadeFirmActRaw[] = item == null ? [] : Array.isArray(item) ? item : [item]
+
+  const activities: CompanyActivityDraft[] = items.map((a, i) => ({
+    code: s(a?.firm_act_code),
+    description: s(a?.firm_act_descr),
+    // firm_act_kind: '1' κύρια, οτιδήποτε άλλο δευτερεύουσα.
+    kind: s(a?.firm_act_kind) === '1' ? 'PRIMARY' : 'SECONDARY',
+    order: i,
+  }))
+
+  const primary = activities.find((a) => a.kind === 'PRIMARY') ?? activities[0]
+  const addressParts = [s(b.postal_address), s(b.postal_address_no)].filter(Boolean)
+
+  return {
+    company: {
+      NAME: s(b.onomasia) ?? '',
+      ADDRESS: addressParts.join(' ') || null,
+      ZIP: s(b.postal_zip_code),
+      CITY: s(b.postal_area_description),
+      IRSDATA: s(b.doy),
+      JOBTYPETRD: primary?.description ?? null,
+      appLegalForm: s(b.legal_status_descr),
+      foundingDate: toDate(s(b.regist_date)),
+      aadeStatus: s(b.deactivation_flag_descr),
+      aadeFirmKind: s(b.firm_flag_descr),
+    },
+    activities,
+    doyDescr: s(b.doy_descr),
+    isActive: s(b.deactivation_flag) === '1' && !s(b.stop_date),
+  }
+}
+```
+
+- [ ] **Step 4: Τρέξε τα tests**
+
+Run: `npx tsx --test lib/companies/__tests__/aade-map.test.ts`
+Expected: PASS — 6 tests
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/companies/aade-map.ts lib/companies/__tests__/aade-map.test.ts
+git commit -m "feat(companies): add pure AADE response mapper with nil-marker coercion"
+```
+
+---
+
+### Task 3: Network client ΑΑΔΕ
+
+**Files:**
+- Create: `lib/companies/aade.ts`
+
+- [ ] **Step 1: Γράψε τον client**
+
+```ts
+// lib/companies/aade.ts
+/**
+ * Αναζήτηση στοιχείων επιχείρησης από ΑΦΜ μέσω της δικής μας υπηρεσίας
+ * vat.wwa.gr/afm2info (ΟΧΙ το δημόσιο GSIS SOAP, ΟΧΙ credentials).
+ *
+ * POST https://vat.wwa.gr/afm2info  body: { afm: "094019245" }
+ */
+import { normalizeAfm, isValidAfm } from './afm'
+import { mapAadeResponse, type AadeMapped, type AadeRawResponse } from './aade-map'
+
+const AADE_ENDPOINT = 'https://vat.wwa.gr/afm2info'
+const REQUEST_TIMEOUT_MS = 10_000
+
+/** Σφάλμα επικοινωνίας — ΔΕΝ σημαίνει «δεν βρέθηκε» (αυτό είναι `null` return). */
+export class AadeLookupError extends Error {}
+
+/**
+ * - `null` όταν το ΑΦΜ δεν βρέθηκε στο μητρώο (φυσιολογικό, όχι σφάλμα).
+ * - `AadeLookupError` για μη έγκυρη μορφή, timeout, HTTP ή δικτυακό σφάλμα.
+ */
+export async function aadeLookup(afmInput: string): Promise<AadeMapped | null> {
+  const afm = normalizeAfm(afmInput)
+  if (!isValidAfm(afm)) {
+    throw new AadeLookupError('Το ΑΦΜ πρέπει να έχει 9 ψηφία.')
+  }
+
+  let raw: AadeRawResponse
+  try {
+    const res = await fetch(AADE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ afm }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+    if (!res.ok) {
+      throw new AadeLookupError(`Η υπηρεσία ΑΑΔΕ επέστρεψε σφάλμα HTTP ${res.status}.`)
+    }
+    raw = (await res.json()) as AadeRawResponse
+  } catch (err) {
+    if (err instanceof AadeLookupError) throw err
+    if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new AadeLookupError('Η υπηρεσία ΑΑΔΕ δεν απάντησε έγκαιρα (10s). Δοκίμασε ξανά.')
+    }
+    throw new AadeLookupError('Αδυναμία σύνδεσης με την υπηρεσία ΑΑΔΕ. Δοκίμασε ξανά σε λίγο.')
+  }
+
+  return mapAadeResponse(raw)
+}
+```
+
+- [ ] **Step 2: Επαλήθευσε ζωντανά**
+
+Run:
+```bash
+npx tsx -e "
+import('./lib/companies/aade.ts').then(async (m) => {
+  const r = await m.aadeLookup('094019245')
+  console.log(r?.company.NAME, '|', r?.company.CITY, '|', r?.isActive, '|', r?.activities.length, 'δραστηριότητες')
+  console.log('άγνωστο ΑΦΜ →', await m.aadeLookup('999999999'))
+})
+"
+```
+Expected: τυπώνει την επωνυμία του ΟΤΕ, `ΜΑΡΟΥΣΙ`, `true`, και αριθμό δραστηριοτήτων. Το δεύτερο ΑΦΜ τυπώνει `null` χωρίς exception.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add lib/companies/aade.ts
+git commit -m "feat(companies): add AADE lookup client for vat.wwa.gr/afm2info"
+```
+
+---
+
+### Task 4: Prisma schema + migration
 
 **Files:**
 - Modify: `prisma/schema.prisma`
 
-- [ ] **Step 1: Πρόσθεσε enums και models**
+- [ ] **Step 1: Πρόσθεσε enum και models**
 
-Στο `prisma/schema.prisma`, κοντά στα υπόλοιπα enums:
+Κοντά στα υπόλοιπα enums:
 
 ```prisma
-enum CompanySource {
-  manual
-  softone
-}
-
 enum ProjectCompanyRole {
   partner
   subcontractor
@@ -242,58 +481,100 @@ enum ProjectCompanyRole {
 }
 ```
 
-Και τα models (μετά το `model User`):
+Μετά το `model User`:
 
 ```prisma
-/// Πελάτης/εταιρία. Φυσικό κλειδί το ΑΦΜ. Η σύνδεση με SoftOne είναι
-/// προαιρετική — εταιρία που δεν υπάρχει στο ERP είναι πλήρως έγκυρη.
+/// Πελάτης/εταιρία. Τα πεδία που προέρχονται από SoftOne κρατούν τα ονόματα του
+/// SoftOne αυτούσια ώστε το sync να είναι απευθείας αντιγραφή.
+/// Το TRDR είναι το unique κλειδί — το AFM ΔΕΝ είναι unique, γιατί το SoftOne
+/// κρατά νόμιμα πολλαπλές γραμμές ανά ΑΦΜ (υποκαταστήματα, ιστορικές καρτέλες).
 model Company {
-  id   String @id @default(cuid())
-  afm  String @unique
-  name String
+  id String @id @default(cuid())
 
-  /// CUSTOMER.TRDR. Null = υπάρχει μόνο τοπικά.
-  softoneCustomerId Int?          @unique
-  softoneCode       String?
-  softoneSyncedAt   DateTime?
-  source            CompanySource @default(manual)
+  /// null = η εταιρία υπάρχει μόνο εδώ, δεν έχει συγχρονιστεί με SoftOne.
+  TRDR       Int?      @unique
+  /// 13 = Πελάτης, 12 = Προμηθευτής
+  SODTYPE    Int       @default(13)
+  CODE       String?
+  NAME       String
+  AFM        String?
+  /// κωδ. ΔΟΥ
+  IRSDATA    String?
+  /// επάγγελμα, free text
+  JOBTYPETRD String?
+  ADDRESS    String?
+  ZIP        String?
+  DISTRICT   String?
+  CITY       String?
+  COUNTRY    Int?
+  PHONE01    String?
+  PHONE02    String?
+  FAX        String?
+  EMAIL      String?
+  WEBPAGE    String?
+  ISACTIVE   Int       @default(1)
+  REMARKS    String?   @db.Text
+  /// τελευταία μεταβολή στο SoftOne
+  UPDDATE    DateTime?
+  syncedAt   DateTime?
 
-  doy        String?
-  address    String?
-  city       String?
-  postalCode String?
-  country    String?  @default("GR")
-  phone      String?
-  email      String?
-  website    String?
-  notes      String?  @db.Text
-  isActive   Boolean  @default(true)
+  // ── ΑΑΔΕ (vat.wwa.gr/afm2info) ──
+  foundingDate DateTime?
+  aadeStatus   String?
+  aadeFirmKind String?
+  appLegalForm String?
+  aadeSyncedAt DateTime?
+
+  // ── app-only ──
+  appNotes String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   contacts        Contact[]
   users           User[]
-  primaryProjects Project[]        @relation("ProjectPrimaryCompany")
+  activities      CompanyActivity[]
+  primaryProjects Project[]         @relation("ProjectPrimaryCompany")
   projectRoles    ProjectCompany[]
 
-  @@index([name])
-  @@index([isActive])
+  @@index([AFM])
+  @@index([NAME])
+  @@index([SODTYPE, ISACTIVE])
 }
 
-/// Επαφή εταιρίας. Μπορεί προαιρετικά να αποκτήσει λογαριασμό (userId).
+/// Δραστηριότητες (ΚΑΔ) από την ΑΑΔΕ.
+model CompanyActivity {
+  id          String  @id @default(cuid())
+  companyId   String
+  code        String?
+  description String?
+  /// 'PRIMARY' | 'SECONDARY'
+  kind        String
+  order       Int     @default(0)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
 model Contact {
   id        String  @id @default(cuid())
   companyId String
-  firstName String
-  lastName  String
+  name      String
+  position  String?
   email     String?
   phone     String?
   mobile    String?
-  jobTitle  String?
   isPrimary Boolean @default(false)
   notes     String? @db.Text
-  userId    String? @unique
+
+  // Mirror του CUSPRSN/SUPPRSN για μελλοντικό sync επαφών.
+  PRSN      Int?
+  TRDBRANCH Int?
+  LINENUM   Int?
+
+  /// Προαιρετικός λογαριασμός portal. Null = η επαφή δεν συνδέεται.
+  userId String? @unique
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   user    User?   @relation("ContactUser", fields: [userId], references: [id], onDelete: SetNull)
@@ -305,8 +586,8 @@ model Contact {
   @@index([email])
 }
 
-/// Εταιρίες συσχετιζόμενες με έργο σε ρόλο ΕΚΤΟΣ πελάτη. Ο πελάτης είναι
-/// το Project.primaryCompanyId — δεν διπλοεγγράφεται εδώ.
+/// Εταιρίες συσχετιζόμενες με έργο σε ρόλο ΕΚΤΟΣ πελάτη. Ο πελάτης είναι το
+/// Project.primaryCompanyId — δεν διπλοεγγράφεται εδώ.
 model ProjectCompany {
   id        String             @id @default(cuid())
   projectId String
@@ -330,7 +611,7 @@ model ProjectCompany {
   contact   Contact? @relation("ContactUser")
 ```
 
-και στα indexes του `User`: `@@index([companyId])`
+και στα indexes: `@@index([companyId])`
 
 Στο `model Project` πρόσθεσε:
 
@@ -341,11 +622,11 @@ model ProjectCompany {
   companies        ProjectCompany[]
 ```
 
-και στα indexes του `Project`: `@@index([primaryCompanyId])`
+και στα indexes: `@@index([primaryCompanyId])`
 
-- [ ] **Step 2: Δημιούργησε το migration (shadow-DB workaround)**
+- [ ] **Step 2: Δημιούργησε και εφάρμοσε το migration**
 
-Το shadow DB είναι σπασμένο σε αυτό το project — γι' αυτό `--create-only` και μετά `deploy`.
+Το shadow DB είναι σπασμένο — γι' αυτό `--create-only` και μετά `deploy`.
 
 Run:
 ```bash
@@ -353,205 +634,242 @@ npx prisma migrate dev --create-only --name companies_contacts
 npx prisma migrate deploy
 npx prisma generate
 ```
-Expected: νέος φάκελος `prisma/migrations/*_companies_contacts/` με `CREATE TABLE Company/Contact/ProjectCompany` και `ALTER TABLE User ADD companyId`, `ALTER TABLE Project ADD primaryCompanyId`. Το `deploy` τυπώνει «All migrations have been successfully applied».
+Expected: νέος φάκελος `prisma/migrations/*_companies_contacts/` με `CREATE TABLE Company/CompanyActivity/Contact/ProjectCompany` και `ALTER TABLE User ADD companyId`, `ALTER TABLE Project ADD primaryCompanyId`. Το `deploy` τυπώνει «All migrations have been successfully applied».
 
-- [ ] **Step 3: Επιβεβαίωσε ότι ο client τυπάρει**
+- [ ] **Step 3: Επιβεβαίωσε**
 
 Run: `npx tsc --noEmit`
-Expected: καθαρό (καμία χρήση των νέων models ακόμα).
+Expected: καθαρό
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add prisma/schema.prisma prisma/migrations
-git commit -m "feat(db): add Company, Contact and ProjectCompany models"
+git commit -m "feat(db): add Company, CompanyActivity, Contact and ProjectCompany models"
 ```
 
 ---
 
-### Task 4: Import εταιρίας από SoftOne με ΑΦΜ
+### Task 5: Μαζική εισαγωγή πελατών από SoftOne
 
 **Files:**
 - Create: `lib/companies/softone-import.ts`
-- Test: `lib/companies/__tests__/softone-import.test.ts`
+- Create: `scripts/import-companies-from-softone.ts`
 
-- [ ] **Step 1: Γράψε το failing test**
-
-Το mapping δοκιμάζεται χωρίς δίκτυο· η `mapCustomerRecord` είναι καθαρή.
-
-```ts
-// lib/companies/__tests__/softone-import.test.ts
-import { test } from 'node:test'
-import assert from 'node:assert/strict'
-import { mapCustomerRecord } from '../softone-import'
-
-const FIXTURE = {
-  TRDR: 1234,
-  CODE: '30.00.0001',
-  NAME: 'ΑΚΜΗ ΚΑΤΑΣΚΕΥΑΣΤΙΚΗ ΑΕ',
-  AFM: '094014201',
-  IRSDATA: 'ΦΑΕ ΑΘΗΝΩΝ',
-  ADDRESS: 'ΛΕΩΦ. ΚΗΦΙΣΙΑΣ 100',
-  CITY: 'ΑΘΗΝΑ',
-  ZIP: '11526',
-  COUNTRY: 'ΕΛΛΑΔΑ',
-  PHONE01: '2101234567',
-  EMAIL: 'info@akmi.gr',
-  WEBPAGE: 'https://akmi.gr',
-}
-
-test('mapCustomerRecord αντιστοιχεί τα πεδία του CUSTOMER', () => {
-  const d = mapCustomerRecord(FIXTURE)
-  assert.equal(d.softoneCustomerId, 1234)
-  assert.equal(d.softoneCode, '30.00.0001')
-  assert.equal(d.name, 'ΑΚΜΗ ΚΑΤΑΣΚΕΥΑΣΤΙΚΗ ΑΕ')
-  assert.equal(d.afm, '094014201')
-  assert.equal(d.doy, 'ΦΑΕ ΑΘΗΝΩΝ')
-  assert.equal(d.city, 'ΑΘΗΝΑ')
-  assert.equal(d.postalCode, '11526')
-  assert.equal(d.source, 'softone')
-})
-
-test('mapCustomerRecord μετατρέπει κενά σε null', () => {
-  const d = mapCustomerRecord({ TRDR: 7, NAME: 'Χ', AFM: '094014201', CITY: '   ', EMAIL: '' })
-  assert.equal(d.city, null)
-  assert.equal(d.email, null)
-  assert.equal(d.address, null)
-})
-
-test('mapCustomerRecord κανονικοποιεί το ΑΦΜ', () => {
-  const d = mapCustomerRecord({ TRDR: 7, NAME: 'Χ', AFM: 'EL 094-014-201' })
-  assert.equal(d.afm, '094014201')
-})
-```
-
-- [ ] **Step 2: Τρέξε το test για να δεις ότι αποτυγχάνει**
-
-Run: `npx tsx --test lib/companies/__tests__/softone-import.test.ts`
-Expected: FAIL — `Cannot find module '../softone-import'`
-
-- [ ] **Step 3: Υλοποίησε**
-
-Αν το Task 1 έδειξε διαφορετικά ονόματα πεδίων, διόρθωσε το `FIELDS` object — είναι το μόνο σημείο που τα ξέρει.
+- [ ] **Step 1: Γράψε τον importer**
 
 ```ts
 // lib/companies/softone-import.ts
+/**
+ * Μαζική εισαγωγή πελατών από το SoftOne στο Company model.
+ *
+ * Στρατηγική δύο σταδίων, όπως το damask src/lib/s1-sync.ts:
+ *   1. GetTable (TABLE, FIELDS, FILTER) — απευθείας query, προτιμώμενο.
+ *   2. Fallback getBrowserInfo → getBrowserData (paginated).
+ *
+ * Upsert με κλειδί το TRDR. Κανόνας ενημέρωσης (από damask partner-upsert):
+ * ΠΟΤΕ δεν αντικαθιστούμε υπάρχουσα τιμή με κενή — εταιρία εμπλουτισμένη από
+ * την ΑΑΔΕ δεν πρέπει να ισοπεδώνεται από αραιή γραμμή του ERP.
+ */
 import { s1 } from '@/lib/softone'
-import { softoneLookup } from '@/lib/softone-lookup'
+import { prisma } from '@/lib/prisma'
 import { normalizeAfm } from './afm'
 
-/** Ό,τι μπορούμε να γεμίσουμε αυτόματα σε μια νέα Company. */
-export type CompanyDraft = {
-  afm: string
-  name: string
-  softoneCustomerId: number | null
-  softoneCode: string | null
-  source: 'softone'
-  doy: string | null
-  address: string | null
-  city: string | null
-  postalCode: string | null
-  country: string | null
-  phone: string | null
-  email: string | null
-  website: string | null
-}
+const FIELDS = [
+  'TRDR', 'SODTYPE', 'CODE', 'NAME', 'AFM', 'IRSDATA', 'JOBTYPETRD',
+  'ADDRESS', 'ZIP', 'DISTRICT', 'CITY', 'COUNTRY',
+  'PHONE01', 'PHONE02', 'FAX', 'EMAIL', 'WEBPAGE',
+  'ISACTIVE', 'REMARKS', 'UPDDATE',
+] as const
 
-/** Ονόματα πεδίων του SoftOne CUSTOMER — επιβεβαιωμένα με scripts/probe-softone-customer.ts */
-const FIELDS = {
-  trdr: 'TRDR',
-  code: 'CODE',
-  name: 'NAME',
-  afm: 'AFM',
-  doy: 'IRSDATA',
-  address: 'ADDRESS',
-  city: 'CITY',
-  postalCode: 'ZIP',
-  country: 'COUNTRY',
-  phone: 'PHONE01',
-  email: 'EMAIL',
-  website: 'WEBPAGE',
-} as const
+export type ImportResult = {
+  fetched: number
+  created: number
+  updated: number
+  skipped: number
+  strategy: 'GetTable' | 'getBrowserData'
+}
 
 function str(v: unknown): string | null {
   if (v == null) return null
-  const s = String(v).trim()
-  return s ? s : null
+  const t = String(v).trim()
+  return t ? t : null
 }
 
-function num(v: unknown): number | null {
+function int(v: unknown): number | null {
   const n = Number(v)
-  return Number.isFinite(n) && n > 0 ? n : null
+  return Number.isFinite(n) ? n : null
 }
 
-/** Καθαρή μετατροπή ενός CUSTOMER record σε CompanyDraft. Καμία I/O. */
-export function mapCustomerRecord(rec: Record<string, unknown>): CompanyDraft {
-  return {
-    afm: normalizeAfm(String(rec[FIELDS.afm] ?? '')),
-    name: str(rec[FIELDS.name]) ?? '',
-    softoneCustomerId: num(rec[FIELDS.trdr]),
-    softoneCode: str(rec[FIELDS.code]),
-    source: 'softone',
-    doy: str(rec[FIELDS.doy]),
-    address: str(rec[FIELDS.address]),
-    city: str(rec[FIELDS.city]),
-    postalCode: str(rec[FIELDS.postalCode]),
-    country: str(rec[FIELDS.country]),
-    phone: str(rec[FIELDS.phone]),
-    email: str(rec[FIELDS.email]),
-    website: str(rec[FIELDS.website]),
-  }
+function date(v: unknown): Date | null {
+  const t = str(v)
+  if (!t) return null
+  const d = new Date(t)
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
-/**
- * Ψάχνει CUSTOMER με το δοσμένο ΑΦΜ και επιστρέφει πλήρη draft.
- *
- * `null` σημαίνει «δεν υπάρχει στο ERP» — ΔΕΝ είναι σφάλμα· ο χρήστης
- * συνεχίζει με χειροκίνητη καταχώριση. Πρόβλημα επικοινωνίας με το SoftOne
- * πετάει exception ώστε να ξεχωρίζει από το «δεν βρέθηκε».
- */
-export async function lookupCompanyByAfm(afmInput: string): Promise<CompanyDraft | null> {
-  const afm = normalizeAfm(afmInput)
-  if (!/^\d{9}$/.test(afm)) return null
+/** Κρατά μόνο τα κλειδιά με μη-κενή τιμή — για το «μην σβήνεις με κενό». */
+function definedOnly<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== null && v !== undefined && v !== '') out[k] = v
+  }
+  return out as Partial<T>
+}
 
-  const rows = await softoneLookup({ source: 'customer', q: afm, limit: 1 })
-  if (!rows.length) return null
-
-  const res = await s1('getData', { OBJECT: 'CUSTOMER', KEY: String(rows[0].id) })
-  if (!res.success) {
-    throw new Error(`SoftOne getData CUSTOMER απέτυχε: ${res.error ?? 'άγνωστο'} (code ${res.errorcode ?? '-'})`)
+async function fetchRows(): Promise<{ rows: Record<string, unknown>[]; strategy: ImportResult['strategy'] }> {
+  // 1. GetTable
+  const table = await s1('GetTable', {
+    TABLE: 'TRDR',
+    FIELDS: FIELDS.join(','),
+    FILTER: 'SODTYPE=13',
+  })
+  if (table?.success && Array.isArray(table.rows) && table.rows.length) {
+    return { rows: table.rows as Record<string, unknown>[], strategy: 'GetTable' }
   }
 
-  const rec = res.data?.CUSTOMER?.[0] as Record<string, unknown> | undefined
-  if (!rec) return null
-
-  const draft = mapCustomerRecord(rec)
-  // Το browser row είναι πιο αξιόπιστο για TRDR/CODE/NAME από το getData.
-  return {
-    ...draft,
-    afm: draft.afm || afm,
-    name: draft.name || rows[0].name,
-    softoneCustomerId: draft.softoneCustomerId ?? rows[0].id,
-    softoneCode: draft.softoneCode ?? (rows[0].code || null),
+  // 2. getBrowserInfo → getBrowserData (paginated)
+  const info = await s1('getBrowserInfo', { object: 'CUSTOMER', LIST: '001', FILTERS: 'CUSTOMER.ISACTIVE=1' })
+  if (!info?.success || !info.reqID) {
+    throw new Error(`SoftOne: ούτε GetTable ούτε getBrowserInfo επέστρεψαν δεδομένα (${info?.error ?? 'άγνωστο'})`)
   }
+
+  const fields = (info.fields ?? []) as { name: string }[]
+  const total = Number(info.totalcount ?? 0)
+  const PAGE = 500
+  const rows: Record<string, unknown>[] = []
+
+  for (let start = 0; start < total; start += PAGE) {
+    const page = await s1('getBrowserData', { reqID: info.reqID, START: start, LIMIT: PAGE })
+    if (!page?.success) throw new Error(`SoftOne getBrowserData απέτυχε: ${page?.error ?? 'άγνωστο'}`)
+    for (const raw of (page.rows ?? []) as unknown[]) {
+      // Οι γραμμές είναι πίνακες θέσεων· τις μετατρέπουμε σε αντικείμενα με βάση το fields meta.
+      if (Array.isArray(raw)) {
+        const obj: Record<string, unknown> = {}
+        fields.forEach((f, i) => { obj[f.name.split('.').pop() ?? f.name] = raw[i] })
+        rows.push(obj)
+      } else if (raw && typeof raw === 'object') {
+        rows.push(raw as Record<string, unknown>)
+      }
+    }
+  }
+  return { rows, strategy: 'getBrowserData' }
+}
+
+export async function importCompaniesFromSoftOne(
+  onProgress?: (done: number, total: number) => void,
+): Promise<ImportResult> {
+  const { rows, strategy } = await fetchRows()
+  const result: ImportResult = { fetched: rows.length, created: 0, updated: 0, skipped: 0, strategy }
+
+  for (const [i, row] of rows.entries()) {
+    const TRDR = int(row.TRDR)
+    const NAME = str(row.NAME)
+    if (!TRDR || !NAME) { result.skipped++; continue }
+
+    const afmRaw = str(row.AFM)
+    const AFM = afmRaw ? normalizeAfm(afmRaw) || null : null
+
+    const mirror = {
+      SODTYPE: int(row.SODTYPE) ?? 13,
+      CODE: str(row.CODE),
+      NAME,
+      AFM,
+      IRSDATA: str(row.IRSDATA),
+      JOBTYPETRD: str(row.JOBTYPETRD),
+      ADDRESS: str(row.ADDRESS),
+      ZIP: str(row.ZIP),
+      DISTRICT: str(row.DISTRICT),
+      CITY: str(row.CITY),
+      COUNTRY: int(row.COUNTRY),
+      PHONE01: str(row.PHONE01),
+      PHONE02: str(row.PHONE02),
+      FAX: str(row.FAX),
+      EMAIL: str(row.EMAIL),
+      WEBPAGE: str(row.WEBPAGE),
+      ISACTIVE: int(row.ISACTIVE) ?? 1,
+      REMARKS: str(row.REMARKS),
+      UPDDATE: date(row.UPDDATE),
+    }
+
+    const existing = await prisma.company.findUnique({ where: { TRDR }, select: { id: true } })
+    if (existing) {
+      // Ποτέ δεν σβήνουμε υπάρχουσα τιμή με κενή.
+      await prisma.company.update({
+        where: { TRDR },
+        data: { ...definedOnly(mirror), NAME, syncedAt: new Date() },
+      })
+      result.updated++
+    } else {
+      await prisma.company.create({ data: { TRDR, ...mirror, syncedAt: new Date() } })
+      result.created++
+    }
+
+    onProgress?.(i + 1, rows.length)
+  }
+
+  return result
 }
 ```
 
-- [ ] **Step 4: Τρέξε τα tests**
+- [ ] **Step 2: Γράψε το CLI wrapper**
 
-Run: `npx tsx --test lib/companies/__tests__/softone-import.test.ts`
-Expected: PASS — 3 tests
+```ts
+// scripts/import-companies-from-softone.ts
+// Τρέξε: npx tsx --env-file=.env scripts/import-companies-from-softone.ts
+import { importCompaniesFromSoftOne } from '@/lib/companies/softone-import'
+
+async function main() {
+  console.log('Ανάκτηση πελατών από SoftOne…')
+  let last = 0
+  const res = await importCompaniesFromSoftOne((done, total) => {
+    const pct = Math.floor((done / total) * 100)
+    if (pct >= last + 10) { last = pct; console.log(`  ${pct}% (${done}/${total})`) }
+  })
+  console.log('\nΟλοκληρώθηκε:')
+  console.log(`  στρατηγική : ${res.strategy}`)
+  console.log(`  ανακτήθηκαν: ${res.fetched}`)
+  console.log(`  νέες       : ${res.created}`)
+  console.log(`  ενημερώθηκαν: ${res.updated}`)
+  console.log(`  παραλείφθηκαν: ${res.skipped}`)
+}
+
+main().catch((e) => { console.error('ERROR:', e instanceof Error ? e.message : e); process.exit(1) })
+```
+
+- [ ] **Step 3: Τρέξε την εισαγωγή**
+
+Χρειάζεται έγκυρα SoftOne credentials στο `.env`.
+
+Run: `npx tsx --env-file=.env scripts/import-companies-from-softone.ts`
+Expected: τυπώνει πρόοδο και τελική σύνοψη με `created > 0`.
+
+Αν βγάλει `Login fails due to invalid login credentials`, ανανέωσε τα SoftOne credentials από το deployment και ξανατρέξε.
+
+- [ ] **Step 4: Επαλήθευσε τα δεδομένα**
+
+Run:
+```bash
+npx prisma db execute --stdin <<'SQL'
+SELECT COUNT(*) AS total,
+       SUM(TRDR IS NOT NULL) AS with_trdr,
+       SUM(AFM IS NOT NULL AND AFM <> '') AS with_afm,
+       COUNT(DISTINCT AFM) AS distinct_afm
+FROM Company;
+SQL
+```
+Expected: `total` = `with_trdr`. Το `distinct_afm` μπορεί να είναι μικρότερο από το `with_afm` — αυτό είναι φυσιολογικό και ο λόγος που το AFM δεν είναι unique.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/companies/softone-import.ts lib/companies/__tests__/softone-import.test.ts
-git commit -m "feat(companies): look up company details from SoftOne CUSTOMER by AFM"
+git add lib/companies/softone-import.ts scripts/import-companies-from-softone.ts
+git commit -m "feat(companies): bulk-import SoftOne customers into the Company model"
 ```
 
 ---
 
-### Task 5: Server actions εταιριών και επαφών
+### Task 6: Server actions εταιριών και επαφών
 
 **Files:**
 - Create: `app/(app)/admin/companies/actions.ts`
@@ -567,8 +885,9 @@ import bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
-import { isValidAfm, normalizeAfm } from '@/lib/companies/afm'
-import { lookupCompanyByAfm } from '@/lib/companies/softone-import'
+import { normalizeAfm, isValidAfm, hasValidChecksum } from '@/lib/companies/afm'
+import { aadeLookup, AadeLookupError } from '@/lib/companies/aade'
+import { importCompaniesFromSoftOne } from '@/lib/companies/softone-import'
 
 async function requireAdmin(): Promise<string> {
   const session = await auth()
@@ -579,92 +898,135 @@ async function requireAdmin(): Promise<string> {
 }
 
 export type CompanyInput = {
-  afm: string
-  name: string
-  doy?: string | null
-  address?: string | null
-  city?: string | null
-  postalCode?: string | null
-  country?: string | null
-  phone?: string | null
-  email?: string | null
-  website?: string | null
-  notes?: string | null
-  softoneCustomerId?: number | null
-  softoneCode?: string | null
+  NAME: string
+  AFM?: string | null
+  IRSDATA?: string | null
+  JOBTYPETRD?: string | null
+  ADDRESS?: string | null
+  ZIP?: string | null
+  DISTRICT?: string | null
+  CITY?: string | null
+  PHONE01?: string | null
+  PHONE02?: string | null
+  EMAIL?: string | null
+  WEBPAGE?: string | null
+  appNotes?: string | null
+  appLegalForm?: string | null
 }
 
-/** Αναζήτηση στο SoftOne. `found:false` = δεν υπάρχει στο ERP, όχι σφάλμα. */
-export async function lookupCompany(afmInput: string) {
+const t = (v: string | null | undefined) => (v ?? '').trim() || null
+
+/**
+ * Αναζήτηση στην ΑΑΔΕ. `found:false` = το ΑΦΜ δεν υπάρχει στο μητρώο, όχι σφάλμα.
+ * Επιστρέφει και τυχόν υπάρχουσες εγγραφές με το ίδιο ΑΦΜ ως προειδοποίηση —
+ * δεν μπλοκάρει, γιατί πολλαπλές καρτέλες ανά ΑΦΜ είναι νόμιμες.
+ */
+export async function lookupByAfm(afmInput: string) {
   await requireAdmin()
   const afm = normalizeAfm(afmInput)
   if (!isValidAfm(afm)) {
-    return { ok: false as const, error: 'Μη έγκυρο ΑΦΜ (αποτυγχάνει ο έλεγχος ψηφίου ελέγχου).' }
+    return { ok: false as const, error: 'Το ΑΦΜ πρέπει να έχει 9 ψηφία.' }
   }
-  const existing = await prisma.company.findUnique({ where: { afm }, select: { id: true, name: true } })
-  if (existing) {
-    return { ok: false as const, error: `Η εταιρία «${existing.name}» έχει ήδη αυτό το ΑΦΜ.`, existingId: existing.id }
-  }
+
+  const duplicates = await prisma.company.findMany({
+    where: { AFM: afm },
+    select: { id: true, NAME: true, CODE: true },
+    take: 5,
+  })
+
   try {
-    const draft = await lookupCompanyByAfm(afm)
-    return draft
-      ? { ok: true as const, found: true as const, draft }
-      : { ok: true as const, found: false as const, draft: null }
+    const mapped = await aadeLookup(afm)
+    return {
+      ok: true as const,
+      found: mapped !== null,
+      afm,
+      checksumOk: hasValidChecksum(afm),
+      duplicates,
+      draft: mapped
+        ? {
+            ...mapped.company,
+            foundingDate: mapped.company.foundingDate?.toISOString() ?? null,
+            doyDescr: mapped.doyDescr,
+            isActive: mapped.isActive,
+            activities: mapped.activities,
+          }
+        : null,
+    }
   } catch (err) {
-    return { ok: false as const, error: err instanceof Error ? err.message : 'Σφάλμα επικοινωνίας με SoftOne.' }
+    return {
+      ok: false as const,
+      error: err instanceof AadeLookupError ? err.message : 'Σφάλμα αναζήτησης ΑΦΜ.',
+    }
   }
 }
 
-export async function createCompany(input: CompanyInput) {
+export async function createCompany(
+  input: CompanyInput & {
+    foundingDate?: string | null
+    aadeStatus?: string | null
+    aadeFirmKind?: string | null
+    activities?: { code: string | null; description: string | null; kind: string; order: number }[]
+  },
+) {
   await requireAdmin()
-  const afm = normalizeAfm(input.afm)
-  if (!isValidAfm(afm)) return { ok: false as const, error: 'Μη έγκυρο ΑΦΜ.' }
-  const name = input.name.trim()
-  if (name.length < 2) return { ok: false as const, error: 'Η επωνυμία είναι πολύ σύντομη.' }
-  if (await prisma.company.findUnique({ where: { afm } })) {
-    return { ok: false as const, error: 'Υπάρχει ήδη εταιρία με αυτό το ΑΦΜ.' }
-  }
+  const NAME = input.NAME.trim()
+  if (NAME.length < 2) return { ok: false as const, error: 'Η επωνυμία είναι πολύ σύντομη.' }
+  const AFM = input.AFM ? normalizeAfm(input.AFM) || null : null
 
   const company = await prisma.company.create({
     data: {
-      afm,
-      name,
-      doy: input.doy?.trim() || null,
-      address: input.address?.trim() || null,
-      city: input.city?.trim() || null,
-      postalCode: input.postalCode?.trim() || null,
-      country: input.country?.trim() || 'GR',
-      phone: input.phone?.trim() || null,
-      email: input.email?.trim() || null,
-      website: input.website?.trim() || null,
-      notes: input.notes?.trim() || null,
-      softoneCustomerId: input.softoneCustomerId ?? null,
-      softoneCode: input.softoneCode?.trim() || null,
-      source: input.softoneCustomerId ? 'softone' : 'manual',
-      softoneSyncedAt: input.softoneCustomerId ? new Date() : null,
+      NAME,
+      AFM,
+      SODTYPE: 13,
+      IRSDATA: t(input.IRSDATA),
+      JOBTYPETRD: t(input.JOBTYPETRD),
+      ADDRESS: t(input.ADDRESS),
+      ZIP: t(input.ZIP),
+      DISTRICT: t(input.DISTRICT),
+      CITY: t(input.CITY),
+      PHONE01: t(input.PHONE01),
+      PHONE02: t(input.PHONE02),
+      EMAIL: t(input.EMAIL),
+      WEBPAGE: t(input.WEBPAGE),
+      appNotes: t(input.appNotes),
+      appLegalForm: t(input.appLegalForm),
+      foundingDate: input.foundingDate ? new Date(input.foundingDate) : null,
+      aadeStatus: t(input.aadeStatus),
+      aadeFirmKind: t(input.aadeFirmKind),
+      aadeSyncedAt: input.activities?.length || input.aadeStatus ? new Date() : null,
+      activities: input.activities?.length
+        ? {
+            create: input.activities.map((a) => ({
+              code: a.code, description: a.description, kind: a.kind, order: a.order,
+            })),
+          }
+        : undefined,
     },
   })
   revalidatePath('/admin/companies')
   return { ok: true as const, id: company.id }
 }
 
-export async function updateCompany(id: string, input: Omit<CompanyInput, 'afm'>) {
+export async function updateCompany(id: string, input: CompanyInput) {
   await requireAdmin()
-  const name = input.name.trim()
-  if (name.length < 2) return { ok: false as const, error: 'Η επωνυμία είναι πολύ σύντομη.' }
+  const NAME = input.NAME.trim()
+  if (NAME.length < 2) return { ok: false as const, error: 'Η επωνυμία είναι πολύ σύντομη.' }
   await prisma.company.update({
     where: { id },
     data: {
-      name,
-      doy: input.doy?.trim() || null,
-      address: input.address?.trim() || null,
-      city: input.city?.trim() || null,
-      postalCode: input.postalCode?.trim() || null,
-      country: input.country?.trim() || null,
-      phone: input.phone?.trim() || null,
-      email: input.email?.trim() || null,
-      website: input.website?.trim() || null,
-      notes: input.notes?.trim() || null,
+      NAME,
+      AFM: input.AFM ? normalizeAfm(input.AFM) || null : null,
+      IRSDATA: t(input.IRSDATA),
+      JOBTYPETRD: t(input.JOBTYPETRD),
+      ADDRESS: t(input.ADDRESS),
+      ZIP: t(input.ZIP),
+      DISTRICT: t(input.DISTRICT),
+      CITY: t(input.CITY),
+      PHONE01: t(input.PHONE01),
+      PHONE02: t(input.PHONE02),
+      EMAIL: t(input.EMAIL),
+      WEBPAGE: t(input.WEBPAGE),
+      appNotes: t(input.appNotes),
     },
   })
   revalidatePath('/admin/companies')
@@ -672,62 +1034,70 @@ export async function updateCompany(id: string, input: Omit<CompanyInput, 'afm'>
   return { ok: true as const }
 }
 
-export async function setCompanyActive(id: string, isActive: boolean) {
+export async function setCompanyActive(id: string, active: boolean) {
   await requireAdmin()
-  await prisma.company.update({ where: { id }, data: { isActive } })
+  await prisma.company.update({ where: { id }, data: { ISACTIVE: active ? 1 : 0 } })
   revalidatePath('/admin/companies')
   return { ok: true as const }
 }
 
-/** Ξαναδιαβάζει στοιχεία από το SoftOne για συνδεδεμένη εταιρία. */
-export async function refreshFromSoftOne(id: string) {
+/** Ξαναδιαβάζει στοιχεία από την ΑΑΔΕ και αντικαθιστά τις δραστηριότητες. */
+export async function refreshFromAade(id: string) {
   await requireAdmin()
-  const company = await prisma.company.findUnique({ where: { id } })
-  if (!company) return { ok: false as const, error: 'Δεν βρέθηκε η εταιρία.' }
+  const company = await prisma.company.findUnique({ where: { id }, select: { AFM: true } })
+  if (!company?.AFM) return { ok: false as const, error: 'Η εταιρία δεν έχει ΑΦΜ.' }
+
   try {
-    const draft = await lookupCompanyByAfm(company.afm)
-    if (!draft) return { ok: false as const, error: 'Δεν βρέθηκε στο SoftOne με αυτό το ΑΦΜ.' }
-    await prisma.company.update({
-      where: { id },
-      data: {
-        name: draft.name || company.name,
-        doy: draft.doy,
-        address: draft.address,
-        city: draft.city,
-        postalCode: draft.postalCode,
-        country: draft.country,
-        phone: draft.phone,
-        email: draft.email,
-        website: draft.website,
-        softoneCustomerId: draft.softoneCustomerId,
-        softoneCode: draft.softoneCode,
-        source: 'softone',
-        softoneSyncedAt: new Date(),
-      },
+    const mapped = await aadeLookup(company.AFM)
+    if (!mapped) return { ok: false as const, error: 'Το ΑΦΜ δεν βρέθηκε στο μητρώο της ΑΑΔΕ.' }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.companyActivity.deleteMany({ where: { companyId: id } })
+      await tx.company.update({
+        where: { id },
+        data: {
+          ...mapped.company,
+          aadeSyncedAt: new Date(),
+          activities: {
+            create: mapped.activities.map((a) => ({
+              code: a.code, description: a.description, kind: a.kind, order: a.order,
+            })),
+          },
+        },
+      })
     })
     revalidatePath(`/admin/companies/${id}`)
     return { ok: true as const }
   } catch (err) {
-    return { ok: false as const, error: err instanceof Error ? err.message : 'Σφάλμα SoftOne.' }
+    return { ok: false as const, error: err instanceof AadeLookupError ? err.message : 'Σφάλμα ΑΑΔΕ.' }
+  }
+}
+
+/** Μαζική εισαγωγή από SoftOne — τρέχει από το UI. */
+export async function runSoftOneImport() {
+  await requireAdmin()
+  try {
+    const res = await importCompaniesFromSoftOne()
+    revalidatePath('/admin/companies')
+    return { ok: true as const, ...res }
+  } catch (err) {
+    return { ok: false as const, error: err instanceof Error ? err.message : 'Σφάλμα εισαγωγής.' }
   }
 }
 
 export type ContactInput = {
-  firstName: string
-  lastName: string
+  name: string
+  position?: string | null
   email?: string | null
   phone?: string | null
   mobile?: string | null
-  jobTitle?: string | null
   isPrimary?: boolean
   notes?: string | null
 }
 
 export async function createContact(companyId: string, input: ContactInput) {
   await requireAdmin()
-  if (!input.firstName.trim() || !input.lastName.trim()) {
-    return { ok: false as const, error: 'Όνομα και επώνυμο είναι υποχρεωτικά.' }
-  }
+  if (!input.name.trim()) return { ok: false as const, error: 'Το όνομα είναι υποχρεωτικό.' }
   await prisma.$transaction(async (tx) => {
     if (input.isPrimary) {
       await tx.contact.updateMany({ where: { companyId }, data: { isPrimary: false } })
@@ -735,14 +1105,13 @@ export async function createContact(companyId: string, input: ContactInput) {
     await tx.contact.create({
       data: {
         companyId,
-        firstName: input.firstName.trim(),
-        lastName: input.lastName.trim(),
-        email: input.email?.trim() || null,
-        phone: input.phone?.trim() || null,
-        mobile: input.mobile?.trim() || null,
-        jobTitle: input.jobTitle?.trim() || null,
+        name: input.name.trim(),
+        position: t(input.position),
+        email: t(input.email),
+        phone: t(input.phone),
+        mobile: t(input.mobile),
         isPrimary: Boolean(input.isPrimary),
-        notes: input.notes?.trim() || null,
+        notes: t(input.notes),
       },
     })
   })
@@ -761,14 +1130,13 @@ export async function updateContact(id: string, input: ContactInput) {
     await tx.contact.update({
       where: { id },
       data: {
-        firstName: input.firstName.trim(),
-        lastName: input.lastName.trim(),
-        email: input.email?.trim() || null,
-        phone: input.phone?.trim() || null,
-        mobile: input.mobile?.trim() || null,
-        jobTitle: input.jobTitle?.trim() || null,
+        name: input.name.trim(),
+        position: t(input.position),
+        email: t(input.email),
+        phone: t(input.phone),
+        mobile: t(input.mobile),
         isPrimary: Boolean(input.isPrimary),
-        notes: input.notes?.trim() || null,
+        notes: t(input.notes),
       },
     })
   })
@@ -786,14 +1154,14 @@ export async function deleteContact(id: string) {
 }
 
 /**
- * Δίνει λογαριασμό portal σε μια επαφή. Χρησιμοποιεί τη ροή προσωρινού κωδικού
- * (mustChangePassword) που ήδη υπάρχει — ο κωδικός επιστρέφεται ΜΙΑ φορά.
+ * Δίνει λογαριασμό portal σε μια επαφή, μέσω της υπάρχουσας ροής προσωρινού
+ * κωδικού (mustChangePassword). Ο κωδικός επιστρέφεται ΜΙΑ φορά.
  */
 export async function promoteContactToUser(contactId: string) {
   await requireAdmin()
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
-    include: { company: { select: { id: true, name: true, afm: true, softoneCustomerId: true } } },
+    include: { company: { select: { id: true, NAME: true, AFM: true, TRDR: true } } },
   })
   if (!contact) return { ok: false as const, error: 'Δεν βρέθηκε η επαφή.' }
   if (contact.userId) return { ok: false as const, error: 'Η επαφή έχει ήδη λογαριασμό.' }
@@ -808,15 +1176,15 @@ export async function promoteContactToUser(contactId: string) {
     const user = await tx.user.create({
       data: {
         email,
-        name: `${contact.firstName} ${contact.lastName}`.trim(),
+        name: contact.name,
         password: await bcrypt.hash(tempPassword, 10),
         mustChangePassword: true,
         role: 'viewer',
         userType: 'customer',
         companyId: contact.company.id,
-        companyName: contact.company.name,
-        companyAfm: contact.company.afm,
-        softoneCustomerId: contact.company.softoneCustomerId,
+        companyName: contact.company.NAME,
+        companyAfm: contact.company.AFM,
+        softoneCustomerId: contact.company.TRDR,
       },
     })
     await tx.contact.update({ where: { id: contactId }, data: { userId: user.id } })
@@ -826,9 +1194,68 @@ export async function promoteContactToUser(contactId: string) {
   revalidatePath('/admin/users')
   return { ok: true as const, email, tempPassword }
 }
+
+/** Λίστα εταιριών για pickers. Τοπική αναζήτηση. */
+export async function searchCompanies(q: string) {
+  await requireAdmin()
+  const needle = q.trim()
+  return prisma.company.findMany({
+    where: {
+      ISACTIVE: 1,
+      ...(needle ? { OR: [{ NAME: { contains: needle } }, { AFM: { contains: needle } }] } : {}),
+    },
+    select: { id: true, NAME: true, AFM: true },
+    orderBy: { NAME: 'asc' },
+    take: 50,
+  })
+}
+
+/** Ορίζει τον πελάτη ενός έργου. `null` καθαρίζει τη σύνδεση. */
+export async function setProjectPrimaryCompany(projectId: string, companyId: string | null) {
+  await requireAdmin()
+  if (companyId) {
+    // Ο πελάτης δεν διπλοεγγράφεται ως ProjectCompany.
+    await prisma.projectCompany.deleteMany({ where: { projectId, companyId } })
+  }
+  await prisma.project.update({ where: { id: projectId }, data: { primaryCompanyId: companyId } })
+  revalidatePath(`/projects/${projectId}`)
+  return { ok: true as const }
+}
+
+export async function addProjectCompany(
+  projectId: string,
+  companyId: string,
+  role: 'partner' | 'subcontractor' | 'consultant' | 'other',
+) {
+  await requireAdmin()
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { primaryCompanyId: true },
+  })
+  if (project?.primaryCompanyId === companyId) {
+    return { ok: false as const, error: 'Η εταιρία είναι ήδη ο πελάτης του έργου.' }
+  }
+  const exists = await prisma.projectCompany.findUnique({
+    where: { projectId_companyId: { projectId, companyId } },
+  })
+  if (exists) return { ok: false as const, error: 'Η εταιρία είναι ήδη συνδεδεμένη.' }
+
+  await prisma.projectCompany.create({ data: { projectId, companyId, role } })
+  revalidatePath(`/projects/${projectId}`)
+  return { ok: true as const }
+}
+
+export async function removeProjectCompany(id: string) {
+  await requireAdmin()
+  const row = await prisma.projectCompany.findUnique({ where: { id }, select: { projectId: true } })
+  if (!row) return { ok: false as const, error: 'Δεν βρέθηκε η σύνδεση.' }
+  await prisma.projectCompany.delete({ where: { id } })
+  revalidatePath(`/projects/${row.projectId}`)
+  return { ok: true as const }
+}
 ```
 
-- [ ] **Step 2: Έλεγξε ότι τυπάρει**
+- [ ] **Step 2: Έλεγξε**
 
 Run: `npx tsc --noEmit`
 Expected: καθαρό
@@ -837,16 +1264,17 @@ Expected: καθαρό
 
 ```bash
 git add "app/(app)/admin/companies/actions.ts"
-git commit -m "feat(companies): add admin server actions for companies and contacts"
+git commit -m "feat(companies): add admin server actions for companies, contacts and project links"
 ```
 
 ---
 
-### Task 6: Σελίδα λίστας εταιριών
+### Task 7: Σελίδα λίστας εταιριών
 
 **Files:**
 - Create: `app/(app)/admin/companies/page.tsx`
 - Create: `app/(app)/admin/companies/companies-client.tsx`
+- Modify: `components/layout/sidebar.tsx`
 
 - [ ] **Step 1: Server page**
 
@@ -860,33 +1288,30 @@ export const dynamic = 'force-dynamic'
 export default async function CompaniesPage() {
   // Admin gate enforced by app/(app)/admin/layout.tsx
   const companies = await prisma.company.findMany({
-    orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+    orderBy: [{ ISACTIVE: 'desc' }, { NAME: 'asc' }],
     select: {
-      id: true,
-      afm: true,
-      name: true,
-      city: true,
-      isActive: true,
-      softoneCustomerId: true,
+      id: true, TRDR: true, CODE: true, NAME: true, AFM: true, CITY: true, ISACTIVE: true,
       _count: { select: { contacts: true, users: true, primaryProjects: true } },
     },
+    take: 500,
   })
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <h1 className="text-2xl font-semibold text-fluent-neutral-90">Εταιρίες</h1>
       <p className="text-sm text-fluent-neutral-60 mt-1 mb-6">
-        Πελάτες και συνεργαζόμενες εταιρίες. Η καταχώριση στο SoftOne δεν είναι υποχρεωτική —
-        εταιρία μπορεί να υπάρχει μόνο εδώ.
+        Πελάτες και συνεργαζόμενες εταιρίες. Τα στοιχεία αντλούνται από το ΑΦΜ μέσω ΑΑΔΕ.
+        Η καταχώριση στο SoftOne δεν είναι υποχρεωτική.
       </p>
       <CompaniesClient
         companies={companies.map((c) => ({
           id: c.id,
-          afm: c.afm,
-          name: c.name,
-          city: c.city,
-          isActive: c.isActive,
-          linkedToSoftOne: c.softoneCustomerId !== null,
+          name: c.NAME,
+          afm: c.AFM,
+          code: c.CODE,
+          city: c.CITY,
+          isActive: c.ISACTIVE === 1,
+          linkedToSoftOne: c.TRDR !== null,
           contactCount: c._count.contacts,
           userCount: c._count.users,
           projectCount: c._count.primaryProjects,
@@ -897,7 +1322,7 @@ export default async function CompaniesPage() {
 }
 ```
 
-- [ ] **Step 2: Client λίστας + φόρμα δημιουργίας**
+- [ ] **Step 2: Client λίστας**
 
 ```tsx
 // app/(app)/admin/companies/companies-client.tsx
@@ -907,23 +1332,17 @@ import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { lookupCompany, createCompany } from './actions'
+import { lookupByAfm, createCompany, runSoftOneImport } from './actions'
 
 type Row = {
-  id: string
-  afm: string
-  name: string
-  city: string | null
-  isActive: boolean
-  linkedToSoftOne: boolean
-  contactCount: number
-  userCount: number
-  projectCount: number
+  id: string; name: string; afm: string | null; code: string | null; city: string | null
+  isActive: boolean; linkedToSoftOne: boolean
+  contactCount: number; userCount: number; projectCount: number
 }
 
 const EMPTY = {
-  afm: '', name: '', doy: '', address: '', city: '', postalCode: '',
-  country: 'GR', phone: '', email: '', website: '', notes: '',
+  NAME: '', AFM: '', IRSDATA: '', JOBTYPETRD: '', ADDRESS: '', ZIP: '',
+  DISTRICT: '', CITY: '', PHONE01: '', PHONE02: '', EMAIL: '', WEBPAGE: '', appLegalForm: '',
 }
 
 export function CompaniesClient({ companies }: { companies: Row[] }) {
@@ -931,47 +1350,71 @@ export function CompaniesClient({ companies }: { companies: Row[] }) {
   const [q, setQ] = useState('')
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ ...EMPTY })
-  const [softoneId, setSoftoneId] = useState<number | null>(null)
-  const [softoneCode, setSoftoneCode] = useState<string | null>(null)
+  const [aadeExtra, setAadeExtra] = useState<{
+    foundingDate: string | null; aadeStatus: string | null; aadeFirmKind: string | null
+    activities: { code: string | null; description: string | null; kind: string; order: number }[]
+  } | null>(null)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return companies
+    const n = q.trim().toLowerCase()
+    if (!n) return companies
     return companies.filter(
-      (c) => c.name.toLowerCase().includes(needle) || c.afm.includes(needle),
+      (c) => c.name.toLowerCase().includes(n) || (c.afm ?? '').includes(n) || (c.code ?? '').toLowerCase().includes(n),
     )
   }, [companies, q])
 
   async function onLookup() {
     setBusy(true); setError(''); setStatus('')
-    const res = await lookupCompany(form.afm)
+    const res = await lookupByAfm(form.AFM)
     setBusy(false)
     if (!res.ok) { setError(res.error); return }
-    if (!res.found) {
-      setStatus('Δεν βρέθηκε στο SoftOne — συμπλήρωσε τα στοιχεία χειροκίνητα.')
-      setSoftoneId(null); setSoftoneCode(null)
-      return
+
+    const notes: string[] = []
+    if (!res.checksumOk) notes.push('Προσοχή: το ΑΦΜ αποτυγχάνει στον έλεγχο ψηφίου ελέγχου.')
+    if (res.duplicates.length) {
+      notes.push(`Υπάρχουν ήδη ${res.duplicates.length} εγγραφές με αυτό το ΑΦΜ: ${res.duplicates.map((d) => d.NAME).join(', ')}.`)
     }
-    const d = res.draft!
+
+    if (!res.found || !res.draft) {
+      notes.push('Δεν βρέθηκε στην ΑΑΔΕ — συμπλήρωσε τα στοιχεία χειροκίνητα.')
+      setAadeExtra(null); setStatus(notes.join(' ')); return
+    }
+
+    const d = res.draft
     setForm({
-      afm: d.afm, name: d.name, doy: d.doy ?? '', address: d.address ?? '',
-      city: d.city ?? '', postalCode: d.postalCode ?? '', country: d.country ?? 'GR',
-      phone: d.phone ?? '', email: d.email ?? '', website: d.website ?? '', notes: '',
+      ...EMPTY,
+      AFM: res.afm,
+      NAME: d.NAME, IRSDATA: d.IRSDATA ?? '', JOBTYPETRD: d.JOBTYPETRD ?? '',
+      ADDRESS: d.ADDRESS ?? '', ZIP: d.ZIP ?? '', CITY: d.CITY ?? '',
+      appLegalForm: d.appLegalForm ?? '',
     })
-    setSoftoneId(d.softoneCustomerId); setSoftoneCode(d.softoneCode)
-    setStatus('Βρέθηκε στο SoftOne — τα πεδία συμπληρώθηκαν.')
+    setAadeExtra({
+      foundingDate: d.foundingDate, aadeStatus: d.aadeStatus,
+      aadeFirmKind: d.aadeFirmKind, activities: d.activities,
+    })
+    notes.unshift(`Βρέθηκε: ${d.NAME}${d.doyDescr ? ` · ΔΟΥ ${d.doyDescr}` : ''}${d.isActive ? '' : ' · ΑΝΕΝΕΡΓΟ ΑΦΜ'}`)
+    setStatus(notes.join(' '))
   }
 
   async function onCreate() {
     setBusy(true); setError('')
-    const res = await createCompany({ ...form, softoneCustomerId: softoneId, softoneCode })
+    const res = await createCompany({ ...form, ...(aadeExtra ?? {}) })
     setBusy(false)
     if (!res.ok) { setError(res.error); return }
-    setCreating(false); setForm({ ...EMPTY }); setSoftoneId(null); setSoftoneCode(null); setStatus('')
     router.push(`/admin/companies/${res.id}`)
+  }
+
+  async function onImport() {
+    if (!confirm('Να εισαχθούν όλοι οι πελάτες από το SoftOne; Οι υπάρχουσες εγγραφές θα ενημερωθούν.')) return
+    setBusy(true); setError(''); setStatus('Εισαγωγή σε εξέλιξη…')
+    const res = await runSoftOneImport()
+    setBusy(false)
+    if (!res.ok) { setError(res.error); setStatus(''); return }
+    setStatus(`Ολοκληρώθηκε: ${res.created} νέες, ${res.updated} ενημερώθηκαν, ${res.skipped} παραλείφθηκαν.`)
+    router.refresh()
   }
 
   const field = (key: keyof typeof EMPTY, label: string) => (
@@ -991,12 +1434,11 @@ export function CompaniesClient({ companies }: { companies: Row[] }) {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Αναζήτηση με επωνυμία ή ΑΦΜ…"
+          placeholder="Αναζήτηση με επωνυμία, ΑΦΜ ή κωδικό…"
           className="flex-1 h-9 px-3 rounded-md border border-black/10 text-sm"
         />
-        <Button onClick={() => setCreating((v) => !v)}>
-          {creating ? 'Άκυρο' : 'Νέα εταιρία'}
-        </Button>
+        <Button variant="secondary" onClick={onImport} disabled={busy}>Εισαγωγή από SoftOne</Button>
+        <Button onClick={() => setCreating((v) => !v)}>{creating ? 'Άκυρο' : 'Νέα εταιρία'}</Button>
       </div>
 
       {creating && (
@@ -1005,13 +1447,13 @@ export function CompaniesClient({ companies }: { companies: Row[] }) {
             <div className="flex-1">
               <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">ΑΦΜ</label>
               <input
-                value={form.afm}
-                onChange={(e) => setForm({ ...form, afm: e.target.value })}
+                value={form.AFM}
+                onChange={(e) => setForm({ ...form, AFM: e.target.value })}
                 className="w-full h-9 px-3 rounded-md border border-black/10 text-sm font-mono"
               />
             </div>
-            <Button onClick={onLookup} disabled={busy || !form.afm.trim()} variant="secondary">
-              Αναζήτηση
+            <Button onClick={onLookup} disabled={busy || !form.AFM.trim()} variant="secondary">
+              Αναζήτηση ΑΑΔΕ
             </Button>
           </div>
 
@@ -1019,47 +1461,39 @@ export function CompaniesClient({ companies }: { companies: Row[] }) {
           {error && <p className="text-xs text-red-600">{error}</p>}
 
           <div className="grid grid-cols-2 gap-3">
-            {field('name', 'Επωνυμία')}
-            {field('doy', 'ΔΟΥ')}
-            {field('address', 'Διεύθυνση')}
-            {field('city', 'Πόλη')}
-            {field('postalCode', 'Τ.Κ.')}
-            {field('country', 'Χώρα')}
-            {field('phone', 'Τηλέφωνο')}
-            {field('email', 'Email')}
-            {field('website', 'Website')}
+            {field('NAME', 'Επωνυμία')}
+            {field('appLegalForm', 'Νομική μορφή')}
+            {field('IRSDATA', 'Κωδ. ΔΟΥ')}
+            {field('JOBTYPETRD', 'Δραστηριότητα')}
+            {field('ADDRESS', 'Διεύθυνση')}
+            {field('CITY', 'Πόλη')}
+            {field('ZIP', 'Τ.Κ.')}
+            {field('DISTRICT', 'Περιοχή')}
+            {field('PHONE01', 'Τηλέφωνο')}
+            {field('EMAIL', 'Email')}
+            {field('WEBPAGE', 'Website')}
           </div>
 
-          <Button onClick={onCreate} disabled={busy || !form.name.trim() || !form.afm.trim()}>
-            Αποθήκευση
-          </Button>
+          <Button onClick={onCreate} disabled={busy || !form.NAME.trim()}>Αποθήκευση</Button>
         </div>
       )}
 
       <div className="rounded-lg border border-black/10 bg-white divide-y divide-black/5">
-        {filtered.length === 0 && (
-          <p className="p-6 text-sm text-fluent-neutral-60 text-center">Καμία εταιρία.</p>
-        )}
+        {filtered.length === 0 && <p className="p-6 text-sm text-fluent-neutral-60 text-center">Καμία εταιρία.</p>}
         {filtered.map((c) => (
-          <Link
-            key={c.id}
-            href={`/admin/companies/${c.id}`}
-            className="flex items-center gap-4 px-4 py-3 hover:bg-black/[0.02]"
-          >
+          <Link key={c.id} href={`/admin/companies/${c.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-black/[0.02]">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-fluent-neutral-90 truncate">
                 {c.name}
                 {!c.isActive && <span className="ml-2 text-xs text-fluent-neutral-50">(ανενεργή)</span>}
               </p>
               <p className="text-xs text-fluent-neutral-60 font-mono">
-                {c.afm}{c.city ? ` · ${c.city}` : ''}
+                {c.afm ?? '—'}{c.city ? ` · ${c.city}` : ''}
               </p>
             </div>
-            <span
-              className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${
-                c.linkedToSoftOne ? 'bg-fluent-blue-50 text-fluent-blue-700' : 'bg-black/5 text-fluent-neutral-60'
-              }`}
-            >
+            <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${
+              c.linkedToSoftOne ? 'bg-fluent-blue-50 text-fluent-blue-700' : 'bg-black/5 text-fluent-neutral-60'
+            }`}>
               {c.linkedToSoftOne ? 'SoftOne' : 'Τοπική'}
             </span>
             <span className="text-xs text-fluent-neutral-60 tabular-nums w-32 text-right">
@@ -1073,7 +1507,7 @@ export function CompaniesClient({ companies }: { companies: Row[] }) {
 }
 ```
 
-- [ ] **Step 3: Πρόσθεσε το link στο admin nav**
+- [ ] **Step 3: Link στο admin nav**
 
 Στο `components/layout/sidebar.tsx`, στο import block των icons (γραμμές 5-25) πρόσθεσε:
 
@@ -1092,18 +1526,18 @@ export function CompaniesClient({ companies }: { companies: Row[] }) {
 - [ ] **Step 4: Επαλήθευσε**
 
 Run: `npx tsc --noEmit && npm run build`
-Expected: καθαρά. Άνοιξε `/admin/companies` — η λίστα φορτώνει κενή, το «Νέα εταιρία» ανοίγει τη φόρμα.
+Expected: καθαρά. Στο `/admin/companies`, δοκίμασε «Νέα εταιρία» με ΑΦΜ `094019245` — τα πεδία πρέπει να γεμίσουν από την ΑΑΔΕ.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add "app/(app)/admin/companies" components/layout/sidebar.tsx
-git commit -m "feat(companies): add admin company list with AFM lookup and creation"
+git add "app/(app)/admin/companies/page.tsx" "app/(app)/admin/companies/companies-client.tsx" components/layout/sidebar.tsx
+git commit -m "feat(companies): add admin company list with AADE lookup and SoftOne import"
 ```
 
 ---
 
-### Task 7: Καρτέλα εταιρίας με επαφές
+### Task 8: Καρτέλα εταιρίας με επαφές
 
 **Files:**
 - Create: `app/(app)/admin/companies/[id]/page.tsx`
@@ -1124,12 +1558,11 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
   const company = await prisma.company.findUnique({
     where: { id },
     include: {
-      contacts: { orderBy: [{ isPrimary: 'desc' }, { lastName: 'asc' }] },
+      contacts: { orderBy: [{ isPrimary: 'desc' }, { name: 'asc' }] },
+      activities: { orderBy: { order: 'asc' } },
       users: { select: { id: true, name: true, email: true, role: true } },
-      primaryProjects: { select: { id: true, name: true, status: true }, orderBy: { name: 'asc' } },
-      projectRoles: {
-        select: { id: true, role: true, project: { select: { id: true, name: true } } },
-      },
+      primaryProjects: { select: { id: true, name: true }, orderBy: { name: 'asc' } },
+      projectRoles: { select: { id: true, role: true, project: { select: { id: true, name: true } } } },
     },
   })
   if (!company) notFound()
@@ -1139,31 +1572,22 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
       <CompanyDetailClient
         company={{
           id: company.id,
-          afm: company.afm,
-          name: company.name,
-          doy: company.doy,
-          address: company.address,
-          city: company.city,
-          postalCode: company.postalCode,
-          country: company.country,
-          phone: company.phone,
-          email: company.email,
-          website: company.website,
-          notes: company.notes,
-          isActive: company.isActive,
-          linkedToSoftOne: company.softoneCustomerId !== null,
-          softoneCode: company.softoneCode,
+          NAME: company.NAME, AFM: company.AFM, CODE: company.CODE,
+          IRSDATA: company.IRSDATA, JOBTYPETRD: company.JOBTYPETRD,
+          ADDRESS: company.ADDRESS, ZIP: company.ZIP, DISTRICT: company.DISTRICT, CITY: company.CITY,
+          PHONE01: company.PHONE01, PHONE02: company.PHONE02,
+          EMAIL: company.EMAIL, WEBPAGE: company.WEBPAGE,
+          appNotes: company.appNotes, appLegalForm: company.appLegalForm,
+          aadeStatus: company.aadeStatus,
+          isActive: company.ISACTIVE === 1,
+          linkedToSoftOne: company.TRDR !== null,
         }}
+        activities={company.activities.map((a) => ({
+          id: a.id, code: a.code, description: a.description, kind: a.kind,
+        }))}
         contacts={company.contacts.map((c) => ({
-          id: c.id,
-          firstName: c.firstName,
-          lastName: c.lastName,
-          email: c.email,
-          phone: c.phone,
-          mobile: c.mobile,
-          jobTitle: c.jobTitle,
-          isPrimary: c.isPrimary,
-          notes: c.notes,
+          id: c.id, name: c.name, position: c.position, email: c.email,
+          phone: c.phone, mobile: c.mobile, isPrimary: c.isPrimary, notes: c.notes,
           hasLogin: c.userId !== null,
         }))}
         users={company.users}
@@ -1188,49 +1612,46 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
-  updateCompany, setCompanyActive, refreshFromSoftOne,
+  updateCompany, setCompanyActive, refreshFromAade,
   createContact, updateContact, deleteContact, promoteContactToUser,
 } from '../actions'
 
 type Company = {
-  id: string; afm: string; name: string; doy: string | null; address: string | null
-  city: string | null; postalCode: string | null; country: string | null
-  phone: string | null; email: string | null; website: string | null
-  notes: string | null; isActive: boolean; linkedToSoftOne: boolean; softoneCode: string | null
+  id: string; NAME: string; AFM: string | null; CODE: string | null
+  IRSDATA: string | null; JOBTYPETRD: string | null
+  ADDRESS: string | null; ZIP: string | null; DISTRICT: string | null; CITY: string | null
+  PHONE01: string | null; PHONE02: string | null; EMAIL: string | null; WEBPAGE: string | null
+  appNotes: string | null; appLegalForm: string | null; aadeStatus: string | null
+  isActive: boolean; linkedToSoftOne: boolean
 }
+type Activity = { id: string; code: string | null; description: string | null; kind: string }
 type Contact = {
-  id: string; firstName: string; lastName: string; email: string | null
-  phone: string | null; mobile: string | null; jobTitle: string | null
-  isPrimary: boolean; notes: string | null; hasLogin: boolean
+  id: string; name: string; position: string | null; email: string | null
+  phone: string | null; mobile: string | null; isPrimary: boolean; notes: string | null; hasLogin: boolean
 }
 type UserRow = { id: string; name: string | null; email: string; role: string }
-type ProjectRow = { id: string; name: string; status: string }
+type ProjectRow = { id: string; name: string }
 type RoleRow = { id: string; role: string; projectId: string; projectName: string }
 
 const ROLE_LABEL: Record<string, string> = {
-  partner: 'Συνεργάτης',
-  subcontractor: 'Υπεργολάβος',
-  consultant: 'Σύμβουλος',
-  other: 'Άλλο',
+  partner: 'Συνεργάτης', subcontractor: 'Υπεργολάβος', consultant: 'Σύμβουλος', other: 'Άλλο',
 }
 
-const EMPTY_CONTACT = {
-  firstName: '', lastName: '', email: '', phone: '', mobile: '',
-  jobTitle: '', isPrimary: false, notes: '',
-}
+const EMPTY_CONTACT = { name: '', position: '', email: '', phone: '', mobile: '', isPrimary: false, notes: '' }
 
 export function CompanyDetailClient({
-  company, contacts, users, clientProjects, roleProjects,
+  company, activities, contacts, users, clientProjects, roleProjects,
 }: {
-  company: Company; contacts: Contact[]; users: UserRow[]
+  company: Company; activities: Activity[]; contacts: Contact[]; users: UserRow[]
   clientProjects: ProjectRow[]; roleProjects: RoleRow[]
 }) {
   const router = useRouter()
   const [form, setForm] = useState({
-    name: company.name, doy: company.doy ?? '', address: company.address ?? '',
-    city: company.city ?? '', postalCode: company.postalCode ?? '', country: company.country ?? '',
-    phone: company.phone ?? '', email: company.email ?? '', website: company.website ?? '',
-    notes: company.notes ?? '',
+    NAME: company.NAME, AFM: company.AFM ?? '', IRSDATA: company.IRSDATA ?? '',
+    JOBTYPETRD: company.JOBTYPETRD ?? '', ADDRESS: company.ADDRESS ?? '',
+    ZIP: company.ZIP ?? '', DISTRICT: company.DISTRICT ?? '', CITY: company.CITY ?? '',
+    PHONE01: company.PHONE01 ?? '', PHONE02: company.PHONE02 ?? '',
+    EMAIL: company.EMAIL ?? '', WEBPAGE: company.WEBPAGE ?? '', appNotes: company.appNotes ?? '',
   })
   const [editingContact, setEditingContact] = useState<string | null>(null)
   const [contactForm, setContactForm] = useState({ ...EMPTY_CONTACT })
@@ -1275,72 +1696,76 @@ export function CompanyDetailClient({
       <div>
         <Link href="/admin/companies" className="text-xs text-fluent-blue-600">← Εταιρίες</Link>
         <div className="flex items-center gap-3 mt-1">
-          <h1 className="text-2xl font-semibold text-fluent-neutral-90">{company.name}</h1>
-          <span
-            className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${
-              company.linkedToSoftOne ? 'bg-fluent-blue-50 text-fluent-blue-700' : 'bg-black/5 text-fluent-neutral-60'
-            }`}
-          >
-            {company.linkedToSoftOne ? `SoftOne ${company.softoneCode ?? ''}` : 'Τοπική'}
+          <h1 className="text-2xl font-semibold text-fluent-neutral-90">{company.NAME}</h1>
+          <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${
+            company.linkedToSoftOne ? 'bg-fluent-blue-50 text-fluent-blue-700' : 'bg-black/5 text-fluent-neutral-60'
+          }`}>
+            {company.linkedToSoftOne ? `SoftOne ${company.CODE ?? ''}` : 'Τοπική'}
           </span>
         </div>
-        <p className="text-sm text-fluent-neutral-60 font-mono mt-1">ΑΦΜ {company.afm}</p>
+        <p className="text-sm text-fluent-neutral-60 font-mono mt-1">
+          ΑΦΜ {company.AFM ?? '—'}
+          {company.appLegalForm ? ` · ${company.appLegalForm}` : ''}
+          {company.aadeStatus ? ` · ${company.aadeStatus}` : ''}
+        </p>
       </div>
 
       {message && <p className="text-sm text-green-700 bg-green-50 rounded-md px-3 py-2">{message}</p>}
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{error}</p>}
 
-      {/* Στοιχεία */}
       <section className="rounded-lg border border-black/10 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-fluent-neutral-90">Στοιχεία</h2>
           <div className="flex gap-2">
-            {company.linkedToSoftOne && (
-              <Button
-                variant="secondary"
-                disabled={busy}
-                onClick={() => run(() => refreshFromSoftOne(company.id), () => setMessage('Ενημερώθηκε από SoftOne.'))}
-              >
-                Επαναφόρτωση από SoftOne
-              </Button>
-            )}
-            <Button
-              variant="secondary"
-              disabled={busy}
-              onClick={() => run(() => setCompanyActive(company.id, !company.isActive))}
-            >
+            <Button variant="secondary" disabled={busy || !company.AFM}
+              onClick={() => run(() => refreshFromAade(company.id), () => setMessage('Ενημερώθηκε από ΑΑΔΕ.'))}>
+              Ανανέωση από ΑΑΔΕ
+            </Button>
+            <Button variant="secondary" disabled={busy}
+              onClick={() => run(() => setCompanyActive(company.id, !company.isActive))}>
               {company.isActive ? 'Απενεργοποίηση' : 'Ενεργοποίηση'}
             </Button>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          {field('name', 'Επωνυμία')}
-          {field('doy', 'ΔΟΥ')}
-          {field('address', 'Διεύθυνση')}
-          {field('city', 'Πόλη')}
-          {field('postalCode', 'Τ.Κ.')}
-          {field('country', 'Χώρα')}
-          {field('phone', 'Τηλέφωνο')}
-          {field('email', 'Email')}
-          {field('website', 'Website')}
+          {field('NAME', 'Επωνυμία')}
+          {field('AFM', 'ΑΦΜ')}
+          {field('IRSDATA', 'Κωδ. ΔΟΥ')}
+          {field('JOBTYPETRD', 'Δραστηριότητα')}
+          {field('ADDRESS', 'Διεύθυνση')}
+          {field('CITY', 'Πόλη')}
+          {field('ZIP', 'Τ.Κ.')}
+          {field('DISTRICT', 'Περιοχή')}
+          {field('PHONE01', 'Τηλέφωνο')}
+          {field('PHONE02', 'Τηλέφωνο 2')}
+          {field('EMAIL', 'Email')}
+          {field('WEBPAGE', 'Website')}
         </div>
-        <Button
-          className="mt-3"
-          disabled={busy}
-          onClick={() => run(() => updateCompany(company.id, form), () => setMessage('Αποθηκεύτηκε.'))}
-        >
+        <Button className="mt-3" disabled={busy}
+          onClick={() => run(() => updateCompany(company.id, form), () => setMessage('Αποθηκεύτηκε.'))}>
           Αποθήκευση
         </Button>
+
+        {activities.length > 0 && (
+          <div className="mt-4 border-t border-black/5 pt-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-50 mb-2">
+              Δραστηριότητες (ΚΑΔ)
+            </p>
+            {activities.map((a) => (
+              <p key={a.id} className="text-xs text-fluent-neutral-70 py-0.5">
+                <span className="font-mono">{a.code ?? '—'}</span> · {a.description ?? '—'}
+                {a.kind === 'PRIMARY' && <span className="ml-2 text-[10px] uppercase font-semibold text-fluent-blue-700">κύρια</span>}
+              </p>
+            ))}
+          </div>
+        )}
       </section>
 
-      {/* Επαφές */}
       <section className="rounded-lg border border-black/10 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-fluent-neutral-90">Επαφές</h2>
-          <Button
-            variant="secondary"
-            onClick={() => { setAddingContact((v) => !v); setContactForm({ ...EMPTY_CONTACT }); setEditingContact(null) }}
-          >
+          <Button variant="secondary"
+            onClick={() => { setAddingContact((v) => !v); setContactForm({ ...EMPTY_CONTACT }); setEditingContact(null) }}>
             {addingContact ? 'Άκυρο' : 'Νέα επαφή'}
           </Button>
         </div>
@@ -1348,32 +1773,22 @@ export function CompanyDetailClient({
         {(addingContact || editingContact) && (
           <div className="mb-4 rounded-md bg-black/[0.02] p-3 space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              {cField('firstName', 'Όνομα')}
-              {cField('lastName', 'Επώνυμο')}
+              {cField('name', 'Ονοματεπώνυμο')}
+              {cField('position', 'Θέση')}
               {cField('email', 'Email')}
-              {cField('jobTitle', 'Θέση')}
               {cField('phone', 'Τηλέφωνο')}
               {cField('mobile', 'Κινητό')}
             </div>
             <label className="flex items-center gap-2 text-xs text-fluent-neutral-70">
-              <input
-                type="checkbox"
-                checked={contactForm.isPrimary}
-                onChange={(e) => setContactForm({ ...contactForm, isPrimary: e.target.checked })}
-              />
+              <input type="checkbox" checked={contactForm.isPrimary}
+                onChange={(e) => setContactForm({ ...contactForm, isPrimary: e.target.checked })} />
               Κύρια επαφή
             </label>
-            <Button
-              disabled={busy}
-              onClick={() =>
-                run(
-                  () => editingContact
-                    ? updateContact(editingContact, contactForm)
-                    : createContact(company.id, contactForm),
-                  () => { setAddingContact(false); setEditingContact(null); setContactForm({ ...EMPTY_CONTACT }) },
-                )
-              }
-            >
+            <Button disabled={busy}
+              onClick={() => run(
+                () => editingContact ? updateContact(editingContact, contactForm) : createContact(company.id, contactForm),
+                () => { setAddingContact(false); setEditingContact(null); setContactForm({ ...EMPTY_CONTACT }) },
+              )}>
               Αποθήκευση
             </Button>
           </div>
@@ -1385,40 +1800,33 @@ export function CompanyDetailClient({
             <div key={c.id} className="flex items-center gap-3 py-3">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-fluent-neutral-90">
-                  {c.firstName} {c.lastName}
+                  {c.name}
                   {c.isPrimary && <span className="ml-2 text-[10px] uppercase font-semibold text-fluent-blue-700">κύρια</span>}
                 </p>
                 <p className="text-xs text-fluent-neutral-60">
-                  {[c.jobTitle, c.email, c.phone || c.mobile].filter(Boolean).join(' · ') || '—'}
+                  {[c.position, c.email, c.phone || c.mobile].filter(Boolean).join(' · ') || '—'}
                 </p>
               </div>
               {c.hasLogin ? (
                 <span className="text-[10px] uppercase font-semibold text-green-700">έχει λογαριασμό</span>
               ) : (
-                <Button
-                  variant="secondary"
-                  disabled={busy || !c.email}
-                  onClick={() =>
-                    run(
-                      () => promoteContactToUser(c.id),
-                      (r: any) => setMessage(`Λογαριασμός: ${r.email} — προσωρινός κωδικός: ${r.tempPassword} (εμφανίζεται μία φορά)`),
-                    )
-                  }
-                >
+                <Button variant="secondary" disabled={busy || !c.email}
+                  onClick={() => run(
+                    () => promoteContactToUser(c.id),
+                    (r) => setMessage(
+                      `Λογαριασμός: ${(r as { email: string }).email} — προσωρινός κωδικός: ${(r as { tempPassword: string }).tempPassword} (εμφανίζεται μία φορά)`,
+                    ),
+                  )}>
                   Δώσε πρόσβαση
                 </Button>
               )}
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setEditingContact(c.id); setAddingContact(false)
-                  setContactForm({
-                    firstName: c.firstName, lastName: c.lastName, email: c.email ?? '',
-                    phone: c.phone ?? '', mobile: c.mobile ?? '', jobTitle: c.jobTitle ?? '',
-                    isPrimary: c.isPrimary, notes: c.notes ?? '',
-                  })
-                }}
-              >
+              <Button variant="secondary" onClick={() => {
+                setEditingContact(c.id); setAddingContact(false)
+                setContactForm({
+                  name: c.name, position: c.position ?? '', email: c.email ?? '',
+                  phone: c.phone ?? '', mobile: c.mobile ?? '', isPrimary: c.isPrimary, notes: c.notes ?? '',
+                })
+              }}>
                 Επεξεργασία
               </Button>
               <Button variant="secondary" disabled={busy} onClick={() => run(() => deleteContact(c.id))}>
@@ -1429,7 +1837,6 @@ export function CompanyDetailClient({
         </div>
       </section>
 
-      {/* Έργα & χρήστες */}
       <section className="rounded-lg border border-black/10 bg-white p-4">
         <h2 className="text-sm font-semibold text-fluent-neutral-90 mb-3">Έργα</h2>
         {clientProjects.length === 0 && roleProjects.length === 0 && (
@@ -1466,7 +1873,7 @@ export function CompanyDetailClient({
 Run: `npx tsc --noEmit && npm run build`
 Expected: καθαρά.
 
-Δοκίμασε στο `/admin/companies`: δημιούργησε εταιρία με ΑΦΜ (με και χωρίς SoftOne match), πρόσθεσε επαφή, δώσε της πρόσβαση, επιβεβαίωσε ότι εμφανίζεται ο προσωρινός κωδικός μία φορά και ότι ο χρήστης υπάρχει στο `/admin/users`.
+Δοκίμασε: δημιούργησε εταιρία με ΑΦΜ, πρόσθεσε επαφή, δώσε της πρόσβαση, επιβεβαίωσε ότι εμφανίζεται ο προσωρινός κωδικός μία φορά και ότι ο χρήστης υπάρχει στο `/admin/users`.
 
 - [ ] **Step 4: Commit**
 
@@ -1477,7 +1884,7 @@ git commit -m "feat(companies): add company detail page with contacts and access
 
 ---
 
-### Task 8: Backfill υπαρχόντων εταιριών από τους χρήστες
+### Task 9: Backfill υπαρχόντων εταιριών από τους χρήστες
 
 **Files:**
 - Create: `prisma/migrations/<timestamp>_backfill_companies/migration.sql`
@@ -1485,36 +1892,39 @@ git commit -m "feat(companies): add company detail page with contacts and access
 - [ ] **Step 1: Δημιούργησε κενό migration**
 
 Run: `npx prisma migrate dev --create-only --name backfill_companies`
-Expected: νέος φάκελος με κενό (ή σχεδόν κενό) `migration.sql`.
 
 - [ ] **Step 2: Γράψε το SQL**
 
 Αντικατέστησε το περιεχόμενο του `migration.sql`:
 
 ```sql
--- Μία Company ανά διακριτό ΑΦΜ που υπάρχει σήμερα στους χρήστες.
--- Το ΑΦΜ είναι το φυσικό κλειδί· κρατάμε το πρώτο companyName/softoneCustomerId
--- που συναντάμε (MIN) ως αντιπροσωπευτικό.
-INSERT INTO `Company` (`id`, `afm`, `name`, `softoneCustomerId`, `source`, `country`, `isActive`, `createdAt`, `updatedAt`)
+-- Εταιρίες από τα ΑΦΜ που ήδη υπάρχουν στους χρήστες, ΜΟΝΟ όσες δεν καλύφθηκαν
+-- ήδη από τη μαζική εισαγωγή SoftOne (η οποία ταιριάζει με TRDR).
+INSERT INTO `Company` (`id`, `NAME`, `AFM`, `SODTYPE`, `TRDR`, `ISACTIVE`, `createdAt`, `updatedAt`)
 SELECT
   CONCAT('cmp_', LOWER(HEX(RANDOM_BYTES(12)))),
-  u.`companyAfm`,
   COALESCE(MIN(u.`companyName`), u.`companyAfm`),
+  u.`companyAfm`,
+  13,
   MIN(u.`softoneCustomerId`),
-  CASE WHEN MIN(u.`softoneCustomerId`) IS NULL THEN 'manual' ELSE 'softone' END,
-  'GR',
   1,
   NOW(3),
   NOW(3)
 FROM `User` u
 WHERE u.`companyAfm` IS NOT NULL
   AND u.`companyAfm` <> ''
-  AND NOT EXISTS (SELECT 1 FROM `Company` c WHERE c.`afm` = u.`companyAfm`)
+  AND NOT EXISTS (SELECT 1 FROM `Company` c WHERE c.`AFM` = u.`companyAfm`)
 GROUP BY u.`companyAfm`;
 
--- Σύνδεσε κάθε χρήστη με την εταιρία του ΑΦΜ του.
+-- Σύνδεσε κάθε χρήστη με εταιρία ίδιου ΑΦΜ. Όπου υπάρχουν πολλές γραμμές ανά
+-- ΑΦΜ (νόμιμο), προτίμησε την ενεργή με το μικρότερο id ώστε να είναι ντετερμινιστικό.
 UPDATE `User` u
-JOIN `Company` c ON c.`afm` = u.`companyAfm`
+JOIN (
+  SELECT `AFM`, MIN(`id`) AS `id`
+  FROM `Company`
+  WHERE `AFM` IS NOT NULL AND `AFM` <> '' AND `ISACTIVE` = 1
+  GROUP BY `AFM`
+) c ON c.`AFM` = u.`companyAfm`
 SET u.`companyId` = c.`id`
 WHERE u.`companyId` IS NULL;
 
@@ -1526,26 +1936,25 @@ WHERE p.`primaryCompanyId` IS NULL
   AND u.`companyId` IS NOT NULL;
 ```
 
-Σημείωση: το `NOT EXISTS` κάνει το migration idempotent — μπορεί να ξανατρέξει χωρίς διπλοεγγραφές.
+Το `NOT EXISTS` και τα `WHERE … IS NULL` κάνουν το migration idempotent.
 
 - [ ] **Step 3: Εφάρμοσε**
 
 Run: `npx prisma migrate deploy`
 Expected: «All migrations have been successfully applied».
 
-- [ ] **Step 4: Επαλήθευσε τα δεδομένα**
+- [ ] **Step 4: Επαλήθευσε**
 
 Run:
 ```bash
 npx prisma db execute --stdin <<'SQL'
 SELECT
   (SELECT COUNT(*) FROM Company) AS companies,
-  (SELECT COUNT(DISTINCT companyAfm) FROM User WHERE companyAfm IS NOT NULL AND companyAfm <> '') AS distinct_afms,
   (SELECT COUNT(*) FROM User WHERE companyAfm IS NOT NULL AND companyAfm <> '' AND companyId IS NULL) AS unlinked_users,
   (SELECT COUNT(*) FROM Project WHERE customerUserId IS NOT NULL AND primaryCompanyId IS NULL) AS unlinked_projects;
 SQL
 ```
-Expected: `companies` = `distinct_afms`, `unlinked_users` = 0. Το `unlinked_projects` μπορεί να είναι > 0 μόνο αν κάποιο `customerUserId` δείχνει σε χρήστη χωρίς ΑΦΜ — έλεγξέ τα χειροκίνητα.
+Expected: `unlinked_users` = 0. Το `unlinked_projects` > 0 μόνο αν κάποιο `customerUserId` δείχνει σε χρήστη χωρίς ΑΦΜ.
 
 - [ ] **Step 5: Commit**
 
@@ -1556,14 +1965,14 @@ git commit -m "feat(db): backfill companies from existing user company fields"
 
 ---
 
-### Task 9: Στρέψε το SoftOne project sync στην κύρια εταιρία
+### Task 10: Στρέψε το SoftOne project sync στην κύρια εταιρία
 
 **Files:**
 - Modify: `lib/softone-contacts.ts:406-440`
 
 - [ ] **Step 1: Άλλαξε την πηγή του TRDR**
 
-Στη `syncProjectToSoftOne`, αντικατέστησε το block που διαβάζει τον πελάτη:
+Στη `syncProjectToSoftOne`, αντικατέστησε:
 
 ```ts
 // ΠΡΙΝ
@@ -1583,12 +1992,16 @@ const customer = project.customerUserId
 const customer = project.primaryCompanyId
   ? await prisma.company.findUnique({
       where: { id: project.primaryCompanyId },
-      select: { softoneCustomerId: true },
+      select: { TRDR: true },
     })
   : null;
 ```
 
-Η γραμμή `TRDR: customer?.softoneCustomerId ?? null,` μένει ως έχει.
+Και τη γραμμή του payload:
+
+```ts
+    TRDR: customer?.TRDR ?? null,
+```
 
 - [ ] **Step 2: Έλεγξε**
 
@@ -1604,106 +2017,38 @@ git commit -m "refactor(softone): source PRJC.TRDR from the project's primary co
 
 ---
 
-### Task 10: Πελάτης και συνεργαζόμενες εταιρίες στη φόρμα έργου
+### Task 11: Πελάτης στη φόρμα έργου
 
 **Files:**
 - Modify: `app/(app)/projects/project-form.tsx`
-- Modify: `app/(app)/admin/companies/actions.ts` (νέα actions)
-
-- [ ] **Step 1: Πρόσθεσε actions για τη σύνδεση έργου–εταιρίας**
-
-Στο τέλος του `app/(app)/admin/companies/actions.ts`:
-
-```ts
-/** Ορίζει τον πελάτη ενός έργου. `null` καθαρίζει τη σύνδεση. */
-export async function setProjectPrimaryCompany(projectId: string, companyId: string | null) {
-  await requireAdmin()
-  if (companyId) {
-    // Ο πελάτης δεν διπλοεγγράφεται ως ProjectCompany.
-    await prisma.projectCompany.deleteMany({ where: { projectId, companyId } })
-  }
-  await prisma.project.update({ where: { id: projectId }, data: { primaryCompanyId: companyId } })
-  revalidatePath(`/projects/${projectId}`)
-  return { ok: true as const }
-}
-
-export async function addProjectCompany(
-  projectId: string,
-  companyId: string,
-  role: 'partner' | 'subcontractor' | 'consultant' | 'other',
-) {
-  await requireAdmin()
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { primaryCompanyId: true },
-  })
-  if (project?.primaryCompanyId === companyId) {
-    return { ok: false as const, error: 'Η εταιρία είναι ήδη ο πελάτης του έργου.' }
-  }
-  const exists = await prisma.projectCompany.findUnique({
-    where: { projectId_companyId: { projectId, companyId } },
-  })
-  if (exists) return { ok: false as const, error: 'Η εταιρία είναι ήδη συνδεδεμένη.' }
-
-  await prisma.projectCompany.create({ data: { projectId, companyId, role } })
-  revalidatePath(`/projects/${projectId}`)
-  return { ok: true as const }
-}
-
-export async function removeProjectCompany(id: string) {
-  await requireAdmin()
-  const row = await prisma.projectCompany.findUnique({ where: { id }, select: { projectId: true } })
-  if (!row) return { ok: false as const, error: 'Δεν βρέθηκε η σύνδεση.' }
-  await prisma.projectCompany.delete({ where: { id } })
-  revalidatePath(`/projects/${row.projectId}`)
-  return { ok: true as const }
-}
-
-/** Λίστα εταιριών για pickers. Τοπική αναζήτηση, δεν αγγίζει SoftOne. */
-export async function searchCompanies(q: string) {
-  await requireAdmin()
-  const needle = q.trim()
-  const companies = await prisma.company.findMany({
-    where: {
-      isActive: true,
-      ...(needle ? { OR: [{ name: { contains: needle } }, { afm: { contains: needle } }] } : {}),
-    },
-    select: { id: true, name: true, afm: true },
-    orderBy: { name: 'asc' },
-    take: 20,
-  })
-  return companies
-}
-```
-
-- [ ] **Step 2: Πρόσθεσε το πεδίο πελάτη στη φόρμα έργου**
 
 Προσοχή: το `Project.customerUserId` **δεν τίθεται σήμερα από καμία φόρμα** — μόνο διαβάζεται
 (`app/(app)/projects/[id]/page.tsx:148`, `lib/softone-contacts.ts:418`). Άρα αυτό είναι ο
 πρώτος τρόπος να οριστεί πελάτης έργου από το UI· δεν αντικαθιστά υπάρχον πεδίο.
 
-Στο `app/(app)/projects/project-form.tsx`:
+- [ ] **Step 1: Πρόσθεσε τον τύπο και το state**
 
-Πρόσθεσε στον τύπο `ProjectFormInitial`:
+Στο `ProjectFormInitial`:
 
 ```ts
   primaryCompanyId?: string | null;
 ```
 
-Πρόσθεσε στα props του component ένα `companies` array (πέρασέ το από τον caller, ίδιο
-pattern με το υπάρχον `users`):
+Νέος exported τύπος δίπλα στο `UserOption`:
 
 ```ts
-export type CompanyOption = { id: string; name: string; afm: string };
+export type CompanyOption = { id: string; name: string; afm: string | null };
 ```
 
-Πρόσθεσε state δίπλα στα υπόλοιπα `useState`:
+Νέα prop `companies: CompanyOption[]` και state:
 
 ```ts
   const [primaryCompanyId, setPrimaryCompanyId] = useState(initial?.primaryCompanyId ?? '');
 ```
 
-Και το πεδίο αμέσως μετά το block «Ιδιοκτήτης» (ίδιο ακριβώς styling με το `ownerId` select):
+- [ ] **Step 2: Πρόσθεσε το πεδίο**
+
+Αμέσως μετά το block «Ιδιοκτήτης» (ίδιο ακριβώς styling με το `ownerId` select):
 
 ```tsx
       <div>
@@ -1716,7 +2061,7 @@ export type CompanyOption = { id: string; name: string; afm: string };
         >
           <option value="">— καμία —</option>
           {companies.map((c) => (
-            <option key={c.id} value={c.id}>{c.name} ({c.afm})</option>
+            <option key={c.id} value={c.id}>{c.name}{c.afm ? ` (${c.afm})` : ''}</option>
           ))}
         </select>
         <p className="mt-1 text-[10px] text-fluent-neutral-60">
@@ -1725,117 +2070,115 @@ export type CompanyOption = { id: string; name: string; afm: string };
       </div>
 ```
 
-Στον caller της φόρμας, φόρτωσε τις εταιρίες:
+- [ ] **Step 3: Τροφοδότησε και αποθήκευσε**
+
+Στον caller της φόρμας:
 
 ```ts
 const companies = await prisma.company.findMany({
-  where: { isActive: true },
-  select: { id: true, name: true, afm: true },
-  orderBy: { name: 'asc' },
+  where: { ISACTIVE: 1 },
+  select: { id: true, NAME: true, AFM: true },
+  orderBy: { NAME: 'asc' },
 });
 ```
+(και map σε `{ id, name: c.NAME, afm: c.AFM }`)
 
-Στο server action που αποθηκεύει το έργο, διάβασε και πέρασε το πεδίο:
+Στο server action αποθήκευσης:
 
 ```ts
   const primaryCompanyId = String(formData.get('primaryCompanyId') ?? '').trim() || null;
 ```
 
-και πρόσθεσέ το στο `data` του `prisma.project.create` / `prisma.project.update`:
+και στο `data` του `create`/`update`:
 
 ```ts
     primaryCompanyId,
 ```
 
-- [ ] **Step 3: Επαλήθευσε**
+- [ ] **Step 4: Επαλήθευσε**
 
 Run: `npx tsc --noEmit && npm run build`
-Expected: καθαρά. Δημιούργησε έργο με πελάτη, δες ότι εμφανίζεται στην καρτέλα της εταιρίας ως «πελάτης».
+Expected: καθαρά. Δημιούργησε έργο με πελάτη· εμφανίζεται στην καρτέλα της εταιρίας ως «πελάτης».
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add "app/(app)/projects/project-form.tsx" "app/(app)/admin/companies/actions.ts"
-git commit -m "feat(projects): associate a project with a client company and roled partners"
+git add "app/(app)/projects/project-form.tsx"
+git commit -m "feat(projects): assign a client company from the project form"
 ```
 
 ---
 
-### Task 11: Στρέψε τη διαχείριση χρηστών στη σχέση εταιρίας
+### Task 12: Στρέψε τη διαχείριση χρηστών στη σχέση εταιρίας
 
 **Files:**
-- Modify: `app/(app)/admin/users/page.tsx`
-- Modify: `app/(app)/admin/users/actions.ts`
+- Modify: `app/(app)/admin/users/page.tsx`, `actions.ts`
 - Modify: `components/admin/user-management.tsx`
 
 - [ ] **Step 1: Διάβασε την εταιρία μέσω σχέσης**
 
-Στο `app/(app)/admin/users/page.tsx`, πρόσθεσε στο `select` του query:
+Στο `app/(app)/admin/users/page.tsx`, στο `select` του users query:
 
 ```ts
         companyId: true,
-        company: { select: { id: true, name: true, afm: true } },
+        company: { select: { id: true, NAME: true, AFM: true } },
 ```
 
-και στο mapping που περνά στο `user-management`:
+στο mapping:
 
 ```ts
     companyId: u.companyId,
-    companyLabel: u.company ? `${u.company.name} (${u.company.afm})` : null,
+    companyLabel: u.company ? `${u.company.NAME}${u.company.AFM ? ` (${u.company.AFM})` : ''}` : null,
+```
+
+και φόρτωσε τη λίστα εταιριών για το picker:
+
+```ts
+    prisma.company.findMany({
+      where: { ISACTIVE: 1 },
+      select: { id: true, NAME: true, AFM: true },
+      orderBy: { NAME: 'asc' },
+    }),
 ```
 
 - [ ] **Step 2: Αποθήκευσε companyId**
 
-Στο `app/(app)/admin/users/actions.ts`, στη συνάρτηση που διαβάζει το form payload, πρόσθεσε:
+Στο `app/(app)/admin/users/actions.ts`, στη συνάρτηση που διαβάζει το form payload:
 
 ```ts
   const companyId = String(formData.get('companyId') ?? '').trim() || null;
 ```
 
-και πέρασέ το στο data object του create/update μαζί με τα υπάρχοντα πεδία:
+Πέρασέ το στο data object, και γέμισε τα denormalized πεδία από την εταιρία:
 
 ```ts
     companyId,
 ```
 
-Τα υπάρχοντα `companyName` / `companyAfm` **μένουν** — γράφονται ακόμα ως denormalized αντίγραφα για μία έκδοση. Αν υπάρχει `companyId`, γέμισέ τα από την εταιρία:
-
 ```ts
   if (companyId) {
     const c = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { name: true, afm: true, softoneCustomerId: true },
+      select: { NAME: true, AFM: true, TRDR: true },
     });
     if (c) {
-      data.companyName = c.name;
-      data.companyAfm = c.afm;
-      if (safeType === 'customer') data.softoneCustomerId = c.softoneCustomerId;
+      data.companyName = c.NAME;
+      data.companyAfm = c.AFM;
+      if (safeType === 'customer') data.softoneCustomerId = c.TRDR;
     }
   }
 ```
 
-- [ ] **Step 3: Δώσε στους customers picker τοπικής εταιρίας**
+- [ ] **Step 3: Picker τοπικής εταιρίας για customers**
 
-Στο `components/admin/user-management.tsx` (γραμμές ~426-452) υπάρχουν σήμερα δύο πεδία:
-το «Εταιρεία (από SoftOne)» combobox και το «Α.Φ.Μ. εταιρείας (προαιρετικό override)» input.
+Στο `components/admin/user-management.tsx` (γραμμές ~426-452) υπάρχουν το «Εταιρεία (από SoftOne)» combobox και το «Α.Φ.Μ. εταιρείας (προαιρετικό override)» input. Για `userType === 'customer'` αντικαθίστανται· για employees/suppliers μένουν — το `SoftOneCompanyCombobox` **δεν διαγράφεται**.
 
-Για `userType === 'customer'` αυτά αντικαθίστανται από επιλογή τοπικής εταιρίας. Για
-employees/suppliers μένουν ως έχουν — το `SoftOneCompanyCombobox` **δεν διαγράφεται**.
-
-Πρόσθεσε στα props του component:
-
-```ts
-  companies: { id: string; name: string; afm: string }[];
-```
-
-Και αντικατέστησε το block των δύο πεδίων με:
+Πρόσθεσε prop `companies: { id: string; NAME: string; AFM: string | null }[]` και `companyId: string | null` στον τύπο του `initial`, και αντικατέστησε το block με:
 
 ```tsx
         {userType === 'customer' ? (
           <div>
-            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
-              Εταιρία
-            </label>
+            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Εταιρία</label>
             <select
               name="companyId"
               defaultValue={initial?.companyId ?? ''}
@@ -1843,12 +2186,12 @@ employees/suppliers μένουν ως έχουν — το `SoftOneCompanyCombobo
             >
               <option value="">— καμία —</option>
               {companies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c.afm})</option>
+                <option key={c.id} value={c.id}>{c.NAME}{c.AFM ? ` (${c.AFM})` : ''}</option>
               ))}
             </select>
             <p className="mt-1 text-[10px] text-fluent-neutral-60">
               Διαχείριση εταιριών και επαφών στο <code>/admin/companies</code>.
-              Η επωνυμία και το ΑΦΜ συμπληρώνονται αυτόματα από την εταιρία.
+              Η επωνυμία και το ΑΦΜ συμπληρώνονται αυτόματα.
             </p>
           </div>
         ) : (
@@ -1884,22 +2227,10 @@ employees/suppliers μένουν ως έχουν — το `SoftOneCompanyCombobo
         )}
 ```
 
-Πρόσθεσε επίσης `companyId: string | null` στον τύπο της prop `initial` (γύρω στη γραμμή 40,
-δίπλα στα `companyName` / `companyAfm`), και πέρασε τη λίστα εταιριών από το
-`app/(app)/admin/users/page.tsx`:
-
-```ts
-    prisma.company.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true, afm: true },
-      orderBy: { name: 'asc' },
-    }),
-```
-
 - [ ] **Step 4: Επαλήθευσε**
 
 Run: `npx tsc --noEmit && npm run build`
-Expected: καθαρά. Στο `/admin/users`, δημιούργησε customer χρήστη επιλέγοντας εταιρία και επιβεβαίωσε ότι εμφανίζεται στην καρτέλα της εταιρίας.
+Expected: καθαρά. Δημιούργησε customer χρήστη με εταιρία· εμφανίζεται στην καρτέλα της.
 
 - [ ] **Step 5: Commit**
 
@@ -1910,7 +2241,7 @@ git commit -m "feat(admin): link users to companies through the new relation"
 
 ---
 
-### Task 12: Τελικός έλεγχος
+### Task 13: Τελικός έλεγχος
 
 - [ ] **Step 1: Όλα τα tests**
 
@@ -1922,20 +2253,22 @@ Expected: όλα PASS
 Run: `npx tsc --noEmit && npm run build`
 Expected: καθαρά
 
-- [ ] **Step 3: Έλεγχος ακεραιότητας δεδομένων**
+- [ ] **Step 3: Ακεραιότητα δεδομένων**
 
 Run:
 ```bash
 npx prisma db execute --stdin <<'SQL'
-SELECT 'διπλά ΑΦΜ' AS check_name, COUNT(*) AS bad FROM (
-  SELECT afm FROM Company GROUP BY afm HAVING COUNT(*) > 1
+SELECT 'διπλά TRDR' AS check_name, COUNT(*) AS bad FROM (
+  SELECT TRDR FROM Company WHERE TRDR IS NOT NULL GROUP BY TRDR HAVING COUNT(*) > 1
 ) x
 UNION ALL
 SELECT 'πελάτης διπλοεγγεγραμμένος ως συνεργάτης', COUNT(*) FROM ProjectCompany pc
   JOIN Project p ON p.id = pc.projectId AND p.primaryCompanyId = pc.companyId
 UNION ALL
 SELECT 'επαφές με userId που δεν υπάρχει', COUNT(*) FROM Contact c
-  LEFT JOIN User u ON u.id = c.userId WHERE c.userId IS NOT NULL AND u.id IS NULL;
+  LEFT JOIN User u ON u.id = c.userId WHERE c.userId IS NOT NULL AND u.id IS NULL
+UNION ALL
+SELECT 'εταιρίες χωρίς επωνυμία', COUNT(*) FROM Company WHERE NAME IS NULL OR NAME = '';
 SQL
 ```
 Expected: `bad` = 0 σε όλες τις γραμμές.
@@ -1951,6 +2284,7 @@ git commit -m "chore(companies): final verification fixes"
 
 ## Τι ΔΕΝ κάνει αυτό το plan
 
-- **Δεν στέλνει εταιρίες στο SoftOne.** Τοπικές εταιρίες μένουν τοπικές (απόφαση spec).
-- **Δεν αφαιρεί τα `User.companyName` / `companyAfm`.** Μένουν μία έκδοση ως denormalized αντίγραφα· η αφαίρεσή τους είναι ξεχωριστό follow-up.
+- **Δεν στέλνει εταιρίες στο SoftOne.** Η ροή είναι μονόδρομη: SoftOne → εμάς.
+- **Δεν τραβάει ΓΕΜΗ.** Το damask το κάνει· εδώ η ΑΑΔΕ αρκεί. Το model αφήνει χώρο.
+- **Δεν αφαιρεί τα `User.companyName` / `companyAfm`.** Μένουν μία έκδοση ως denormalized αντίγραφα.
 - **Δεν αγγίζει το portal.** `app/(portal)/`, `lib/portal/scope.ts` και το `Comment.visibility` ανήκουν στη Φάση Β.
