@@ -76,9 +76,10 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  contacts Contact[]
-  users    User[]
-  projects Project[]
+  contacts        Contact[]
+  users           User[]
+  primaryProjects Project[]        @relation("ProjectPrimaryCompany")
+  projectRoles    ProjectCompany[]
 
   @@index([name])
   @@index([isActive])
@@ -109,6 +110,62 @@ model Contact {
   @@index([email])
 }
 ```
+
+## Projects ↔ companies
+
+A project has **one client** and, optionally, **other companies in other roles**. Those two
+things have different security semantics, so they are stored differently rather than as one
+table with a flag:
+
+```prisma
+enum ProjectCompanyRole {
+  partner
+  subcontractor
+  consultant
+  other
+}
+
+model Project {
+  // …
+  primaryCompanyId String?   // the client: ERP TRDR source, and the only
+                             // company that sees this project in the portal
+  primaryCompany   Company?  @relation("ProjectPrimaryCompany",
+                               fields: [primaryCompanyId], references: [id],
+                               onDelete: SetNull)
+  companies        ProjectCompany[]
+}
+
+model ProjectCompany {
+  id        String             @id @default(cuid())
+  projectId String
+  companyId String
+  role      ProjectCompanyRole
+  notes     String?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, companyId])
+  @@index([companyId])
+}
+```
+
+Note there is no `client` value in the role enum, and no `isPrimary` boolean. The client *is*
+`primaryCompanyId`. This is deliberate: portal scoping reads `primaryCompanyId` and nothing
+else, so a partner or subcontractor **cannot** be exposed by a mis-set flag — the leak is
+impossible by construction rather than prevented by remembering to check. MySQL also cannot
+express "exactly one primary row per project" as a partial unique index, so a boolean would
+need application-level enforcement that a foreign key gives for free.
+
+Changing the client is one transaction: move the outgoing company into `ProjectCompany` with
+an appropriate role if it should stay associated, then set the new `primaryCompanyId`. The
+admin UI presents both in a single list with the client marked, so the split is invisible to
+the user.
+
+`PRJC.TRDR` in `syncProjectToSoftOne` comes from
+`primaryCompany.softoneCustomerId` — SoftOne's PRJC accepts one TRDR, and the client is
+unambiguously it. When the primary company has no SoftOne linkage, `TRDR` is null, exactly as
+it is today for projects with no customer.
 
 `Contact.userId` is the "optional login" hinge. A contact is a person we know about; a user
 is a person who can sign in. Promoting a contact creates a `User` with
@@ -146,29 +203,35 @@ Windows-1253 decoding — all already handled by `lib/softone.ts`.
 | --- | --- |
 | `/admin/companies` | List + search by name/ΑΦΜ, badge for SoftOne-linked vs local-only |
 | `/admin/companies/new` | ΑΦΜ field → «Αναζήτηση» → prefilled form, or manual entry if not found |
-| `/admin/companies/[id]` | Edit details; contacts CRUD; linked users; linked projects; «Επαναφόρτωση από SoftOne» when linked |
+| `/admin/companies/[id]` | Edit details; contacts CRUD; linked users; projects (as client and in other roles); «Επαναφόρτωση από SoftOne» when linked |
+
+The project form gains a company picker: one field for the client
+(`primaryCompanyId`) and a repeatable row for additional companies with a role. Both search
+the local `Company` table, not SoftOne.
 
 These follow the existing `app/(app)/admin/*` conventions (see `ticket-sources` and `users`),
 admin-only, Greek UI.
 
 ## Migration
 
-1. Add `Company` and `Contact` tables; add `User.companyId` and `Project.companyId`
-   (both nullable).
+1. Add `Company`, `Contact` and `ProjectCompany` tables; add `User.companyId` and
+   `Project.primaryCompanyId` (both nullable).
 2. Backfill: for each distinct non-null `User.companyAfm`, create a `Company` with that ΑΦΜ,
    taking `name` from `companyName` and `softoneCustomerId` from the user. Link every
    matching user via `companyId`.
-3. Backfill `Project.companyId` from `customerUserId → User.companyId`.
-4. Update the ~5 files that read the old columns (`admin/users/*`,
+3. Backfill `Project.primaryCompanyId` from `customerUserId → User.companyId`.
+4. Point `syncProjectToSoftOne` at `primaryCompany.softoneCustomerId` instead of
+   `customerUserId → User.softoneCustomerId`.
+5. Update the ~5 files that read the old columns (`admin/users/*`,
    `components/admin/user-management.tsx`, `lib/softone-contacts.ts`) to read through the
    relation.
-5. Leave `User.companyName` / `companyAfm` in place for one release as read-only
+6. Leave `User.companyName` / `companyAfm` in place for one release as read-only
    denormalized copies, then drop them in a follow-up. `User.softoneCustomerId` stays —
    `lib/softone-contacts.ts` writes contact rows against it.
 
 `Project.customerUserId` is **kept**. It now means "primary contact for this project"
-(the mailto default), while `Project.companyId` means "who the project is delivered to".
-Distinct concepts that were previously conflated.
+(the mailto default), while `primaryCompanyId` means "which company the project is delivered
+to". Distinct concepts that were previously conflated in one column.
 
 ---
 
@@ -223,9 +286,13 @@ scoping bug can live.
 company    = me.company                      // via User.companyId
 userIds    = User where companyId = company
 emails     = userIds.email ∪ Contact.email where companyId = company
-projectIds = Project where companyId = company
+projectIds = Project where primaryCompanyId = company     // client only
 tickets    = Ticket where reporterEmail IN emails
 ```
+
+`projectIds` reads `primaryCompanyId` and never joins `ProjectCompany`. A company associated
+as partner, subcontractor or consultant sees nothing of that project in its own portal — it
+is internal metadata, not a visibility grant.
 
 **If `me.companyId` is null, `getPortalScope` returns `null` and the portal renders an empty
 state telling the customer to contact support.** Fail-closed: an unassigned customer sees
@@ -321,12 +388,17 @@ sees only questions addressed to them. No schema change.
 - Promoting a contact to a user sets `userType='customer'`, `companyId`, and
   `mustChangePassword`.
 - The backfill migration is idempotent and produces one `Company` per distinct ΑΦΜ.
+- `syncProjectToSoftOne` writes `PRJC.TRDR` from the primary company, and null when that
+  company has no `softoneCustomerId`.
+- A company cannot be attached twice to the same project (`@@unique`), and the client is not
+  duplicated as a `ProjectCompany` row.
 
 **Portal (B)**
 
 - **Scope unit tests** — null `companyId` yields `null` scope; two seeded companies cannot
-  see each other; a project with `companyId = null` appears for nobody; a contact's email
-  matches that company's tickets.
+  see each other; a project with `primaryCompanyId = null` appears for nobody; a contact's
+  email matches that company's tickets; **a company attached to a project only as
+  partner/subcontractor does not see that project**.
 - **Route guard tests** — a customer session against `/dashboard`, `/admin`, `/reports`,
   `/api/reports` is redirected or refused; an employee session against `/portal` is
   redirected.
