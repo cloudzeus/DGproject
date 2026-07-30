@@ -35,8 +35,8 @@ export function PortalShell({
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen bg-fluent-neutral-4">
-      <header className="bg-white border-b border-black/5 sticky top-0 z-40">
+    <div className="min-h-dvh bg-fluent-neutral-4 bg-mesh">
+      <header className="sticky top-0 z-40 border-b border-black/5 bg-acrylic backdrop-blur-xl backdrop-saturate-150">
         <div className="mx-auto max-w-5xl px-4 h-14 flex items-center gap-3 sm:gap-4">
           <Link href="/portal" className="flex items-center gap-2.5 shrink-0">
             <div className="h-8 w-8 rounded-md bg-gradient-to-br from-fluent-blue-500 to-fluent-blue-700 p-1.5 shadow-fluent-2">
