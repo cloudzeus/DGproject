@@ -1,0 +1,266 @@
+# Ανάλυση Πρότασης Έργου — Σχεδιασμός
+
+Ημερομηνία: 2026-07-30
+Κατάσταση: εγκεκριμένο, προς υλοποίηση
+
+## Το πρόβλημα
+
+Όταν ξεκινάμε ένα έργο, η πρόταση που κερδίσαμε περιέχει ήδη το πλάνο: τι θα
+γίνει, σε πόσες φάσεις, με ποια παραδοτέα και ποιες απαιτήσεις. Σήμερα αυτό το
+πλάνο ξαναγράφεται με το χέρι σε εργασίες, ή —συχνότερα— δεν ξαναγράφεται
+καθόλου και το έργο ξεκινά χωρίς δομή. Η πρόταση μένει ένα PDF στα αρχεία.
+
+Χειρότερα: χωρίς καταγεγραμμένες απαιτήσεις, κανείς δεν μπορεί να απαντήσει στο
+τέλος του έργου «καλύψαμε ό,τι υποσχεθήκαμε;».
+
+## Το εύρος
+
+Ένα tab μέσα σε **υπάρχον** έργο (όχι wizard δημιουργίας): ανεβάζεις την πρόταση
+σε PDF ή DOCX, το DeepSeek τη διαβάζει και προτείνει βήματα, ορόσημα και
+απαιτήσεις, τα διορθώνεις, και τα μετατρέπεις σταδιακά σε εργασίες.
+
+**Εκτός σκοπού, σκόπιμα:** OCR για σαρωμένα PDF· μοντέλο `ProjectPhase` και
+Gantt· αυτόματη ανάθεση σε άτομα· εκτίμηση κόστους από την πρόταση· μετάβαση
+από MySQL σε Postgres.
+
+## Αποφάσεις που κλείδωσαν
+
+| Θέμα | Απόφαση | Γιατί |
+|---|---|---|
+| Βάση | Παραμένει **MySQL** | Η εφαρμογή έχει 40+ μοντέλα και 19 migrations σε MySQL, με FULLTEXT ευρετήρια. Η μετάβαση σε Postgres είναι ξεχωριστό έργο, όχι μέρος αυτού. |
+| Είσοδος | Tab σε **υπάρχον** έργο | Το έργο υπάρχει ήδη στο kick-off (χειροκίνητα ή από PRJC). Το πλάνο λείπει, όχι το έργο. |
+| Αρχεία | PDF + DOCX | Ό,τι στέλνουμε πραγματικά στους πελάτες. |
+| Απαιτήσεις | Δικό τους μοντέλο, ιχνηλάσιμο | Η απαίτηση δεν είναι εργασία. Είναι το συμφωνημένο εύρος που ελέγχεις τη δουλειά απέναντί του. Ως εργασία, χάνεται αυτός ο έλεγχος. |
+| Ορόσημα | Εργασία με σημαία `isMilestone` | Το `lib/portal/timeline.ts` ήδη παράγει τα ορόσημα του portal από τα `dueDate` των εργασιών. Δικός τους πίνακας θα σήμαινε αλλαγές σε portal, board, αναφορές — χωρίς να λύνει κάτι σήμερα. |
+| GDPR | Ίδια πολιτική με το ticket triage | Το DeepSeek φιλοξενείται στην Κίνα. Καμία νέα έκθεση δεδομένων σε σχέση με σήμερα. |
+| Μέγεθος | Τεμαχισμός από την αρχή | Οι προτάσεις φτάνουν 50+ σελίδες. |
+
+## Αρχιτεκτονική
+
+```
+Ανέβασμα PDF/DOCX  →  εξαγωγή κειμένου  →  μάσκα PII  →  DeepSeek (τεμαχισμένο)
+        →  ProposalAnalysis + ProposalItems (προσχέδια)
+        →  επεξεργασία στο UI  →  επιλεκτική μετατροπή σε Tasks + Requirements
+```
+
+Η ανάλυση δεν μπλοκάρει το request. Το server action γράφει τη γραμμή σε
+`pending` και καλεί fire-and-forget το `/api/proposals/[id]/run`, ακριβώς όπως
+το `app/api/tickets/route.ts:165`. Το UI κάνει poll κάθε 3 δευτερόλεπτα. Ένα
+cron sweeper (μοτίβο `app/api/cron/analyze-tickets/route.ts`) ξαναπιάνει ό,τι
+έμεινε σε `analyzing` πάνω από 15 λεπτά.
+
+### Μονάδες
+
+| Αρχείο | Ευθύνη | Εξαρτάται από |
+|---|---|---|
+| `lib/proposals/extract.ts` | bytes → καθαρό κείμενο | `unpdf`, `mammoth` |
+| `lib/proposals/mask.ts` | κείμενο → κείμενο χωρίς PII | `lib/tickets/mask.ts`, `lib/llm/pseudonymize.ts` |
+| `lib/proposals/chunk.ts` | κείμενο → τεμάχια με επικάλυψη | τίποτα (καθαρή συνάρτηση) |
+| `lib/proposals/prompt.ts` | τεμάχιο + πλαίσιο έργου → prompt | τίποτα |
+| `lib/proposals/merge.ts` | αποτελέσματα τεμαχίων → ενιαία λίστα | τίποτα (καθαρή συνάρτηση) |
+| `lib/proposals/analyze.ts` | ενορχήστρωση· ποτέ δεν πετάει | όλα τα παραπάνω, `lib/llm` |
+| `lib/proposals/convert.ts` | προσχέδια → Tasks + Requirements | `lib/prisma` |
+
+Ο τεμαχιστής, η μάσκα και η συγχώνευση είναι καθαρές συναρτήσεις — ελέγχονται
+χωρίς βάση και χωρίς δίκτυο.
+
+## Μοντέλα δεδομένων
+
+Μία migration. Τρία νέα μοντέλα, ένας πίνακας σύνδεσης, τέσσερα πεδία στο `Task`.
+
+```prisma
+enum ProposalAnalysisStatus { pending analyzing ready failed }
+enum ProposalItemKind       { step milestone requirement }
+enum ProposalItemStatus     { draft rejected converted }
+enum RequirementStatus      { open covered out_of_scope }
+
+model ProposalAnalysis {
+  id            String   @id @default(cuid())
+  projectId     String
+  attachmentId  String?          // το ανεβασμένο αρχείο στα συνημμένα του έργου
+  fileName      String
+  mimeType      String
+  extractedText String   @db.LongText
+  charCount     Int      @default(0)
+  chunkCount    Int      @default(0)
+  status        ProposalAnalysisStatus @default(pending)
+  aiError       String?  @db.Text
+  provider      String?
+  model         String?
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  durationMs    Int      @default(0)
+  summary       String?  @db.Text
+  createdById   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  items         ProposalItem[]
+}
+
+model ProposalItem {
+  id                     String @id @default(cuid())
+  analysisId             String
+  kind                   ProposalItemKind
+  order                  Int    @default(0)
+  title                  String
+  description            String? @db.Text
+  // βήματα & ορόσημα
+  suggestedDueDate       DateTime?
+  suggestedOffsetDays    Int?     // για το «εβδομάδα 3» όταν λείπουν ημερομηνίες
+  estimatedHours         Float?
+  priority               TaskPriority?
+  // απαιτήσεις
+  requirementCategory    String?  // λειτουργική | τεχνική | εμπορική
+  // ιχνηλασία
+  sourceQuote            String? @db.Text
+  confidence             Float?
+  status                 ProposalItemStatus @default(draft)
+  convertedTaskId        String? @unique
+  convertedRequirementId String? @unique
+}
+
+model ProjectRequirement {
+  id              String @id @default(cuid())
+  projectId       String
+  code            String            // REQ-001, μοναδικό ανά έργο
+  title           String
+  description     String? @db.Text
+  category        String?
+  status          RequirementStatus @default(open)
+  sourceAnalysisId String?
+  sourceQuote     String? @db.Text
+  tasks           TaskRequirement[]
+  @@unique([projectId, code])
+}
+
+model TaskRequirement {
+  taskId        String
+  requirementId String
+  @@id([taskId, requirementId])
+}
+```
+
+Στο `Task`, τέσσερα πεδία που καθρεφτίζουν τα υπάρχοντα `generatedFromMeeting*`:
+
+```prisma
+generatedFromProposalId String?
+proposalSourceQuote     String?  @db.Text
+proposalConfidence      Float?
+isMilestone             Boolean  @default(false)
+```
+
+Τα παραπάνω παραλείπουν για ευαναγνωσία τα πεδία `@relation` και τα ευρετήρια —
+στο πραγματικό schema κάθε ξένο κλειδί συνδέεται ρητά, με `onDelete: Cascade`
+προς το έργο και την ανάλυση.
+
+**Προσοχή στη migration:** το `prisma migrate diff` σε αυτό το έργο θέλει πάντα
+να ρίξει τα FULLTEXT ευρετήρια. Αφαίρεσε χειροκίνητα κάθε `DROP INDEX` πριν
+εκτελέσεις, αλλιώς σπάει σιωπηλά το triage των tickets.
+
+## Εξαγωγή κειμένου
+
+`unpdf` για PDF — καθαρό JavaScript, δουλεύει σε serverless· το `pdf-parse`
+θέλει native εξαρτήσεις. `mammoth` (`extractRawText`) για DOCX. Δύο νέα
+dependencies, τίποτα άλλο.
+
+Αν το εξαγόμενο κείμενο είναι κενό ή κάτω από 200 χαρακτήρες, η ανάλυση
+σταματά με ρητό μήνυμα **«Το αρχείο φαίνεται σαρωμένο — δεν βρέθηκε κείμενο»**.
+Όχι σιωπηλή αποτυχία, όχι μισή ανάλυση. Το αρχείο μένει στα συνημμένα.
+
+Ανώτατο μέγεθος αρχείου: 20 MB.
+
+## Τεμαχισμός και συγχώνευση
+
+**Map.** Τεμάχια ~24.000 χαρακτήρων με ~1.500 χαρακτήρες επικάλυψη, κομμένα σε
+όρια παραγράφων ώστε να μη σπάει πρόταση στη μέση. Κάθε τεμάχιο επιστρέφει JSON
+με βήματα, ορόσημα και απαιτήσεις — κάθε αντικείμενο **υποχρεωτικά** με
+`sourceQuote`, το αυτούσιο απόσπασμα που το στηρίζει. Χωρίς απόσπασμα, το
+αντικείμενο απορρίπτεται: αν το μοντέλο δεν μπορεί να δείξει πού το βρήκε, το
+επινόησε.
+
+**Reduce.** Αφαίρεση διπλών με κανονικοποιημένη σύγκριση τίτλων, μετά μία τελική
+κλήση συγχώνευσης που τακτοποιεί σειρά και ενώνει ό,τι έσπασε στα σύνορα των
+τεμαχίων.
+
+Αν η τελική κλήση αποτύχει, κρατάμε το αποτέλεσμα του map με το απλό dedupe. Η
+ανάλυση δεν χάνεται επειδή απέτυχε το τελευταίο βήμα.
+
+Το `analyze.ts` **ποτέ δεν πετάει εξαίρεση**: αποτυχία σημαίνει `status: failed`
+και `aiError` γεμάτο, όπως το `lib/tickets/triage.ts:47`.
+
+## GDPR
+
+Το `lib/proposals/mask.ts` επεκτείνει το `maskPII`: email, τηλέφωνα, **ΑΦΜ**
+(9ψήφια), **IBAN** (`GR\d{25}`). Τα ονόματα εταιρειών και προσώπων του έργου
+γίνονται ψευδώνυμα με τον μηχανισμό του `lib/llm/pseudonymize.ts` και
+επαναφέρονται στην απάντηση.
+
+Τα ποσά **δεν** μασκάρονται — βοηθούν το μοντέλο να εκτιμήσει ώρες και δεν είναι
+προσωπικά δεδομένα.
+
+Στο DeepSeek φεύγει μόνο δομή και τεχνικό περιεχόμενο. Καμία νέα έκθεση σε
+σχέση με τη σημερινή πολιτική.
+
+## Διεπαφή
+
+Νέο tab **«Πρόταση»** στο `TABS` του `app/(app)/projects/[id]/project-detail.tsx`,
+με `privilegedOnly: true` — όπως η Κοστολόγηση, γιατί οι προτάσεις περιέχουν τιμές.
+
+- **Κενή κατάσταση** → κουμπί που ανοίγει modal με `useDismissable`, όπως κάθε
+  άλλη φόρμα στην εφαρμογή.
+- **Κατά την ανάλυση** → μετρητής τεμαχίων, ώστε ο χρήστης να ξέρει ότι κάτι γίνεται.
+- **Αποτέλεσμα** → τρεις ενότητες που ανοιγοκλείνουν: Βήματα, Ορόσημα, Απαιτήσεις.
+
+Κάθε γραμμή επεξεργάζεται επιτόπου: τίτλος, περιγραφή, ημερομηνία, ώρες,
+προτεραιότητα, ορατότητα πελάτη. Η **ανάθεση σε άτομο δεν γίνεται εδώ** — οι
+εργασίες δημιουργούνται ανάθετες και ανατίθενται από το board, όπου φαίνεται ο
+φόρτος του καθενός. Έχει checkbox επιλογής και expander
+που δείχνει το `sourceQuote`. Χαμηλή βεβαιότητα → πορτοκαλί σήμανση, στο μοτίβο
+του `meetingNeedsReview`. Ο χρήστης μπορεί να προσθέσει και δικές του γραμμές.
+
+Το κουμπί **«Δημιουργία εργασιών»** δουλεύει μόνο στα επιλεγμένα — σταδιακά,
+όσες φορές χρειαστεί.
+
+## Μετατροπή
+
+Το `lib/proposals/convert.ts` **δεν** περνάει από το `createTask`
+(`app/(app)/projects/[id]/task-actions.ts:429`). Εκείνο κάνει auto-slot στο
+ημερολόγιο του δημιουργού, ελέγχους κύκλων εξαρτήσεων και συγχρονισμό Teams —
+άσχετα και επιζήμια όταν δημιουργείς 20 εργασίες μαζί.
+
+Αντ' αυτού, ένα `prisma.$transaction` που:
+
+1. γράφει τις εργασίες με ρητές ημερομηνίες, `status: todo`, σειρά που συνεχίζει
+   από το `max(order)` του έργου·
+2. γράφει τις απαιτήσεις με αυτόματο `code` (REQ-001, REQ-002, …)·
+3. σημειώνει τα `ProposalItem` ως `converted` με το `convertedTaskId`·
+4. καταγράφει στο `Activity`.
+
+**Ορατότητα εργασίας: `shared`.** Το πλάνο είναι ακριβώς αυτό που συμφώνησε ο
+πελάτης. Το `proposalSourceQuote` όμως μένει πάντα εσωτερικό — μπορεί να
+περιέχει τιμές. Ο χρήστης αλλάζει την ορατότητα ανά γραμμή πριν τη μετατροπή.
+
+**Ιδιοτροπία:** αντικείμενο σε `converted` δεν ξαναδημιουργεί εργασία, ακόμη κι
+αν πατηθεί δεύτερη φορά το κουμπί.
+
+## Δοκιμές
+
+**Μονάδας** — τεμαχιστής (όρια παραγράφων, επικάλυψη, ένα τεράστιο τεμάχιο χωρίς
+παραγράφους)· μάσκα (ΑΦΜ, IBAN, email, τηλέφωνο, ελληνικά ονόματα)· συγχώνευση
+διπλών· ανάλυση κακοσχηματισμένου JSON από το μοντέλο.
+
+**Ενσωμάτωσης** — η μετατροπή φτιάχνει σωστά tasks και requirements· δεύτερο
+πάτημα δεν διπλασιάζει· και, στο μοτίβο των υπαρχόντων MoM leakage tests, **το
+`sourceQuote` και τα προσχέδια δεν φτάνουν ποτέ στο portal του πελάτη**.
+
+## Συμπεριφορά στα σφάλματα
+
+| Αστοχία | Τι γίνεται |
+|---|---|
+| Σαρωμένο PDF | `failed` + «δεν βρέθηκε κείμενο»· η πρόταση μένει ως συνημμένο |
+| Το DeepSeek πέφτει | `failed` + `aiError`, κουμπί «Νέα προσπάθεια»· τίποτα δεν χάνεται |
+| Ένα τεμάχιο αποτυγχάνει | Τα υπόλοιπα προχωρούν· το UI λέει ποιο έλειψε |
+| Η συγχώνευση αποτυγχάνει | Κρατάμε το map με απλό dedupe |
+| Κολλάει σε `analyzing` | Το cron sweeper το ξαναπιάνει μετά από 15′ |
+| Δεν βρέθηκε τίποτα | Κενή κατάσταση με «πρόσθεσε χειροκίνητα» — όχι σφάλμα |
+| Αντικείμενο χωρίς `sourceQuote` | Απορρίπτεται στο parse — πιθανή επινόηση |
