@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { PersonAdd20Regular, Dismiss16Regular, Search20Regular, Edit16Regular, Eye16Regular, EyeOff16Regular } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal';
 import { addProjectMember, removeProjectMember, updateProjectMemberProfile } from './actions';
 
 type MemberUser = {
@@ -201,12 +202,18 @@ export function MembersManager({ projectId, canEdit, ownerId, members, allUsers,
               </div>
 
               {canEdit && editingId === m.id && (
-                <MemberProfileForm
-                  projectId={projectId}
-                  member={m}
-                  projectHasCustomer={projectHasCustomer}
-                  onDone={() => setEditingId(null)}
-                />
+                <Modal
+                  title={m.name || m.email}
+                  description="Ιδιότητα, αρμοδιότητες και στοιχεία επικοινωνίας"
+                  onClose={() => setEditingId(null)}
+                >
+                  <MemberProfileForm
+                    projectId={projectId}
+                    member={m}
+                    projectHasCustomer={projectHasCustomer}
+                    onDone={() => setEditingId(null)}
+                  />
+                </Modal>
               )}
             </div>
           );
@@ -243,7 +250,7 @@ function MemberProfileForm({
   const [saving, startSave] = useTransition();
 
   return (
-    <div className="border-t border-black/5 bg-fluent-neutral-4 px-4 py-4 space-y-3">
+    <div className="space-y-3">
       {error && <p className="text-xs text-fluent-accent-red">{error}</p>}
 
       <div>

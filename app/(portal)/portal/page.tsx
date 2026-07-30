@@ -89,7 +89,10 @@ export default async function PortalHome() {
         <p className="text-[11px] font-semibold uppercase tracking-wider text-fluent-neutral-60">
           Πύλη πελατών
         </p>
-        <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight text-fluent-neutral-90">
+        <h1
+          className="mt-1 line-clamp-2 font-display text-xl font-semibold leading-tight tracking-tight text-fluent-neutral-90 sm:text-2xl"
+          title={scope.companyName}
+        >
           {scope.companyName}
         </h1>
         <p className="mt-1.5 text-sm text-fluent-neutral-70">

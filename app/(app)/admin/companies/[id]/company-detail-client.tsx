@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import {
   updateCompany, setCompanyActive, refreshFromAade,
   createContact, updateContact, deleteContact, promoteContactToUser,
@@ -273,7 +274,11 @@ export function CompanyDetailClient({
         </div>
 
         {(addingContact || editingContact) && (
-          <div className="mb-4 rounded-md bg-fluent-neutral-4 p-3 space-y-3">
+          <Modal
+            title={editingContact ? 'Επεξεργασία επαφής' : 'Νέα επαφή'}
+            onClose={() => { setAddingContact(false); setEditingContact(null); setContactForm({ ...EMPTY_CONTACT }) }}
+          >
+          <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               {cField('name', 'Ονοματεπώνυμο')}
               {cField('position', 'Θέση')}
@@ -320,6 +325,7 @@ export function CompanyDetailClient({
               </Button>
             </div>
           </div>
+          </Modal>
         )}
 
         <div className="divide-y divide-black/5">

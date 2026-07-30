@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { lookupByAfm, createCompany, runSoftOneImport } from './actions'
 
 type Row = {
@@ -177,7 +178,13 @@ export function CompaniesClient({
       </div>
 
       {creating && (
-        <div className="mb-6 rounded-lg border border-fluent-neutral-20 bg-white p-4 space-y-3">
+        <Modal
+          title="Νέα εταιρία"
+          description="Δώσε ΑΦΜ και άντλησε τα στοιχεία από την ΑΑΔΕ, ή συμπλήρωσέ τα χειροκίνητα."
+          onClose={() => setCreating(false)}
+          size="lg"
+        >
+        <div className="space-y-3">
           <div className="flex items-end gap-2">
             <div className="flex-1">
               <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">ΑΦΜ</label>
@@ -216,10 +223,14 @@ export function CompaniesClient({
             </p>
           )}
 
-          <Button onClick={onCreate} disabled={busy || form.NAME.trim().length < 2}>
-            Αποθήκευση
-          </Button>
+          <div className="flex gap-2 pt-1">
+            <Button variant="primary" onClick={onCreate} disabled={busy || form.NAME.trim().length < 2}>
+              Αποθήκευση
+            </Button>
+            <Button variant="secondary" onClick={() => setCreating(false)}>Άκυρο</Button>
+          </div>
         </div>
+        </Modal>
       )}
 
       <div className="rounded-lg border border-fluent-neutral-20 bg-white divide-y divide-black/5">

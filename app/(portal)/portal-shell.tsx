@@ -37,7 +37,7 @@ export function PortalShell({
   return (
     <div className="min-h-dvh bg-fluent-neutral-4 bg-mesh">
       <header className="sticky top-0 z-40 border-b border-black/5 bg-acrylic backdrop-blur-xl backdrop-saturate-150">
-        <div className="mx-auto max-w-5xl px-4 h-14 flex items-center gap-3 sm:gap-4">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:gap-4 lg:px-6">
           <Link href="/portal" className="flex items-center gap-2.5 shrink-0">
             <div className="h-8 w-8 rounded-md bg-gradient-to-br from-fluent-blue-500 to-fluent-blue-700 p-1.5 shadow-fluent-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -77,20 +77,25 @@ export function PortalShell({
             <span className="hidden sm:inline">Νέο αίτημα</span>
           </Link>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden lg:block text-right">
-              <p className="text-xs font-medium text-fluent-neutral-90 leading-tight">{user.name}</p>
+          <div className="flex min-w-0 shrink items-center gap-2.5 pl-2">
+            <Avatar user={{ name: user.name, avatarUrl: user.avatarUrl }} size="sm" />
+            <div className="hidden min-w-0 lg:block">
+              <p className="truncate text-xs font-medium leading-tight text-fluent-neutral-90">
+                {user.name}
+              </p>
               {companyName && (
-                <p className="text-[11px] text-fluent-neutral-60 leading-tight truncate max-w-[180px]">
+                <p
+                  className="max-w-[200px] truncate text-[11px] leading-tight text-fluent-neutral-60"
+                  title={companyName}
+                >
                   {companyName}
                 </p>
               )}
             </div>
-            <Avatar user={{ name: user.name, avatarUrl: user.avatarUrl }} size="sm" />
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-              className="text-xs text-fluent-neutral-60 hover:text-fluent-neutral-90"
+              className="shrink-0 rounded-md px-2 py-1 text-xs text-fluent-neutral-60 transition-colors hover:bg-black/5 hover:text-fluent-neutral-90"
             >
               Έξοδος
             </button>
@@ -98,7 +103,7 @@ export function PortalShell({
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-6xl px-4 py-8 lg:px-6">{children}</main>
     </div>
   );
 }

@@ -57,7 +57,7 @@ export default async function PortalTicket({ params }: { params: Promise<{ id: s
   const canReply = !['closed', 'rejected', 'merged'].includes(ticket.status);
 
   return (
-    <div className="max-w-2xl">
+    <div className="mx-auto max-w-3xl">
       <Link href="/portal/tickets" className="text-xs text-fluent-blue-600">
         ← Αιτήματα
       </Link>
