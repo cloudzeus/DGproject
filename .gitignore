@@ -31,3 +31,6 @@ yarn-error.log*
 .idea/
 .vscode/
 *.swp
+
+# Cached SoftOne session (daily-expiring clientID) — must never be tracked.
+.s1session.json
