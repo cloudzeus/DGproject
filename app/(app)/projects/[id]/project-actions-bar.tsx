@@ -21,6 +21,7 @@ type Props = {
     dueDate: Date | null;
     ownerId: string;
     memberIds: string[];
+    primaryCompany: { id: string; NAME: string; AFM: string | null } | null;
   };
   users: UserOption[];
   canEdit: boolean;
@@ -88,6 +89,7 @@ export function ProjectActionsBar({ project, users, canEdit, sessionEmail }: Pro
                 dueDate: project.dueDate,
                 ownerId: project.ownerId,
                 memberIds: project.memberIds,
+                primaryCompany: project.primaryCompany,
               }}
               submitLabel="Αποθήκευση"
               onCancel={() => setEditing(false)}

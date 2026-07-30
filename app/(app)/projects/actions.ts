@@ -79,6 +79,7 @@ export async function createProject(formData: FormData) {
       ownerId,
       workspaceId,
       projectCode,
+      primaryCompanyId: String(formData.get('primaryCompanyId') ?? '').trim() || null,
       members: {
         create: allMemberIds.map((userId) => ({ userId })),
       },
@@ -113,6 +114,7 @@ export async function updateProject(id: string, formData: FormData) {
     dueDate: Date | null;
     ownerId?: string;
     softoneCompany?: number | null;
+    primaryCompanyId?: string | null;
     // If the target company changed, the existing softone row no longer matches —
     // we drop sync status so admin re-syncs intentionally.
     softoneSyncStatus?: 'unsynced';
@@ -123,6 +125,19 @@ export async function updateProject(id: string, formData: FormData) {
     status: input.status,
     dueDate: input.dueDate,
   };
+
+  // Ο πελάτης του έργου. Το CompanyPicker στέλνει πάντα το hidden input, οπότε
+  // κενή τιμή σημαίνει «καμία εταιρία» και είναι έγκυρη εντολή καθαρισμού.
+  const primaryCompanyId = String(formData.get('primaryCompanyId') ?? '').trim() || null;
+  const existingProject = await prisma.project.findUnique({
+    where: { id },
+    select: { primaryCompanyId: true },
+  });
+  if (existingProject && existingProject.primaryCompanyId !== primaryCompanyId) {
+    data.primaryCompanyId = primaryCompanyId;
+    // Αλλαγή πελάτη σημαίνει άλλο PRJC.TRDR — το SoftOne row δεν ταιριάζει πια.
+    data.softoneSyncStatus = 'unsynced';
+  }
 
   if (softoneCompany !== undefined) {
     // Only mutate when the form explicitly provided a value.

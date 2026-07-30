@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Dismiss20Regular } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { SoftOneCompanyCombobox } from '@/components/admin/softone-company-combobox';
+import { CompanyPicker, type CompanySelection } from '@/components/companies/company-picker';
 
 type Status = 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
 
@@ -38,6 +39,9 @@ export type ProjectFormInitial = {
   softoneSyncStatus?: SoftOneSyncStatus;
   softoneSyncedAt?: Date | null;
   softoneSyncError?: string | null;
+  // Ο πελάτης του έργου. Καθορίζει το PRJC.TRDR και ποιος βλέπει το έργο στο
+  // portal πελατών. Δεν είχε UI πριν — το customerUserId μόνο διαβαζόταν.
+  primaryCompany?: CompanySelection | null;
 };
 
 export type ProjectFormResult = { ok: boolean; error?: string };
@@ -159,6 +163,15 @@ export function ProjectForm({ users, initial, onSubmit, onCancel, submitLabel }:
             <option key={u.id} value={u.id}>{u.name || u.email}</option>
           ))}
         </select>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Πελάτης (εταιρία)</label>
+        <CompanyPicker name="primaryCompanyId" initial={initial?.primaryCompany ?? null} />
+        <p className="mt-1 text-[10px] text-fluent-neutral-60">
+          Καθορίζει το <code className="font-mono">PRJC.TRDR</code> στο SoftOne και ποιος βλέπει το έργο
+          στο portal πελατών. Διαχείριση στο <code className="font-mono">/admin/companies</code>.
+        </p>
       </div>
 
       <div>

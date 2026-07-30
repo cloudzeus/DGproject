@@ -23,6 +23,7 @@ export default async function ProjectsPage() {
     prisma.project.findMany({
       where: projectWhere,
       include: {
+        primaryCompany: { select: { id: true, NAME: true, AFM: true } },
         owner: true,
         members: { include: { user: true } },
         tasks: { select: { id: true, status: true } },
@@ -63,6 +64,7 @@ export default async function ProjectsPage() {
     softoneSyncStatus: p.softoneSyncStatus,
     softoneSyncedAt: p.softoneSyncedAt,
     softoneSyncError: p.softoneSyncError,
+    primaryCompany: p.primaryCompany,
   }));
 
   return (

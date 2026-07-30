@@ -63,6 +63,7 @@ type ProjectWithRelations = {
   softoneSyncStatus: SoftOneSyncStatus;
   softoneSyncedAt: Date | null;
   softoneSyncError: string | null;
+  primaryCompany: { id: string; NAME: string; AFM: string | null } | null;
 };
 
 type StatusBucket = 'active' | 'completed' | 'archived' | 'all';
@@ -302,6 +303,7 @@ export function ProjectsGrid({
                 softoneSyncStatus: editingProject.softoneSyncStatus,
                 softoneSyncedAt: editingProject.softoneSyncedAt,
                 softoneSyncError: editingProject.softoneSyncError,
+                primaryCompany: editingProject.primaryCompany,
               }}
               submitLabel="Αποθήκευση"
               onCancel={() => setEditingProject(null)}

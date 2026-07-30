@@ -18,6 +18,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       where: { id },
       include: {
         owner: true,
+        primaryCompany: { select: { id: true, NAME: true, AFM: true } },
         members: { include: { user: true } },
         approver: { select: { id: true, name: true, email: true, image: true } },
         // Customer contact (User with userType=customer) — its email is the
@@ -674,6 +675,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               dueDate: project.dueDate,
               ownerId: project.ownerId,
               memberIds: project.members.map((m) => m.userId),
+              primaryCompany: project.primaryCompany,
             }}
             users={userOptions}
             canEdit={canEdit}
