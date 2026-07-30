@@ -176,7 +176,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     ? await prisma.proposalAnalysis.findFirst({
         where: { projectId: id },
         orderBy: { createdAt: 'desc' },
-        include: { items: { orderBy: [{ kind: 'asc' }, { order: 'asc' }] } },
+        include: { items: { orderBy: [{ kind: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }] } },
       })
     : null;
   const proposalAnalysis = proposalAnalysisRaw
@@ -206,6 +206,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           sourceQuote: i.sourceQuote,
           confidence: i.confidence,
           manual: i.manual,
+          assigneeId: i.assigneeId,
+          clarification: i.clarification,
+          regeneratedFromId: i.regeneratedFromId,
           status: i.status,
         })),
       }

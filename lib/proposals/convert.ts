@@ -12,12 +12,15 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { createNotifications } from '@/lib/notifications'
 import type { Prisma } from '@prisma/client'
 
 export type ConvertResult = {
   tasksCreated: number
   requirementsCreated: number
   skipped: number
+  /** Πόσα άτομα ειδοποιήθηκαν — φαίνεται στο μήνυμα επιβεβαίωσης. */
+  notified: number
 }
 
 export async function convertProposalItems(args: {
@@ -26,14 +29,14 @@ export async function convertProposalItems(args: {
   actorId: string
 }): Promise<ConvertResult> {
   const { analysisId, itemIds, actorId } = args
-  if (itemIds.length === 0) return { tasksCreated: 0, requirementsCreated: 0, skipped: 0 }
+  if (itemIds.length === 0) return { tasksCreated: 0, requirementsCreated: 0, skipped: 0, notified: 0 }
 
   const analysis = await prisma.proposalAnalysis.findUnique({
     where: { id: analysisId },
     select: {
       id: true,
       projectId: true,
-      project: { select: { workspaceId: true, startDate: true } },
+      project: { select: { name: true, workspaceId: true, startDate: true } },
     },
   })
   if (!analysis) throw new Error('Η ανάλυση δεν βρέθηκε.')
@@ -45,7 +48,7 @@ export async function convertProposalItems(args: {
     orderBy: [{ kind: 'asc' }, { order: 'asc' }],
   })
   const skipped = itemIds.length - items.length
-  if (items.length === 0) return { tasksCreated: 0, requirementsCreated: 0, skipped }
+  if (items.length === 0) return { tasksCreated: 0, requirementsCreated: 0, skipped, notified: 0 }
 
   const projectStart = analysis.project.startDate ?? new Date()
 
@@ -63,6 +66,8 @@ export async function convertProposalItems(args: {
 
   let tasksCreated = 0
   let requirementsCreated = 0
+  /** Ποιος πήρε τι — για μία ειδοποίηση ανά άτομο, όχι μία ανά εργασία. */
+  const assigned = new Map<string, string[]>()
 
   await prisma.$transaction(async (tx) => {
     for (const item of items) {
@@ -111,6 +116,13 @@ export async function convertProposalItems(args: {
           addToTeams: false,
         },
       })
+      if (item.assigneeId) {
+        await tx.taskAssignee.create({ data: { taskId: task.id, userId: item.assigneeId } })
+        const list = assigned.get(item.assigneeId) ?? []
+        list.push(item.title)
+        assigned.set(item.assigneeId, list)
+      }
+
       await tx.proposalItem.update({
         where: { id: item.id },
         data: { status: 'converted', convertedTaskId: task.id },
@@ -135,7 +147,41 @@ export async function convertProposalItems(args: {
     })
   })
 
-  return { tasksCreated, requirementsCreated, skipped }
+  await notifyAssignees(assigned, analysis.projectId, analysis.project.name)
+
+  return { tasksCreated, requirementsCreated, skipped, notified: assigned.size }
+}
+
+/**
+ * Μία ειδοποίηση ανά άτομο, όχι ανά εργασία.
+ *
+ * Η μαζική μετατροπή είναι μία πράξη του χρήστη — έξι χτυπήματα στο κουδουνάκι
+ * κάποιου για ένα κλικ δεν είναι πληροφορία, είναι θόρυβος, και ο επόμενος που
+ * τα βλέπει τα αγνοεί όλα. Το πλήθος και το έργο αρκούν για να καταλάβει τι
+ * του έπεσε· τα υπόλοιπα τα βλέπει στο board.
+ *
+ * Εκτός της συναλλαγής επίτηδες: μια αποτυχία στις ειδοποιήσεις δεν πρέπει να
+ * γυρίσει πίσω είκοσι εργασίες που δημιουργήθηκαν σωστά.
+ */
+async function notifyAssignees(
+  assigned: Map<string, string[]>,
+  projectId: string,
+  projectName: string,
+): Promise<void> {
+  if (assigned.size === 0) return
+
+  await createNotifications(
+    Array.from(assigned.entries()).map(([userId, titles]) => ({
+      userId,
+      type: 'assignment' as const,
+      title:
+        titles.length === 1
+          ? 'Σου ανατέθηκε μια εργασία από το πλάνο του έργου'
+          : `Σου ανατέθηκαν ${titles.length} εργασίες από το πλάνο του έργου`,
+      message: `${projectName}: ${titles.slice(0, 3).join(' · ')}${titles.length > 3 ? ` και ${titles.length - 3} ακόμη` : ''}`,
+      link: `/projects/${projectId}`,
+    })),
+  )
 }
 
 /**

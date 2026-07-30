@@ -125,6 +125,90 @@ ${JSON.stringify(items, null, 1)}
   return { system: SYSTEM, user }
 }
 
+/**
+ * Επαναδημιουργία ενός αντικειμένου με βάση τις διευκρινίσεις του ανθρώπου.
+ *
+ * Η διευκρίνιση είναι ΑΝΩΤΕΡΗ της πρότασης, όχι ισότιμη: ο άνθρωπος ξέρει
+ * πράγματα που το έγγραφο δεν λέει. Αν πει «αυτό είναι τρία βήματα», γίνονται
+ * τρία — ακόμη κι αν η πρόταση τα γράφει σε μία παράγραφο.
+ *
+ * Το απόσπασμα παραμένει υποχρεωτικό, με μία εξαίρεση που δηλώνεται ρητά: ό,τι
+ * προκύπτει από τη διευκρίνιση και όχι από το κείμενο παίρνει το ίδιο το
+ * κείμενο της διευκρίνισης ως πηγή. Έτσι ο χρήστης βλέπει αργότερα από πού
+ * ήρθε κάθε γραμμή — από την πρόταση ή από τον ίδιο.
+ */
+export function buildRegeneratePrompt(input: {
+  item: {
+    kind: string
+    title: string
+    description: string | null
+    sourceQuote: string | null
+    estimatedHours: number | null
+    suggestedOffsetDays: number | null
+  }
+  clarification: string
+  /** Το κομμάτι της πρότασης γύρω από το απόσπασμα — ήδη μασκαρισμένο. */
+  contextText: string
+  context: ProposalProjectContext
+}): { system: string; user: string } {
+  const { item } = input
+
+  const user = `ΕΡΓΟ: ${input.context.projectName}
+${input.context.startDate ? `Έναρξη έργου: ${iso(input.context.startDate)}` : ''}
+
+Το παρακάτω αντικείμενο εξήχθη από την πρόταση:
+
+  είδος: ${item.kind}
+  τίτλος: ${item.title}
+  περιγραφή: ${item.description || '(καμία)'}
+  εκτίμηση ωρών: ${item.estimatedHours ?? '(καμία)'}
+  μέρες από την έναρξη: ${item.suggestedOffsetDays ?? '(καμία)'}
+  απόσπασμα προέλευσης: ${item.sourceQuote || '(κανένα)'}
+
+Ο υπεύθυνος του έργου δίνει αυτή τη ΔΙΕΥΚΡΙΝΙΣΗ:
+
+"""
+${input.clarification}
+"""
+
+Το σχετικό κομμάτι της πρότασης, για πλαίσιο:
+
+--- ΚΕΙΜΕΝΟ ---
+${input.contextText}
+--- ΤΕΛΟΣ ---
+
+Ξαναφτιάξε το αντικείμενο σύμφωνα με τη διευκρίνιση.
+
+- Η ΔΙΕΥΚΡΙΝΙΣΗ ΥΠΕΡΙΣΧΥΕΙ της πρότασης. Ο άνθρωπος ξέρει πράγματα που το
+  έγγραφο δεν λέει.
+- Αν η διευκρίνιση δείχνει ότι πρόκειται για ΠΕΡΙΣΣΟΤΕΡΑ ΑΠΟ ΕΝΑ αντικείμενα,
+  επίστρεψε όλα, σε σειρά εκτέλεσης.
+- Αν αφορά ένα μόνο, επίστρεψε ένα.
+- Στο "sourceQuote" βάλε το απόσπασμα της πρότασης που στηρίζει το καθένα. Αν
+  κάτι προκύπτει ΜΟΝΟ από τη διευκρίνιση, βάλε εκεί το κείμενο της διευκρίνισης.
+
+Επίστρεψε JSON με αυτή ΑΚΡΙΒΩΣ τη δομή:
+
+{
+  "summary": "",
+  "items": [
+    {
+      "kind": "step" | "milestone" | "requirement",
+      "title": "σύντομος τίτλος, έως 100 χαρακτήρες",
+      "description": "τι ακριβώς περιλαμβάνει",
+      "sourceQuote": "απόσπασμα από την πρόταση ή από τη διευκρίνιση",
+      "confidence": 0.0-1.0,
+      "suggestedOffsetDays": αριθμός μερών από την έναρξη ή null,
+      "estimatedHours": εκτίμηση ωρών ή null,
+      "priority": "low" | "medium" | "high" | "urgent" | null,
+      "requirementCategory": "λειτουργική" | "τεχνική" | "εμπορική" | null
+    }
+  ]
+}`
+
+  return { system: SYSTEM, user }
+}
+
 function iso(d: Date): string {
   return d.toISOString().slice(0, 10)
 }

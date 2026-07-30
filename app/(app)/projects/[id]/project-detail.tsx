@@ -409,7 +409,11 @@ export function ProjectDetail({
           />
         )}
         {tab === 'proposal' && isPrivileged && (
-          <ProposalTab projectId={project.id} analysis={proposalAnalysis} />
+          <ProposalTab
+            projectId={project.id}
+            analysis={proposalAnalysis}
+            members={projectMembers}
+          />
         )}
         {tab === 'emails' && !isCustomer && (
           <ProjectEmailsTab

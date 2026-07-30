@@ -97,6 +97,7 @@ before(async () => {
       sourceQuote: SECRET_QUOTE,
       confidence: 0.9,
       order: 0,
+      assigneeId: staff.id,
     },
   })
   stepId = step.id
@@ -110,6 +111,7 @@ before(async () => {
       sourceQuote: SECRET_QUOTE,
       confidence: 0.95,
       order: 0,
+      assigneeId: staff.id,
     },
   })
   milestoneId = milestone.id
@@ -143,6 +145,8 @@ before(async () => {
 })
 
 after(async () => {
+  await prisma.notification.deleteMany({ where: { link: `/projects/${projectId}` } })
+  await prisma.taskAssignee.deleteMany({ where: { task: { projectId } } })
   await prisma.taskRequirement.deleteMany({ where: { requirement: { projectId } } })
   await prisma.projectRequirement.deleteMany({ where: { projectId } })
   await prisma.proposalItem.deleteMany({ where: { analysisId } })
@@ -165,6 +169,7 @@ test('η μετατροπή φτιάχνει εργασίες και απαιτ�
   assert.equal(result.tasksCreated, 3, 'τρία βήματα/ορόσημα πρέπει να γίνουν εργασίες')
   assert.equal(result.requirementsCreated, 1, 'η απαίτηση ΔΕΝ γίνεται εργασία')
   assert.equal(result.skipped, 0)
+  assert.equal(result.notified, 1, 'δύο εργασίες στο ίδιο άτομο → ΕΝΑ ειδοποιημένο άτομο')
 
   const tasks = await prisma.task.findMany({ where: { projectId } })
   assert.equal(tasks.length, 3)
@@ -231,6 +236,33 @@ test('τα μετατραπέντα αντικείμενα δείχνουν τι
 
   const step = items.find((i) => i.id === stepId)
   assert.ok(step?.convertedTaskId, 'το βήμα πρέπει να δείχνει σε Task')
+})
+
+test('η ανάθεση περνά στην εργασία', async () => {
+  const assignees = await prisma.taskAssignee.findMany({
+    where: { task: { projectId } },
+    select: { userId: true, task: { select: { title: true } } },
+  })
+
+  assert.equal(assignees.length, 2, 'δύο από τα τρία αντικείμενα είχαν ανάδοχο')
+  assert.ok(assignees.every((a) => a.userId === staffId))
+  assert.equal(
+    assignees.some((a) => a.task.title.endsWith('Εσωτερικό ορόσημο')),
+    false,
+    'το αντικείμενο χωρίς ανάδοχο δεν πρέπει να πάρει',
+  )
+})
+
+test('μία συγκεντρωτική ειδοποίηση ανά άτομο, όχι μία ανά εργασία', async () => {
+  // Δύο εργασίες στο ίδιο άτομο με ένα κλικ. Δύο χτυπήματα στο κουδουνάκι για
+  // μία πράξη του χρήστη είναι θόρυβος, και ο επόμενος τα αγνοεί όλα.
+  const notifications = await prisma.notification.findMany({
+    where: { userId: staffId, type: 'assignment', link: `/projects/${projectId}` },
+  })
+
+  assert.equal(notifications.length, 1)
+  assert.match(notifications[0].title, /2 εργασίες/)
+  assert.match(notifications[0].message, new RegExp(TAG))
 })
 
 test('ΔΙΑΡΡΟΗ: το απόσπασμα της πρότασης δεν φτάνει ποτέ στο portal', async () => {

@@ -23,8 +23,16 @@ import {
   CheckmarkCircle16Filled,
   Eye16Regular,
   EyeOff16Regular,
+  Person16Regular,
+  ArrowSync16Regular,
 } from '@fluentui/react-icons';
-import { updateProposalItem, setProposalItemRejected } from './proposal-actions';
+import {
+  updateProposalItem,
+  setProposalItemRejected,
+  regenerateProposalItemWithClarification,
+} from './proposal-actions';
+
+export type ProposalMember = { id: string; name: string; email: string };
 
 export type ProposalItemView = {
   id: string;
@@ -40,7 +48,10 @@ export type ProposalItemView = {
   sourceQuote: string | null;
   confidence: number | null;
   manual: boolean;
-  status: 'draft' | 'rejected' | 'converted';
+  assigneeId: string | null;
+  clarification: string | null;
+  regeneratedFromId: string | null;
+  status: 'draft' | 'rejected' | 'converted' | 'replaced';
 };
 
 /** Κάτω από αυτό, ο άνθρωπος πρέπει να κοιτάξει πριν το εμπιστευτεί. */
@@ -48,11 +59,13 @@ const LOW_CONFIDENCE = 0.6;
 
 export function ProposalItemRow({
   item,
+  members,
   selected,
   onToggle,
   onChanged,
 }: {
   item: ProposalItemView;
+  members: ProposalMember[];
   selected: boolean;
   onToggle: () => void;
   onChanged: () => void;
@@ -62,12 +75,15 @@ export function ProposalItemRow({
   const [dueDate, setDueDate] = useState(item.suggestedDueDate ?? '');
   const [hours, setHours] = useState(item.estimatedHours?.toString() ?? '');
   const [showQuote, setShowQuote] = useState(false);
+  const [clarifyOpen, setClarifyOpen] = useState(false);
+  const [clarification, setClarification] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const converted = item.status === 'converted';
   const rejected = item.status === 'rejected';
   const lowConfidence = !item.manual && (item.confidence ?? 1) < LOW_CONFIDENCE;
+  const locked = converted || rejected || pending;
 
   function save(patch: Parameters<typeof updateProposalItem>[1]) {
     startTransition(async () => {
@@ -85,6 +101,25 @@ export function ProposalItemRow({
       const res = await setProposalItemRejected(item.id, !rejected);
       if (!res.ok) setError(res.error);
       else onChanged();
+    });
+  }
+
+  function regenerate() {
+    const text = clarification.trim();
+    if (text.length < 5) {
+      setError('Γράψε λίγο πιο αναλυτικά τι θέλεις να αλλάξει.');
+      return;
+    }
+    startTransition(async () => {
+      const res = await regenerateProposalItemWithClarification(item.id, text);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setError(null);
+      setClarifyOpen(false);
+      setClarification('');
+      onChanged();
     });
   }
 
@@ -125,7 +160,7 @@ export function ProposalItemRow({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => title !== item.title && save({ title })}
-            disabled={converted || rejected || pending}
+            disabled={locked}
             className="w-full bg-transparent text-sm font-semibold text-fluent-neutral-90 outline-none focus:rounded focus:bg-fluent-neutral-6 focus:px-1 disabled:cursor-default"
           />
 
@@ -135,7 +170,7 @@ export function ProposalItemRow({
             onBlur={() =>
               description !== (item.description ?? '') && save({ description })
             }
-            disabled={converted || rejected || pending}
+            disabled={locked}
             rows={description.length > 90 ? 3 : 1}
             placeholder="Περιγραφή…"
             className="mt-1 w-full resize-none bg-transparent text-xs leading-relaxed text-fluent-neutral-60 outline-none focus:rounded focus:bg-fluent-neutral-6 focus:px-1 disabled:cursor-default"
@@ -154,7 +189,7 @@ export function ProposalItemRow({
                       dueDate !== (item.suggestedDueDate ?? '') &&
                       save({ suggestedDueDate: dueDate || null })
                     }
-                    disabled={converted || rejected || pending}
+                    disabled={locked}
                     className="rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-80 outline-none focus:border-fluent-blue-500"
                   />
                 </label>
@@ -180,7 +215,7 @@ export function ProposalItemRow({
                       const next = hours === '' ? null : Number(hours);
                       if (next !== item.estimatedHours) save({ estimatedHours: next });
                     }}
-                    disabled={converted || rejected || pending}
+                    disabled={locked}
                     className="w-16 rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-80 outline-none focus:border-fluent-blue-500"
                   />
                 </label>
@@ -190,7 +225,7 @@ export function ProposalItemRow({
                   onChange={(e) =>
                     save({ priority: e.target.value as ProposalItemView['priority'] })
                   }
-                  disabled={converted || rejected || pending}
+                  disabled={locked}
                   className="rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-80 outline-none focus:border-fluent-blue-500"
                 >
                   <option value="low">Χαμηλή</option>
@@ -204,7 +239,7 @@ export function ProposalItemRow({
                   onClick={() =>
                     save({ visibility: item.visibility === 'shared' ? 'internal' : 'shared' })
                   }
-                  disabled={converted || rejected || pending}
+                  disabled={locked}
                   className="flex items-center gap-1 rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-60 hover:bg-fluent-neutral-6 disabled:opacity-50"
                   title={
                     item.visibility === 'shared'
@@ -215,6 +250,24 @@ export function ProposalItemRow({
                   {item.visibility === 'shared' ? <Eye16Regular /> : <EyeOff16Regular />}
                   {item.visibility === 'shared' ? 'Ορατή' : 'Εσωτερική'}
                 </button>
+
+                <label className="flex items-center gap-1 text-fluent-neutral-50">
+                  <Person16Regular />
+                  <select
+                    value={item.assigneeId ?? ''}
+                    onChange={(e) => save({ assigneeId: e.target.value || null })}
+                    disabled={locked}
+                    className="max-w-[140px] rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-80 outline-none focus:border-fluent-blue-500"
+                    title="Ποιος θα αναλάβει την εργασία"
+                  >
+                    <option value="">— χωρίς ανάθεση —</option>
+                    {members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name || m.email}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </>
             )}
 
@@ -240,6 +293,27 @@ export function ProposalItemRow({
               </span>
             )}
 
+            {item.regeneratedFromId && (
+              <span
+                className="rounded bg-fluent-blue-50 px-1.5 py-0.5 text-fluent-blue-700"
+                title={item.clarification ? `Διευκρίνιση: ${item.clarification}` : undefined}
+              >
+                από διευκρίνιση
+              </span>
+            )}
+
+            {!converted && !rejected && (
+              <button
+                type="button"
+                onClick={() => setClarifyOpen((v) => !v)}
+                className="flex items-center gap-0.5 text-fluent-blue-600 hover:underline"
+                title="Πες τι δεν κατάλαβε σωστά και ξαναφτιάξ' το"
+              >
+                <ArrowSync16Regular />
+                διευκρινίσεις
+              </button>
+            )}
+
             {item.sourceQuote && (
               <button
                 type="button"
@@ -251,6 +325,45 @@ export function ProposalItemRow({
               </button>
             )}
           </div>
+
+          {clarifyOpen && (
+            <div className="mt-2 space-y-1.5 rounded-md border border-fluent-blue-200 bg-fluent-blue-50 p-2">
+              <textarea
+                autoFocus
+                value={clarification}
+                onChange={(e) => setClarification(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setClarifyOpen(false);
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) regenerate();
+                }}
+                rows={2}
+                placeholder="π.χ. «αυτό είναι τρία ξεχωριστά βήματα: μελέτη, καλωδίωση, παραμετροποίηση» ή «εννοεί τον δικό μας εξοπλισμό, όχι του πελάτη»"
+                className="w-full resize-none rounded border border-fluent-neutral-20 bg-white px-2 py-1.5 text-xs leading-relaxed outline-none focus:border-fluent-blue-500"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-fluent-neutral-60">
+                  Μπορεί να προκύψουν περισσότερα από ένα βήματα.
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setClarifyOpen(false)}
+                    className="rounded px-2 py-1 text-[11px] text-fluent-neutral-60 hover:bg-white"
+                  >
+                    Άκυρο
+                  </button>
+                  <button
+                    type="button"
+                    onClick={regenerate}
+                    disabled={pending || clarification.trim().length < 5}
+                    className="rounded bg-fluent-blue-500 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-fluent-blue-600 disabled:opacity-50"
+                  >
+                    {pending ? 'Ξαναφτιάχνεται…' : 'Ξαναφτιάξ’ το'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {showQuote && item.sourceQuote && (
             <blockquote className="mt-2 border-l-2 border-fluent-neutral-20 bg-fluent-neutral-4 px-2.5 py-1.5 text-[11px] italic leading-relaxed text-fluent-neutral-60">

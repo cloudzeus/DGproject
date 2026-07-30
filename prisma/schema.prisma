@@ -229,6 +229,7 @@ model User {
   createdCostLines    ProjectCostLine[]        @relation("CostLineCreator")
   proposalAnalyses    ProposalAnalysis[]       @relation("ProposalAnalysisCreator")
   createdRequirements ProjectRequirement[]     @relation("RequirementCreator")
+  proposalItems       ProposalItem[]           @relation("ProposalItemAssignee")
   mailConnection      UserMailConnection?
   emailMessages       EmailMessage[]           @relation("EmailMessageUser")
 
@@ -1426,6 +1427,9 @@ enum ProposalItemStatus {
   draft
   rejected
   converted
+  /// Αντικαταστάθηκε από επαναδημιουργία με διευκρινίσεις. Μένει στη βάση για
+  /// ιχνηλασία — και για να μην το ξαναφέρει μια νέα ανάλυση.
+  replaced
 }
 
 enum RequirementStatus {
@@ -1515,6 +1519,18 @@ model ProposalItem {
   /// True όταν το αντικείμενο το πρόσθεσε άνθρωπος, όχι το μοντέλο.
   manual      Boolean @default(false)
 
+  /// Ποιος θα αναλάβει την εργασία που θα προκύψει. Ένας — για περισσότερους
+  /// υπάρχει το board, όπου φαίνεται ο φόρτος του καθενός.
+  assigneeId String?
+
+  // ── επαναδημιουργία με διευκρινίσεις ──
+  /// Τι ζήτησε ο άνθρωπος όταν είπε «ξαναφτιάξ' το». Μένει για να απαντηθεί
+  /// αργότερα το «γιατί αυτό το βήμα δεν μοιάζει με την πρόταση;».
+  clarification     String? @db.Text
+  /// Από ποιο αντικείμενο προέκυψε. Μια διευκρίνιση συχνά σπάει ένα βήμα σε
+  /// τρία — όλα δείχνουν πίσω στο ίδιο αρχικό.
+  regeneratedFromId String?
+
   status                 ProposalItemStatus @default(draft)
   convertedTaskId        String?            @unique
   convertedRequirementId String?            @unique
@@ -1523,10 +1539,13 @@ model ProposalItem {
   updatedAt DateTime @updatedAt
 
   analysis ProposalAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  assignee User?           @relation("ProposalItemAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@index([analysisId])
   @@index([analysisId, kind, order])
   @@index([status])
+  @@index([assigneeId])
+  @@index([regeneratedFromId])
 }
 
 model ProjectRequirement {

@@ -26,7 +26,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { MAX_OCR_PAGES, isPdfFile } from '@/lib/ocr/rasterize';
-import { ProposalItemRow, type ProposalItemView } from './proposal-item-row';
+import { ProposalItemRow, type ProposalItemView, type ProposalMember } from './proposal-item-row';
 import {
   getProposalStatus,
   retryProposalAnalysis,
@@ -60,9 +60,11 @@ const POLL_MS = 3000;
 export function ProposalTab({
   projectId,
   analysis,
+  members,
 }: {
   projectId: string;
   analysis: ProposalAnalysisView | null;
+  members: ProposalMember[];
 }) {
   const router = useRouter();
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -135,7 +137,7 @@ export function ProposalTab({
         setError(res.error);
         return;
       }
-      const { tasksCreated, requirementsCreated, skipped } = res.data;
+      const { tasksCreated, requirementsCreated, skipped, notified } = res.data;
       setError(null);
       setSelected(new Set());
       setNotice(
@@ -146,6 +148,9 @@ export function ProposalTab({
           .filter(Boolean)
           .join(' και ') +
           ' δημιουργήθηκαν.' +
+          (notified > 0
+            ? ` Ειδοποιήθηκ${notified === 1 ? 'ε 1 άτομο' : `αν ${notified} άτομα`}.`
+            : '') +
           (skipped > 0 ? ` ${skipped} είχαν ήδη μετατραπεί.` : ''),
       );
       router.refresh();
@@ -277,6 +282,7 @@ export function ProposalTab({
             hint={section.hint}
             kind={section.kind}
             items={grouped.get(section.kind) ?? []}
+            members={members}
             selected={selected}
             onToggle={toggle}
             onSetMany={setMany}
@@ -327,6 +333,7 @@ function Section({
   hint,
   kind,
   items,
+  members,
   selected,
   onToggle,
   onSetMany,
@@ -337,6 +344,7 @@ function Section({
   hint: string;
   kind: ProposalItemView['kind'];
   items: ProposalItemView[];
+  members: ProposalMember[];
   selected: Set<string>;
   onToggle: (id: string) => void;
   onSetMany: (ids: string[], nextSelected: boolean) => void;
@@ -423,6 +431,7 @@ function Section({
           <ProposalItemRow
             key={item.id}
             item={item}
+            members={members}
             selected={selected.has(item.id)}
             onToggle={() => onToggle(item.id)}
             onChanged={onChanged}

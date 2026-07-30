@@ -12,6 +12,7 @@ import { revalidatePath } from 'next/cache'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { convertProposalItems } from '@/lib/proposals/convert'
+import { regenerateProposalItem } from '@/lib/proposals/regenerate'
 
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -105,6 +106,7 @@ type ItemPatch = {
   visibility?: 'shared' | 'internal'
   requirementCategory?: string | null
   kind?: 'step' | 'milestone' | 'requirement'
+  assigneeId?: string | null
 }
 
 export async function updateProposalItem(itemId: string, patch: ItemPatch): Promise<Result> {
@@ -142,6 +144,7 @@ export async function updateProposalItem(itemId: string, patch: ItemPatch): Prom
           ? { requirementCategory: patch.requirementCategory || null }
           : {}),
         ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
+        ...(patch.assigneeId !== undefined ? { assigneeId: patch.assigneeId || null } : {}),
       },
     })
 
@@ -219,10 +222,41 @@ export async function setProposalItemRejected(itemId: string, rejected: boolean)
   }
 }
 
+/**
+ * «Δεν το κατάλαβε — ξαναφτιάξ' το έτσι.»
+ *
+ * Μπορεί να γυρίσει ΠΕΡΙΣΣΟΤΕΡΑ από ένα αντικείμενα: η συνηθέστερη διευκρίνιση
+ * είναι ακριβώς «αυτό δεν είναι ένα βήμα, είναι τρία». Το αρχικό μένει στη
+ * βάση σημαδεμένο ως αντικαταστάθηκε.
+ */
+export async function regenerateProposalItemWithClarification(
+  itemId: string,
+  clarification: string,
+): Promise<Result<{ created: number; titles: string[] }>> {
+  try {
+    await requirePrivileged()
+
+    const item = await prisma.proposalItem.findUnique({
+      where: { id: itemId },
+      select: { analysis: { select: { projectId: true } } },
+    })
+    if (!item) return { ok: false, error: 'Το αντικείμενο δεν βρέθηκε.' }
+
+    const result = await regenerateProposalItem({ itemId, clarification })
+
+    revalidatePath(`/projects/${item.analysis.projectId}`)
+    return { ok: true, data: result }
+  } catch (err) {
+    return fail(err)
+  }
+}
+
 export async function convertSelectedProposalItems(
   analysisId: string,
   itemIds: string[],
-): Promise<Result<{ tasksCreated: number; requirementsCreated: number; skipped: number }>> {
+): Promise<
+  Result<{ tasksCreated: number; requirementsCreated: number; skipped: number; notified: number }>
+> {
   try {
     const actorId = await requirePrivileged()
     const projectId = await analysisProject(analysisId)
