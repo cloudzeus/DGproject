@@ -188,6 +188,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         summary: proposalAnalysisRaw.summary,
         charCount: proposalAnalysisRaw.charCount,
         chunkCount: proposalAnalysisRaw.chunkCount,
+        ocrPageCount: proposalAnalysisRaw.ocrPageCount,
+        ocrTruncated: proposalAnalysisRaw.ocrTruncated,
+        ocrWarning: proposalAnalysisRaw.ocrWarning,
         createdAt: proposalAnalysisRaw.createdAt.toISOString(),
         items: proposalAnalysisRaw.items.map((i) => ({
           id: i.id,

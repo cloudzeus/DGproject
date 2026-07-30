@@ -6,6 +6,14 @@
  * έργου (εσωτερικό — οι προτάσεις έχουν τιμές), και το κείμενο κρατιέται στη
  * γραμμή της ανάλυσης ώστε μια νέα προσπάθεια να μη χρειάζεται ξανακατέβασμα.
  *
+ * Δύο διαδρομές για το κείμενο:
+ *   1. Ψηφιακό αρχείο → unpdf/mammoth, εδώ στον server.
+ *   2. Σαρωμένο PDF → ο browser έχει ήδη μετατρέψει τις σελίδες σε εικόνες
+ *      (lib/ocr/rasterize.ts) και τις στέλνει μαζί· εδώ περνούν από Gemini.
+ *
+ * Η rasterization μένει στον browser επίτηδες: στον server θα απαιτούσε native
+ * εξαρτήσεις που σπάνε σε κάθε deploy.
+ *
  * Η ανάλυση ξεκινά fire-and-forget: το ανέβασμα δεν περιμένει 50 σελίδες
  * DeepSeek. Ό,τι πεθάνει μαζί με τη διεργασία το ξαναπιάνει ο sweeper.
  */
@@ -16,14 +24,19 @@ import { prisma } from '@/lib/prisma'
 import { uploadFileToCDN } from '@/lib/bunnycdn'
 import {
   MAX_FILE_BYTES,
-  ProposalExtractionError,
   extractProposalText,
   isSupportedProposalFile,
 } from '@/lib/proposals/extract'
+import { ocrPagesToText } from '@/lib/ocr/read'
+import { isGeminiConfigured } from '@/lib/ocr/gemini'
+import { MAX_OCR_PAGES, type RasterizedPage } from '@/lib/ocr/rasterize'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
+
+/** Οροφή για τις εικόνες σελίδων — 30 σελίδες webp χωράνε άνετα μέσα σε αυτό. */
+const MAX_OCR_PAYLOAD_BYTES = 40 * 1024 * 1024
 
 /** Ίδια πύλη με την Κοστολόγηση: η πρόταση περιέχει τιμές. */
 async function requirePrivileged(): Promise<string> {
@@ -32,6 +45,44 @@ async function requirePrivileged(): Promise<string> {
   const role = session.user.role
   if (role !== 'admin' && role !== 'manager') throw new Error('Forbidden')
   return session.user.id
+}
+
+/**
+ * Διαβάζει τις εικόνες σελίδων που έστειλε ο browser. Ό,τι δεν έχει τη σωστή
+ * μορφή πέφτει σιωπηλά: μια χαλασμένη σελίδα δεν πρέπει να ρίξει το ανέβασμα,
+ * και ο μετρητής σελίδων στο τέλος δείχνει τι πραγματικά διαβάστηκε.
+ */
+function parseOcrPages(raw: unknown): RasterizedPage[] {
+  if (typeof raw !== 'string' || raw.length === 0) return []
+  if (raw.length > MAX_OCR_PAYLOAD_BYTES) return []
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+
+  const pages: RasterizedPage[] = []
+  for (const p of parsed.slice(0, MAX_OCR_PAGES)) {
+    if (
+      typeof p === 'object' &&
+      p !== null &&
+      typeof (p as RasterizedPage).base64 === 'string' &&
+      typeof (p as RasterizedPage).mimeType === 'string' &&
+      (p as RasterizedPage).base64.length > 0
+    ) {
+      const page = p as RasterizedPage
+      pages.push({
+        base64: page.base64,
+        mimeType: page.mimeType,
+        width: Number(page.width) || 0,
+        height: Number(page.height) || 0,
+      })
+    }
+  }
+  return pages
 }
 
 export async function POST(
@@ -82,16 +133,48 @@ export async function POST(
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
+  const ocrPages = parseOcrPages(formData.get('ocrPages'))
+  const ocrTruncated = formData.get('ocrTruncated') === 'true'
 
-  // Η εξαγωγή πρώτα: αν το PDF είναι σαρωμένο, ο χρήστης το μαθαίνει αμέσως
-  // αντί να δει μια ανάλυση που «τρέχει» και αποτυγχάνει σε ένα λεπτό.
+  // Η εξαγωγή πρώτα: αν το αρχείο έχει κείμενο, το OCR είναι περιττό κόστος
+  // ακόμη κι όταν ο browser έστειλε εικόνες.
+  const extracted = await extractProposalText(buffer, mimeType, file.name)
+
   let text: string
-  try {
-    const extracted = await extractProposalText(buffer, mimeType, file.name)
+  let ocrPageCount = 0
+  let ocrModel: string | null = null
+  let ocrWarning: string | null = null
+
+  if (extracted.ok) {
     text = extracted.text
-  } catch (e) {
-    const msg = e instanceof ProposalExtractionError ? e.message : 'Η ανάγνωση του αρχείου απέτυχε.'
-    return NextResponse.json({ ok: false, error: msg }, { status: 422 })
+  } else if (extracted.reason !== 'no-text') {
+    return NextResponse.json({ ok: false, error: extracted.message }, { status: 422 })
+  } else if (ocrPages.length === 0) {
+    const hint = isGeminiConfigured()
+      ? 'Ανέβασε την πρόταση σε ψηφιακή μορφή, ή δοκίμασε ξανά ώστε να διαβαστεί με οπτική αναγνώριση.'
+      : 'Η οπτική αναγνώριση δεν είναι ρυθμισμένη (λείπει το GEMINI_API_KEY).'
+    return NextResponse.json({ ok: false, error: `${extracted.message} ${hint}` }, { status: 422 })
+  } else {
+    try {
+      const ocr = await ocrPagesToText(ocrPages)
+      text = ocr.text
+      ocrPageCount = ocr.pagesRead
+      ocrModel = ocr.model
+
+      const notes: string[] = []
+      if (ocr.failedPages.length > 0) {
+        notes.push(`Δεν διαβάστηκαν οι σελίδες: ${ocr.failedPages.join(', ')}.`)
+      }
+      if (ocrTruncated) {
+        notes.push(`Διαβάστηκαν μόνο οι πρώτες ${MAX_OCR_PAGES} σελίδες.`)
+      }
+      ocrWarning = notes.length > 0 ? notes.join(' ') : null
+    } catch (e) {
+      return NextResponse.json(
+        { ok: false, error: `Η οπτική αναγνώριση απέτυχε: ${e instanceof Error ? e.message : 'unknown'}` },
+        { status: 422 },
+      )
+    }
   }
 
   let attachmentId: string | null = null
@@ -131,6 +214,10 @@ export async function POST(
       charCount: text.length,
       status: 'pending',
       createdById: actorId,
+      ocrPageCount,
+      ocrTruncated: ocrPageCount > 0 && ocrTruncated,
+      ocrModel,
+      ocrWarning,
     },
     select: { id: true },
   })
@@ -139,5 +226,8 @@ export async function POST(
     .then((m) => m.runProposalAnalysis(analysis.id))
     .catch((err) => console.error('[proposals] η εκκίνηση ανάλυσης απέτυχε:', err))
 
-  return NextResponse.json({ ok: true, analysisId: analysis.id, charCount: text.length }, { status: 201 })
+  return NextResponse.json(
+    { ok: true, analysisId: analysis.id, charCount: text.length, ocrPageCount },
+    { status: 201 },
+  )
 }

@@ -1447,6 +1447,17 @@ model ProposalAnalysis {
   charCount     Int    @default(0)
   chunkCount    Int    @default(0)
 
+  // ─── Οπτική αναγνώριση (σαρωμένα αρχεία) ───────────────────────────
+  // 0 = το αρχείο είχε επιλέξιμο κείμενο και δεν χρειάστηκε OCR. Πάνω από 0,
+  // το κείμενο είναι μεταγραφή — λιγότερο αξιόπιστο, και ο χρήστης πρέπει να
+  // το ξέρει όταν διαβάζει τα αποσπάσματα προέλευσης.
+  ocrPageCount Int     @default(0)
+  /// Το PDF είχε περισσότερες σελίδες από την οροφή· κάποιες δεν διαβάστηκαν.
+  ocrTruncated Boolean @default(false)
+  ocrModel     String?
+  /// Σελίδες που απέτυχαν, ή άλλη μη θανατηφόρα παρατήρηση του OCR.
+  ocrWarning   String? @db.Text
+
   status  ProposalAnalysisStatus @default(pending)
   aiError String?                @db.Text
 

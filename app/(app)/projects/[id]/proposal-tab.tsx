@@ -25,6 +25,7 @@ import {
 } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
+import { MAX_OCR_PAGES, isPdfFile } from '@/lib/ocr/rasterize';
 import { ProposalItemRow, type ProposalItemView } from './proposal-item-row';
 import {
   getProposalStatus,
@@ -41,6 +42,9 @@ export type ProposalAnalysisView = {
   summary: string | null;
   charCount: number;
   chunkCount: number;
+  ocrPageCount: number;
+  ocrTruncated: boolean;
+  ocrWarning: string | null;
   createdAt: string;
   items: ProposalItemView[];
 };
@@ -189,6 +193,15 @@ export function ProposalTab({
             {analysis.charCount.toLocaleString('el-GR')} χαρακτήρες
             {analysis.chunkCount > 1 && ` σε ${analysis.chunkCount} τμήματα`}
           </p>
+          {analysis.ocrPageCount > 0 && (
+            <p
+              className="mt-1 inline-flex items-center gap-1 rounded bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-fluent-accent-orange"
+              title="Το κείμενο είναι μεταγραφή από εικόνες — τα αποσπάσματα μπορεί να έχουν λάθη ανάγνωσης"
+            >
+              <Warning20Filled className="h-3.5 w-3.5" />
+              Διαβάστηκε με οπτική αναγνώριση ({analysis.ocrPageCount} σελίδες)
+            </p>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -223,6 +236,12 @@ export function ProposalTab({
               {analysis.aiError ?? 'Άγνωστο σφάλμα.'}
             </p>
           </div>
+        </div>
+      )}
+
+      {analysis.ocrWarning && (
+        <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-2.5 text-xs text-fluent-neutral-70">
+          {analysis.ocrWarning}
         </div>
       )}
 
@@ -448,6 +467,16 @@ function RunningState({ chunkCount }: { chunkCount: number }) {
   );
 }
 
+/**
+ * Το ανέβασμα, με έλεγχο για σαρωμένο PDF πριν φύγει τίποτα.
+ *
+ * Μόλις διαλεγεί αρχείο, ένας γρήγορος έλεγχος (`probePdf`) λέει πόσες σελίδες
+ * έχει και αν έχει επιλέξιμο κείμενο. Έτσι ο χρήστης ξέρει ΠΡΙΝ πατήσει
+ * ανέβασμα ότι το αρχείο θα περάσει από οπτική αναγνώριση — και τι σημαίνει
+ * αυτό για τα δεδομένα του.
+ *
+ * Η μετατροπή σε εικόνες γίνεται εδώ, στον browser, και μόνο όταν χρειάζεται.
+ */
 function UploadModal({
   projectId,
   onClose,
@@ -458,17 +487,60 @@ function UploadModal({
   onDone: () => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [probe, setProbe] = useState<{ pageCount: number; hasText: boolean } | null>(null);
+  const [phase, setPhase] = useState<'idle' | 'probing' | 'rendering' | 'uploading'>('idle');
+  const [rendered, setRendered] = useState({ done: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const busy = phase !== 'idle';
+  const needsOcr = probe !== null && !probe.hasText;
+  const ocrPageCount = probe ? Math.min(probe.pageCount, MAX_OCR_PAGES) : 0;
+
+  async function pick(next: File | null) {
+    setFile(next);
+    setProbe(null);
+    setError(null);
+    if (!next || !isPdfFile(next)) return;
+
+    setPhase('probing');
+    try {
+      const { probePdf } = await import('@/lib/ocr/rasterize');
+      setProbe(await probePdf(next));
+    } catch (e) {
+      // Ο έλεγχος είναι βοήθημα, όχι προϋπόθεση: αν αποτύχει, ο server θα πει
+      // ό,τι έχει να πει. Δεν μπλοκάρουμε το ανέβασμα γι' αυτόν.
+      console.error('[proposals] ο έλεγχος του PDF απέτυχε:', e);
+    } finally {
+      setPhase('idle');
+    }
+  }
+
   async function submit() {
     if (!file) return;
-    setBusy(true);
     setError(null);
+
+    const body = new FormData();
+    body.append('file', file);
+
+    if (needsOcr) {
+      setPhase('rendering');
+      try {
+        const { rasterizePdf } = await import('@/lib/ocr/rasterize');
+        const result = await rasterizePdf(file, {
+          onProgress: (done, total) => setRendered({ done, total }),
+        });
+        body.append('ocrPages', JSON.stringify(result.pages));
+        body.append('ocrTruncated', String(result.truncated));
+      } catch (e) {
+        setError(`Η μετατροπή των σελίδων απέτυχε: ${e instanceof Error ? e.message : 'unknown'}`);
+        setPhase('idle');
+        return;
+      }
+    }
+
+    setPhase('uploading');
     try {
-      const body = new FormData();
-      body.append('file', file);
       const res = await fetch(`/api/proposals/${projectId}/upload`, { method: 'POST', body });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -479,14 +551,23 @@ function UploadModal({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Το ανέβασμα απέτυχε.');
     } finally {
-      setBusy(false);
+      setPhase('idle');
     }
   }
+
+  const buttonLabel =
+    phase === 'rendering'
+      ? `Μετατροπή σελίδων ${rendered.done}/${rendered.total}…`
+      : phase === 'uploading'
+        ? needsOcr
+          ? 'Οπτική αναγνώριση…'
+          : 'Ανεβαίνει…'
+        : 'Ανέβασμα και ανάλυση';
 
   return (
     <Modal
       title="Ανέβασμα πρότασης"
-      description="PDF ή DOCX, έως 20 MB. Σαρωμένα PDF δεν διαβάζονται."
+      description="PDF ή DOCX, έως 20 MB. Τα σαρωμένα PDF διαβάζονται με οπτική αναγνώριση."
       onClose={onClose}
     >
       <div className="space-y-4">
@@ -494,14 +575,48 @@ function UploadModal({
           ref={inputRef}
           type="file"
           accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => pick(e.target.files?.[0] ?? null)}
+          disabled={busy}
           className="w-full rounded-md border border-fluent-neutral-20 px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-fluent-neutral-8 file:px-3 file:py-1.5 file:text-sm file:font-medium"
         />
 
-        <p className="text-xs leading-relaxed text-fluent-neutral-60">
-          Email, τηλέφωνα, ΑΦΜ, IBAN και ονόματα εταιρειών κρύβονται πριν το κείμενο
-          φύγει προς το μοντέλο.
-        </p>
+        {phase === 'probing' && (
+          <p className="text-xs text-fluent-neutral-60">Έλεγχος αρχείου…</p>
+        )}
+
+        {probe && probe.hasText && (
+          <p className="rounded-md bg-green-50 px-3 py-2 text-xs text-fluent-neutral-70">
+            {probe.pageCount} σελίδες με επιλέξιμο κείμενο. Δεν χρειάζεται οπτική αναγνώριση.
+          </p>
+        )}
+
+        {needsOcr && (
+          <div className="space-y-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2.5">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-fluent-neutral-90">
+              <Warning20Filled className="text-fluent-accent-orange" />
+              Σαρωμένο αρχείο — {probe!.pageCount} σελίδες
+            </p>
+            <p className="text-xs leading-relaxed text-fluent-neutral-70">
+              Δεν έχει επιλέξιμο κείμενο, οπότε
+              {probe!.pageCount > MAX_OCR_PAGES
+                ? ` οι πρώτες ${MAX_OCR_PAGES} σελίδες θα διαβαστούν`
+                : ` οι ${ocrPageCount} σελίδες θα διαβαστούν`}{' '}
+              ως εικόνες από το Gemini.
+            </p>
+            <p className="text-xs leading-relaxed text-fluent-neutral-70">
+              <strong>Πρόσεξε:</strong> μια εικόνα δεν μασκάρεται. Ό,τι είναι τυπωμένο πάνω
+              της — ΑΦΜ, IBAN, ονόματα, τιμές — το βλέπει η Google. Η μάσκα μπαίνει μετά,
+              στο κείμενο που γυρίζει, πριν πάει για ανάλυση.
+            </p>
+          </div>
+        )}
+
+        {!needsOcr && (
+          <p className="text-xs leading-relaxed text-fluent-neutral-60">
+            Email, τηλέφωνα, ΑΦΜ, IBAN και ονόματα εταιρειών κρύβονται πριν το κείμενο
+            φύγει προς το μοντέλο.
+          </p>
+        )}
 
         {error && (
           <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-fluent-accent-red">{error}</p>
@@ -512,7 +627,7 @@ function UploadModal({
             Άκυρο
           </Button>
           <Button variant="primary" onClick={submit} disabled={!file || busy}>
-            {busy ? 'Ανεβαίνει…' : 'Ανέβασμα και ανάλυση'}
+            {buttonLabel}
           </Button>
         </div>
       </div>

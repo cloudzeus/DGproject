@@ -4,20 +4,20 @@
  * `unpdf` για PDF — καθαρό JavaScript, δουλεύει σε serverless· το `pdf-parse`
  * θέλει native εξαρτήσεις. `mammoth` για DOCX.
  *
- * Δεν κάνουμε OCR. Ένα σαρωμένο PDF βγάζει κενό κείμενο και σταματά εδώ με
- * ρητό μήνυμα — καλύτερα από μια ανάλυση που «πέτυχε» χωρίς να βρει τίποτα.
+ * Επιστρέφει αποτέλεσμα αντί να πετάει: το «δεν βρέθηκε κείμενο» ΔΕΝ είναι
+ * σφάλμα πια — είναι η ένδειξη ότι το αρχείο είναι σαρωμένο και πρέπει να
+ * περάσει από OCR (lib/ocr/read.ts). Ο καλών αποφασίζει, όχι αυτή η μονάδα.
  */
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024
-/** Κάτω από αυτό δεν υπάρχει πρόταση να αναλυθεί — υπάρχει σφάλμα εξαγωγής. */
+/** Κάτω από αυτό δεν υπάρχει πρόταση να αναλυθεί — το αρχείο είναι σαρωμένο. */
 export const MIN_TEXT_CHARS = 200
 
-export class ProposalExtractionError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'ProposalExtractionError'
-  }
-}
+export type ExtractFailure = 'unsupported' | 'too-large' | 'no-text' | 'failed'
+
+export type ExtractOutcome =
+  | { ok: true; text: string; pageCount: number | null }
+  | { ok: false; reason: ExtractFailure; message: string }
 
 const PDF_TYPES = new Set(['application/pdf'])
 const DOCX_TYPES = new Set([
@@ -34,20 +34,17 @@ export function isSupportedProposalFile(mimeType: string, fileName: string): boo
   )
 }
 
-export type ExtractionResult = {
-  text: string
-  pageCount: number | null
-}
-
 export async function extractProposalText(
   bytes: Buffer | Uint8Array,
   mimeType: string,
   fileName: string,
-): Promise<ExtractionResult> {
+): Promise<ExtractOutcome> {
   if (bytes.byteLength > MAX_FILE_BYTES) {
-    throw new ProposalExtractionError(
-      `Το αρχείο ξεπερνά τα ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`,
-    )
+    return {
+      ok: false,
+      reason: 'too-large',
+      message: `Το αρχείο ξεπερνά τα ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`,
+    }
   }
 
   const lower = fileName.toLowerCase()
@@ -55,47 +52,47 @@ export async function extractProposalText(
   const isDocx = DOCX_TYPES.has(mimeType) || lower.endsWith('.docx')
 
   if (!isPdf && !isDocx) {
-    throw new ProposalExtractionError('Δεκτά είναι μόνο αρχεία PDF και DOCX.')
+    return { ok: false, reason: 'unsupported', message: 'Δεκτά είναι μόνο αρχεία PDF και DOCX.' }
   }
 
-  const result = isPdf ? await extractPdf(bytes) : await extractDocx(bytes)
-  const text = normalizeWhitespace(result.text)
+  let raw: { text: string; pageCount: number | null }
+  try {
+    raw = isPdf ? await extractPdf(bytes) : await extractDocx(bytes)
+  } catch (err) {
+    return {
+      ok: false,
+      reason: 'failed',
+      message: `${isPdf ? 'Το PDF' : 'Το DOCX'} δεν διαβάστηκε: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+
+  const text = normalizeWhitespace(raw.text)
 
   if (text.length < MIN_TEXT_CHARS) {
-    throw new ProposalExtractionError(
-      isPdf
-        ? 'Το PDF φαίνεται σαρωμένο — δεν βρέθηκε κείμενο μέσα του. Ανέβασε την πρόταση σε ψηφιακή μορφή (PDF με κείμενο ή DOCX).'
+    return {
+      ok: false,
+      reason: 'no-text',
+      message: isPdf
+        ? 'Το PDF φαίνεται σαρωμένο — δεν έχει επιλέξιμο κείμενο.'
         : 'Το αρχείο DOCX δεν περιέχει αρκετό κείμενο για ανάλυση.',
-    )
+    }
   }
 
-  return { text, pageCount: result.pageCount }
+  return { ok: true, text, pageCount: raw.pageCount }
 }
 
-async function extractPdf(bytes: Buffer | Uint8Array): Promise<ExtractionResult> {
+async function extractPdf(bytes: Buffer | Uint8Array): Promise<{ text: string; pageCount: number | null }> {
   const { getDocumentProxy, extractText } = await import('unpdf')
-  try {
-    const pdf = await getDocumentProxy(new Uint8Array(bytes))
-    const { text, totalPages } = await extractText(pdf, { mergePages: true })
-    return { text: Array.isArray(text) ? text.join('\n\n') : text, pageCount: totalPages ?? null }
-  } catch (err) {
-    throw new ProposalExtractionError(
-      `Το PDF δεν διαβάστηκε: ${err instanceof Error ? err.message : String(err)}`,
-    )
-  }
+  const pdf = await getDocumentProxy(new Uint8Array(bytes))
+  const { text, totalPages } = await extractText(pdf, { mergePages: true })
+  return { text: Array.isArray(text) ? text.join('\n\n') : text, pageCount: totalPages ?? null }
 }
 
-async function extractDocx(bytes: Buffer | Uint8Array): Promise<ExtractionResult> {
+async function extractDocx(bytes: Buffer | Uint8Array): Promise<{ text: string; pageCount: number | null }> {
   const mammoth = await import('mammoth')
-  try {
-    const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)
-    const { value } = await mammoth.extractRawText({ buffer })
-    return { text: value, pageCount: null }
-  } catch (err) {
-    throw new ProposalExtractionError(
-      `Το DOCX δεν διαβάστηκε: ${err instanceof Error ? err.message : String(err)}`,
-    )
-  }
+  const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)
+  const { value } = await mammoth.extractRawText({ buffer })
+  return { text: value, pageCount: null }
 }
 
 /**
@@ -103,7 +100,7 @@ async function extractDocx(bytes: Buffer | Uint8Array): Promise<ExtractionResult
  * καθάρισμα εδώ γλιτώνει tokens σε κάθε τεμάχιο — και σε 50 σελίδες αυτό δεν
  * είναι κοσμητικό.
  */
-function normalizeWhitespace(text: string): string {
+export function normalizeWhitespace(text: string): string {
   return text
     .replace(/\r\n?/g, '\n')
     .replace(/[ \t]+/g, ' ')
