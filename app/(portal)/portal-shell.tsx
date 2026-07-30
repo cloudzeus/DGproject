@@ -7,6 +7,7 @@ import {
   Home24Regular,
   Folder24Regular,
   TicketDiagonal24Regular,
+  People24Regular,
   Add16Regular,
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
@@ -21,6 +22,7 @@ const NAV = [
   { href: '/portal', label: 'Αρχική', Icon: Home24Regular },
   { href: '/portal/projects', label: 'Έργα', Icon: Folder24Regular },
   { href: '/portal/tickets', label: 'Αιτήματα', Icon: TicketDiagonal24Regular },
+  { href: '/portal/contacts', label: 'Επαφές', Icon: People24Regular },
 ];
 
 export function PortalShell({

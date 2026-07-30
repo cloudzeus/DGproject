@@ -23,7 +23,27 @@ export type PortalTeamMember = {
  * Εμφανίζονται μόνο μέλη με `visibleToCustomer` — το φιλτράρισμα γίνεται στο
  * query, όχι εδώ.
  */
-export function PortalTeam({ members }: { members: PortalTeamMember[] }) {
+/**
+ * Το θέμα του email φέρει τον κωδικό έργου σε μορφή [FPM:p=PRJ-…], ώστε η
+ * απάντηση του μέλους να δρομολογηθεί αυτόματα πίσω στο έργο από το email
+ * ingest (lib/email-tag.ts) αντί να χαθεί σε ένα προσωπικό inbox.
+ */
+function mailtoFor(email: string, projectCode: string | null, projectName: string): string {
+  const subject = projectCode
+    ? `[FPM:p=${projectCode}] ${projectName}`
+    : projectName
+  return `mailto:${email}?subject=${encodeURIComponent(subject)}`
+}
+
+export function PortalTeam({
+  members,
+  projectCode,
+  projectName,
+}: {
+  members: PortalTeamMember[]
+  projectCode: string | null
+  projectName: string
+}) {
   if (members.length === 0) {
     return (
       <section>
@@ -72,13 +92,18 @@ export function PortalTeam({ members }: { members: PortalTeamMember[] }) {
               </p>
             )}
 
-            <div className="mt-3 space-y-1 border-t border-fluent-neutral-8 pt-2.5">
+            <div className="mt-3 space-y-2 border-t border-fluent-neutral-8 pt-2.5">
               <a
-                href={`mailto:${m.email}`}
-                className="block truncate text-xs text-fluent-blue-600 hover:underline"
+                href={mailtoFor(m.email, projectCode, projectName)}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-fluent-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-fluent-blue-700"
               >
-                {m.email}
+                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                  <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h9A1.5 1.5 0 0 1 14 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7Z" />
+                  <path d="m2.5 5 5.5 3.5L13.5 5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Στείλτε email
               </a>
+              <p className="truncate text-center text-[11px] text-fluent-neutral-60">{m.email}</p>
               {(m.phone || m.mobile) && (
                 <div className="flex flex-wrap gap-x-3 text-xs">
                   {m.phone && (

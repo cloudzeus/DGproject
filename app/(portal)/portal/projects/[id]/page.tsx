@@ -1,16 +1,11 @@
 import { notFound } from 'next/navigation';
-import Link from 'next/link';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { getPortalScope } from '@/lib/portal/scope';
 import { commentVisibilityFilter } from '@/lib/comments/visibility';
 import { taskVisibilityFilter } from '@/lib/tasks/visibility';
 import { attachmentVisibilityFilter } from '@/lib/attachments/visibility';
-import { PortalTeam } from './portal-team';
-import { PortalFiles } from './portal-files';
-import { PortalStatusBar } from '@/components/portal/status-bar';
-import { countByState, completionPct, totalOf } from '@/components/portal/task-status';
-import { PortalProjectClient } from './portal-project-client';
+import { PortalProjectTabs } from './portal-project-tabs';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +35,7 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
       description: true,
       color: true,
       status: true,
+      projectCode: true,
       startDate: true,
       dueDate: true,
       ownerId: true,
@@ -110,152 +106,62 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
   });
   if (!project) notFound();
 
-  const counts = countByState(project.tasks.map((t) => t.status));
-  const pct = completionPct(counts);
-  const total = totalOf(counts);
-  const fmtDate = new Intl.DateTimeFormat('el-GR', { dateStyle: 'medium' });
-
-  const openQuestions = project.tasks.reduce(
-    (n, t) => n + t.questions.filter((q) => !q.answer).length,
-    0,
-  );
-
   return (
-    <div className="space-y-6">
-      <div className="animate-fade-in">
-        <Link
-          href="/portal/projects"
-          className="inline-flex items-center gap-1 text-xs font-medium text-fluent-neutral-60 transition-colors hover:text-fluent-blue-600"
-        >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-            <path d="M10 3L5 8l5 5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Έργα
-        </Link>
-
-        {/* ─── Επικεφαλίδα με την πορεία ─── */}
-        <div className="relative mt-2 overflow-hidden rounded-xl border border-fluent-neutral-10 bg-white p-5 shadow-fluent-2 sm:p-6">
-          <span
-            className="absolute inset-y-0 left-0 w-1.5"
-            style={{ backgroundColor: project.color }}
-            aria-hidden
-          />
-
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-fluent-neutral-60">
-                {PROJECT_STATUS_LABEL[project.status] ?? project.status}
-              </p>
-              <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight text-fluent-neutral-90">
-                {project.name}
-              </h1>
-              {project.description && (
-                <p className="mt-2 max-w-prose text-sm leading-relaxed text-fluent-neutral-70">
-                  {project.description}
-                </p>
-              )}
-            </div>
-
-            <div className="shrink-0 text-right">
-              <p className="font-display text-4xl font-semibold leading-none tabular-nums text-fluent-neutral-90">
-                {pct}
-                <span className="text-xl font-medium text-fluent-neutral-60">%</span>
-              </p>
-              <p className="mt-1 text-[11px] text-fluent-neutral-60 tabular-nums">
-                {counts.done} από {total} εργασίες
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5">
-            <PortalStatusBar counts={counts} height="h-2.5" />
-          </div>
-
-          {(project.startDate || project.dueDate || openQuestions > 0) && (
-            <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-fluent-neutral-8 pt-4 text-xs">
-              {project.startDate && (
-                <span className="text-fluent-neutral-70">
-                  <span className="text-fluent-neutral-50">Έναρξη</span>{' '}
-                  <span className="font-medium tabular-nums">
-                    {fmtDate.format(project.startDate)}
-                  </span>
-                </span>
-              )}
-              {project.dueDate && (
-                <span className="text-fluent-neutral-70">
-                  <span className="text-fluent-neutral-50">Προθεσμία</span>{' '}
-                  <span className="font-medium tabular-nums">
-                    {fmtDate.format(project.dueDate)}
-                  </span>
-                </span>
-              )}
-              {openQuestions > 0 && (
-                <span className="rounded-full bg-fluent-blue-50 px-2.5 py-0.5 font-semibold text-fluent-blue-700">
-                  {openQuestions} {openQuestions === 1 ? 'ερώτηση περιμένει' : 'ερωτήσεις περιμένουν'} απάντηση
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <PortalProjectClient
-        tasks={project.tasks.map((t) => ({
-          id: t.id,
-          title: t.title,
-          description: t.description,
-          status: t.status,
-          dueDate: t.dueDate?.toISOString() ?? null,
-          completedAt: t.completedAt?.toISOString() ?? null,
-          assignees: t.assignees.map((a) => ({
-            name: a.user.name ?? a.user.email,
-            avatarUrl: a.user.image ?? undefined,
-          })),
-          comments: t.comments.map((c) => ({
-            id: c.id,
-            content: c.content,
-            createdAt: c.createdAt.toISOString(),
-            authorName: c.author.name ?? c.author.email,
-            authorAvatarUrl: c.author.image ?? undefined,
-            fromUs: c.author.userType === 'customer',
-          })),
-          questions: t.questions.map((q) => ({
-            id: q.id,
-            question: q.question,
-            answer: q.answer,
-            createdAt: q.createdAt.toISOString(),
-            askedByName: q.askedBy.name ?? q.askedBy.email,
-          })),
-        }))}
-      />
-
-      <PortalTeam
-        members={project.members.map((m) => ({
-          id: m.user.id,
-          name: m.user.name ?? m.user.email,
-          email: m.user.email,
-          avatarUrl: m.user.image ?? undefined,
-          title: m.title,
-          responsibilities: m.responsibilities,
-          phone: m.user.phone,
-          mobile: m.user.mobile,
-          isOwner: m.user.id === project.ownerId,
-        }))}
-      />
-
-      <PortalFiles
-        files={project.attachments.map((a) => ({
-          id: a.id,
-          name: a.name,
-          title: a.title,
-          size: a.size,
-          mimeType: a.mimeType,
-          url: a.url,
-          createdAt: a.createdAt.toISOString(),
-          uploadedByName: a.uploadedBy.name ?? a.uploadedBy.email,
-          fromUs: a.uploadedBy.userType === 'customer',
-        }))}
-      />
-    </div>
+    <PortalProjectTabs
+      projectName={project.name}
+      projectCode={project.projectCode}
+      statusLabel={PROJECT_STATUS_LABEL[project.status] ?? project.status}
+      color={project.color}
+      dueDate={project.dueDate?.toISOString() ?? null}
+      team={project.members.map((m) => ({
+        id: m.user.id,
+        name: m.user.name ?? m.user.email,
+        email: m.user.email,
+        avatarUrl: m.user.image ?? undefined,
+        title: m.title,
+        responsibilities: m.responsibilities,
+        phone: m.user.phone,
+        mobile: m.user.mobile,
+        isOwner: m.user.id === project.ownerId,
+      }))}
+      files={project.attachments.map((a) => ({
+        id: a.id,
+        name: a.name,
+        title: a.title,
+        size: a.size,
+        mimeType: a.mimeType,
+        url: a.url,
+        createdAt: a.createdAt.toISOString(),
+        uploadedByName: a.uploadedBy.name ?? a.uploadedBy.email,
+        fromUs: a.uploadedBy.userType === 'customer',
+      }))}
+      tasks={project.tasks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        status: t.status,
+        dueDate: t.dueDate?.toISOString() ?? null,
+        completedAt: t.completedAt?.toISOString() ?? null,
+        assignees: t.assignees.map((a) => ({
+          name: a.user.name ?? a.user.email,
+          avatarUrl: a.user.image ?? undefined,
+        })),
+        comments: t.comments.map((c) => ({
+          id: c.id,
+          content: c.content,
+          createdAt: c.createdAt.toISOString(),
+          authorName: c.author.name ?? c.author.email,
+          authorAvatarUrl: c.author.image ?? undefined,
+          fromUs: c.author.userType === 'customer',
+        })),
+        questions: t.questions.map((q) => ({
+          id: q.id,
+          question: q.question,
+          answer: q.answer,
+          createdAt: q.createdAt.toISOString(),
+          askedByName: q.askedBy.name ?? q.askedBy.email,
+        })),
+      }))}
+    />
   );
 }

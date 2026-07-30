@@ -205,3 +205,105 @@ export async function answerPortalQuestion(questionId: string, answer: string) {
   revalidatePath('/portal')
   return { ok: true as const }
 }
+
+/**
+ * Επαφές της ΔΙΚΗΣ ΤΟΥ εταιρίας, διαχειριζόμενες από τον πελάτη.
+ *
+ * Ο πελάτης ξέρει καλύτερα από εμάς ποιος στην εταιρία του χειρίζεται τι, οπότε
+ * τις συντηρεί ο ίδιος. Το `companyId` έρχεται ΠΑΝΤΑ από το scope, ποτέ από τον
+ * client — αλλιώς ένα αυθαίρετο id θα του επέτρεπε να γράψει επαφές σε ξένη
+ * εταιρία.
+ *
+ * Δεν μπορεί να δώσει πρόσβαση στο portal: το `userId` της επαφής μένει
+ * αποκλειστικά στους διαχειριστές μας.
+ */
+export type PortalContactInput = {
+  name: string
+  position?: string | null
+  email?: string | null
+  phone?: string | null
+  mobile?: string | null
+  isPrimary?: boolean
+}
+
+const trim = (v: string | null | undefined) => (v ?? '').trim().slice(0, 200) || null
+
+export async function addPortalContact(input: PortalContactInput) {
+  const { scope } = await requirePortal()
+  const name = input.name.trim()
+  if (name.length < 2) return { ok: false as const, error: 'Το όνομα είναι πολύ σύντομο.' }
+
+  await prisma.$transaction(async (tx) => {
+    if (input.isPrimary) {
+      await tx.contact.updateMany({ where: { companyId: scope.companyId }, data: { isPrimary: false } })
+    }
+    await tx.contact.create({
+      data: {
+        companyId: scope.companyId,
+        name,
+        position: trim(input.position),
+        email: trim(input.email)?.toLowerCase() ?? null,
+        phone: trim(input.phone),
+        mobile: trim(input.mobile),
+        isPrimary: Boolean(input.isPrimary),
+      },
+    })
+  })
+
+  revalidatePath('/portal/contacts')
+  return { ok: true as const }
+}
+
+export async function updatePortalContact(contactId: string, input: PortalContactInput) {
+  const { scope } = await requirePortal()
+  const name = input.name.trim()
+  if (name.length < 2) return { ok: false as const, error: 'Το όνομα είναι πολύ σύντομο.' }
+
+  // Η επαφή πρέπει να ανήκει στη ΔΙΚΗ ΤΟΥ εταιρία — ο έλεγχος είναι το scope.
+  const contact = await prisma.contact.findFirst({
+    where: { id: contactId, companyId: scope.companyId },
+    select: { id: true },
+  })
+  if (!contact) return { ok: false as const, error: 'Δεν βρέθηκε η επαφή.' }
+
+  await prisma.$transaction(async (tx) => {
+    if (input.isPrimary) {
+      await tx.contact.updateMany({
+        where: { companyId: scope.companyId, id: { not: contactId } },
+        data: { isPrimary: false },
+      })
+    }
+    await tx.contact.update({
+      where: { id: contactId },
+      data: {
+        name,
+        position: trim(input.position),
+        email: trim(input.email)?.toLowerCase() ?? null,
+        phone: trim(input.phone),
+        mobile: trim(input.mobile),
+        isPrimary: Boolean(input.isPrimary),
+      },
+    })
+  })
+
+  revalidatePath('/portal/contacts')
+  return { ok: true as const }
+}
+
+export async function deletePortalContact(contactId: string) {
+  const { scope } = await requirePortal()
+  const contact = await prisma.contact.findFirst({
+    where: { id: contactId, companyId: scope.companyId },
+    select: { id: true, userId: true },
+  })
+  if (!contact) return { ok: false as const, error: 'Δεν βρέθηκε η επαφή.' }
+  // Επαφή με λογαριασμό portal δεν διαγράφεται από εδώ — θα άφηνε χρήστη χωρίς
+  // εγγραφή επαφής και είναι απόφαση των διαχειριστών μας.
+  if (contact.userId) {
+    return { ok: false as const, error: 'Η επαφή έχει λογαριασμό. Επικοινωνήστε μαζί μας για αφαίρεση.' }
+  }
+
+  await prisma.contact.delete({ where: { id: contactId } })
+  revalidatePath('/portal/contacts')
+  return { ok: true as const }
+}
