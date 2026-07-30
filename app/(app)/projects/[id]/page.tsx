@@ -736,9 +736,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             role: u.role,
           }))}
         />
+        {/* Οι συσχετίσεις εταιριών θέλουν admin/manager: το canEdit περιλαμβάνει
+            και τον ιδιοκτήτη έργου, που δεν αρκεί για τα actions. */}
         <ProjectCompaniesManager
           projectId={project.id}
-          canEdit={canEdit}
+          canManage={isPrivileged}
           client={project.primaryCompany}
           associates={project.companies}
         />

@@ -37,12 +37,12 @@ type Associate = {
 
 export function ProjectCompaniesManager({
   projectId,
-  canEdit,
+  canManage,
   client,
   associates,
 }: {
   projectId: string;
-  canEdit: boolean;
+  canManage: boolean;
   client: { id: string; NAME: string; AFM: string | null } | null;
   associates: Associate[];
 }) {
@@ -76,7 +76,7 @@ export function ProjectCompaniesManager({
     <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 overflow-hidden">
       <div className="p-4 border-b border-black/5 flex items-center justify-between">
         <h2 className="font-display text-lg font-semibold">Εταιρίες έργου</h2>
-        {canEdit && (
+        {canManage && (
           <Button
             variant="secondary"
             size="sm"
@@ -91,7 +91,7 @@ export function ProjectCompaniesManager({
       <div className="p-4 space-y-3">
         {error && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{error}</p>}
 
-        {open && canEdit && (
+        {open && canManage && (
           <div className="rounded-lg bg-fluent-neutral-4 p-3 space-y-3">
             <div>
               <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Εταιρία</label>
@@ -144,7 +144,7 @@ export function ProjectCompaniesManager({
             <span className="shrink-0 text-[10px] uppercase font-semibold text-fluent-neutral-60">
               {ROLE_LABEL[a.role] ?? a.role}
             </span>
-            {canEdit && (
+            {canManage && (
               <button
                 type="button"
                 onClick={() => remove(a.id)}

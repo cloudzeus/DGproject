@@ -18,6 +18,28 @@ async function requireAdmin(): Promise<string> {
   return session.user.id
 }
 
+/**
+ * Ό,τι είναι μέλος της ομάδας. Χρησιμοποιείται για ΑΝΑΓΝΩΣΗ καταλόγου εταιριών:
+ * το CompanyPicker ζει και στη φόρμα έργου, την οποία επεξεργάζονται managers
+ * και ιδιοκτήτες έργων — όχι μόνο διαχειριστές.
+ */
+async function requireStaff(): Promise<string> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Απαιτείται σύνδεση.')
+  if (session.user.userType === 'customer') throw new Error('Μη διαθέσιμο.')
+  return session.user.id
+}
+
+/** Μεταβολές συσχέτισης έργου–εταιρίας: όποιος μπορεί να επεξεργαστεί έργα. */
+async function requireManager(): Promise<string> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Απαιτείται σύνδεση.')
+  if (session.user.role !== 'admin' && session.user.role !== 'manager') {
+    throw new Error('Απαιτείται ρόλος διαχειριστή ή υπευθύνου.')
+  }
+  return session.user.id
+}
+
 const t = (v: string | null | undefined) => (v ?? '').trim() || null
 
 export type CompanyInput = {
@@ -352,7 +374,7 @@ export async function promoteContactToUser(contactId: string) {
 
 /** Λίστα ενεργών εταιριών για pickers. Τοπική αναζήτηση, δεν αγγίζει SoftOne. */
 export async function searchCompanies(q: string) {
-  await requireAdmin()
+  await requireStaff()
   const needle = q.trim()
   return prisma.company.findMany({
     where: {
@@ -367,7 +389,7 @@ export async function searchCompanies(q: string) {
 
 /** Ορίζει τον πελάτη ενός έργου. `null` καθαρίζει τη σύνδεση. */
 export async function setProjectPrimaryCompany(projectId: string, companyId: string | null) {
-  await requireAdmin()
+  await requireManager()
   if (companyId) {
     // Ο πελάτης δεν διπλοεγγράφεται ως ProjectCompany.
     await prisma.projectCompany.deleteMany({ where: { projectId, companyId } })
@@ -382,7 +404,7 @@ export async function addProjectCompany(
   companyId: string,
   role: ProjectCompanyRole,
 ) {
-  await requireAdmin()
+  await requireManager()
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: { primaryCompanyId: true },
@@ -401,7 +423,7 @@ export async function addProjectCompany(
 }
 
 export async function removeProjectCompany(id: string) {
-  await requireAdmin()
+  await requireManager()
   const row = await prisma.projectCompany.findUnique({ where: { id }, select: { projectId: true } })
   if (!row) return { ok: false as const, error: 'Δεν βρέθηκε η σύνδεση.' }
   await prisma.projectCompany.delete({ where: { id } })
