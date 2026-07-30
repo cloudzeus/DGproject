@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import { prisma } from '@/lib/prisma'
 import { getPortalScope } from '@/lib/portal/scope'
 import { commentVisibilityFilter } from '@/lib/comments/visibility'
+import { listSharedMeetings, getSharedMeeting } from '@/lib/portal/meetings'
 
 const TAG = `leaktest-${process.pid}`
 
@@ -23,6 +24,9 @@ let internalCommentId = ''
 let sharedCommentId = ''
 let aTicketCode = ''
 let bTicketCode = ''
+let sharedMeetingId = ''
+let internalMeetingId = ''
+let otherCompanyMeetingId = ''
 
 before(async () => {
   const workspace = await prisma.workspace.findFirst({ select: { id: true } })
@@ -131,6 +135,47 @@ before(async () => {
     },
   })
 
+  // ─── Πρακτικά συσκέψεων ───
+  // Τρεις περιπτώσεις: δημοσιευμένο στο έργο A, ΑΔΗΜΟΣΙΕΥΤΟ στο έργο A, και
+  // δημοσιευμένο στο έργο B (άλλη εταιρία). Ο πελάτης A πρέπει να δει ΜΟΝΟ το πρώτο.
+  const meetingBase = {
+    organizerId: staff!.id,
+    startedAt: new Date(),
+    endedAt: new Date(),
+    durationSec: 600,
+    status: 'ready' as const,
+    summary: `${TAG}-SUMMARY`,
+    decisions: [{ text: `${TAG}-DECISION-KEPT`, timestampSec: 1, participantEmails: [] }],
+    risks: [{ text: `${TAG}-RISK-HIDDEN`, severity: 'high', ownerEmail: null }],
+  }
+
+  const sharedMeeting = await prisma.meetingNote.create({
+    data: {
+      ...meetingBase,
+      projectId: projectA.id,
+      subject: `${TAG}-meetingShared`,
+      momVisibility: 'shared',
+      // Η ομάδα ξετσέκαρε τα ρίσκα — η προεπιλογή της δημοσίευσης.
+      momSharedInclude: { summary: true, riskIndexes: [] },
+    },
+  })
+  sharedMeetingId = sharedMeeting.id
+
+  const internalMeeting = await prisma.meetingNote.create({
+    data: { ...meetingBase, projectId: projectA.id, subject: `${TAG}-meetingInternal` },
+  })
+  internalMeetingId = internalMeeting.id
+
+  const otherMeeting = await prisma.meetingNote.create({
+    data: {
+      ...meetingBase,
+      projectId: projectB.id,
+      subject: `${TAG}-meetingOther`,
+      momVisibility: 'shared',
+    },
+  })
+  otherCompanyMeetingId = otherMeeting.id
+
   // Το έργο B συνδέεται στην εταιρία A ως ΥΠΕΡΓΟΛΑΒΟΣ — δεν πρέπει να το βλέπει.
   await prisma.projectCompany.create({
     data: { projectId: projectB.id, companyId: companyA.id, role: 'subcontractor' },
@@ -138,6 +183,7 @@ before(async () => {
 })
 
 after(async () => {
+  await prisma.meetingNote.deleteMany({ where: { subject: { contains: TAG } } })
   await prisma.ticket.deleteMany({ where: { code: { contains: TAG } } })
   await prisma.comment.deleteMany({ where: { content: { contains: TAG } } })
   await prisma.projectCompany.deleteMany({ where: { project: { name: { contains: TAG } } } })
@@ -213,4 +259,38 @@ test('employee δεν έχει scope', async () => {
     select: { id: true },
   })
   assert.equal(await getPortalScope(staff!.id), null)
+})
+
+// ─── Πρακτικά συσκέψεων ──────────────────────────────────────────────────
+
+test('μόνο τα ΔΗΜΟΣΙΕΥΜΕΝΑ πρακτικά του δικού του έργου επιστρέφονται', async () => {
+  const scope = await getPortalScope(aUserId)
+  const meetings = await listSharedMeetings(scope!)
+  const ids = meetings.map((m) => m.id)
+
+  assert.equal(ids.includes(sharedMeetingId), true, 'το δημοσιευμένο πρέπει να φαίνεται')
+  assert.equal(ids.includes(internalMeetingId), false, 'το αδημοσίευτο ΔΕΝ πρέπει να φαίνεται')
+  assert.equal(ids.includes(otherCompanyMeetingId), false, 'άλλης εταιρίας ΔΕΝ πρέπει να φαίνεται')
+})
+
+test('αδημοσίευτα πρακτικά δεν ανοίγουν ούτε με άμεσο id', async () => {
+  const scope = await getPortalScope(aUserId)
+  assert.equal(await getSharedMeeting(scope!, internalMeetingId), null)
+})
+
+test('πρακτικά άλλης εταιρίας δεν ανοίγουν ούτε με άμεσο id', async () => {
+  const scope = await getPortalScope(aUserId)
+  assert.equal(await getSharedMeeting(scope!, otherCompanyMeetingId), null)
+})
+
+test('το ξετσεκαρισμένο ρίσκο δεν φεύγει από τον server', async () => {
+  const scope = await getPortalScope(aUserId)
+  const meeting = await getSharedMeeting(scope!, sharedMeetingId)
+
+  assert.ok(meeting, 'το δημοσιευμένο πρέπει να ανοίγει')
+  assert.deepEqual(meeting.risks, [], 'τα ρίσκα ήταν ξετσέκαρα')
+  assert.equal(meeting.counts.risks, 0)
+  // Ό,τι κρατήθηκε πρέπει να είναι εκεί — αλλιώς το φίλτρο κόβει αδιακρίτως.
+  assert.equal(meeting.decisions.length, 1)
+  assert.equal(JSON.stringify(meeting).includes('RISK-HIDDEN'), false)
 })

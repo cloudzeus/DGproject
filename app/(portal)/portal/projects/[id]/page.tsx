@@ -4,7 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { getPortalScope } from '@/lib/portal/scope';
 import { commentVisibilityFilter } from '@/lib/comments/visibility';
 import { taskVisibilityFilter } from '@/lib/tasks/visibility';
-import { attachmentVisibilityFilter } from '@/lib/attachments/visibility';
+import { listSharedMeetings } from '@/lib/portal/meetings';
+import { listSharedFiles } from '@/lib/portal/files';
 import { PortalProjectTabs } from './portal-project-tabs';
 
 export const dynamic = 'force-dynamic';
@@ -49,16 +50,6 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
           user: {
             select: { id: true, name: true, email: true, image: true, phone: true, mobile: true },
           },
-        },
-      },
-      // Το φίλτρο ορατότητας εδώ: εσωτερικό αρχείο δεν φεύγει από τον server.
-      attachments: {
-        where: attachmentVisibilityFilter('customer'),
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true, name: true, title: true, size: true, mimeType: true, url: true,
-          createdAt: true,
-          uploadedBy: { select: { name: true, email: true, userType: true } },
         },
       },
       tasks: {
@@ -106,8 +97,22 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
   });
   if (!project) notFound();
 
+  // Χωριστό query αντί για nested include: τα πρακτικά έχουν δική τους πύλη
+  // ορατότητας (`momVisibility`) που ζει στο lib/portal/meetings.ts. Ένα
+  // `include` εδώ θα σήμαινε δεύτερο αντίγραφο του φίλτρου μέσα σε αυτή τη
+  // σελίδα — ακριβώς αυτό που το scope module υπάρχει για να αποτρέψει.
+  const [meetings, files] = await Promise.all([
+    listSharedMeetings(scope, { projectId: id }),
+    // Τα αρχεία περνούν από το κοινό `listSharedFiles` αντί για nested include:
+    // εκείνο ελέγχει ΚΑΙ την ορατότητα της εργασίας στην οποία κρέμεται το
+    // αρχείο. Το nested include εδώ έλεγχε μόνο το ίδιο το αρχείο, οπότε ένα
+    // `shared` αρχείο πάνω σε `internal` εργασία εμφανιζόταν στον πελάτη.
+    listSharedFiles(scope, { projectId: id }),
+  ]);
+
   return (
     <PortalProjectTabs
+      meetings={meetings}
       projectName={project.name}
       projectCode={project.projectCode}
       statusLabel={PROJECT_STATUS_LABEL[project.status] ?? project.status}
@@ -124,17 +129,7 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
         mobile: m.user.mobile,
         isOwner: m.user.id === project.ownerId,
       }))}
-      files={project.attachments.map((a) => ({
-        id: a.id,
-        name: a.name,
-        title: a.title,
-        size: a.size,
-        mimeType: a.mimeType,
-        url: a.url,
-        createdAt: a.createdAt.toISOString(),
-        uploadedByName: a.uploadedBy.name ?? a.uploadedBy.email,
-        fromUs: a.uploadedBy.userType === 'customer',
-      }))}
+      files={files}
       tasks={project.tasks.map((t) => ({
         id: t.id,
         title: t.title,

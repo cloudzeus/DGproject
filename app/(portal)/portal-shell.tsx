@@ -9,9 +9,12 @@ import {
   TicketDiagonal24Regular,
   People24Regular,
   Add16Regular,
+  Document24Regular,
+  ConferenceRoom24Regular,
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { PortalNotificationBell } from '@/components/portal/notification-bell';
 import { NewTicketButton } from './portal/tickets/new-ticket-button';
 
 /**
@@ -22,6 +25,8 @@ import { NewTicketButton } from './portal/tickets/new-ticket-button';
 const NAV = [
   { href: '/portal', label: 'Αρχική', Icon: Home24Regular },
   { href: '/portal/projects', label: 'Έργα', Icon: Folder24Regular },
+  { href: '/portal/meetings', label: 'Συσκέψεις', Icon: ConferenceRoom24Regular },
+  { href: '/portal/files', label: 'Αρχεία', Icon: Document24Regular },
   { href: '/portal/tickets', label: 'Αιτήματα', Icon: TicketDiagonal24Regular },
   { href: '/portal/contacts', label: 'Επαφές', Icon: People24Regular },
 ];
@@ -58,26 +63,31 @@ export function PortalShell({
                 <Link
                   key={href}
                   href={href}
+                  title={label}
                   className={cn(
-                    'flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-md text-sm font-medium transition-colors',
+                    'flex items-center gap-2 px-2 lg:px-2.5 h-9 rounded-md text-sm font-medium transition-colors',
                     active
                       ? 'bg-fluent-blue-50 text-fluent-blue-700'
                       : 'text-fluent-neutral-80 hover:bg-black/5',
                   )}
                 >
-                  <Icon className="h-5 w-5" />
-                  <span className="hidden md:inline">{label}</span>
+                  <Icon className="h-5 w-5 shrink-0" />
+                  {/* Έξι προορισμοί δεν χωρούν με ετικέτες κάτω από xl — τα
+                      εικονίδια μένουν, με `title` για το hover. */}
+                  <span className="hidden xl:inline">{label}</span>
                 </Link>
               );
             })}
           </nav>
+
+          <PortalNotificationBell />
 
           <NewTicketButton className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-fluent-blue-600 px-3 text-sm font-medium text-white hover:bg-fluent-blue-700">
             <Add16Regular />
             <span className="hidden sm:inline">Νέο αίτημα</span>
           </NewTicketButton>
 
-          <div className="flex min-w-0 shrink items-center gap-2.5 pl-2">
+          <div className="flex min-w-0 shrink items-center gap-2.5 pl-1">
             <Avatar user={{ name: user.name, avatarUrl: user.avatarUrl }} size="sm" />
             <div className="hidden min-w-0 lg:block">
               <p className="truncate text-xs font-medium leading-tight text-fluent-neutral-90">

@@ -8,7 +8,7 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   type NotificationRow,
-} from '@/app/(app)/notification-actions';
+} from '@/lib/notifications/actions';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search20Regular, Alert20Regular, Apps20Regular,

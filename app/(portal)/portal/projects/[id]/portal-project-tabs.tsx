@@ -6,8 +6,10 @@ import { countByState, completionPct, totalOf, toPortalState, TASK_STATE_META } 
 import { PortalProjectClient, type PortalTask } from './portal-project-client';
 import { PortalTeam, type PortalTeamMember } from './portal-team';
 import { PortalFiles, type PortalFile } from './portal-files';
+import { PortalMeetingCard } from '@/components/portal/meeting-card';
+import type { PortalMeetingSummary } from '@/lib/portal/meetings';
 
-type Tab = 'overview' | 'tasks' | 'team' | 'files';
+type Tab = 'overview' | 'tasks' | 'team' | 'files' | 'meetings';
 
 const fmtDay = new Intl.DateTimeFormat('el-GR', { day: 'numeric', month: 'short' });
 
@@ -29,6 +31,7 @@ export function PortalProjectTabs({
   tasks,
   team,
   files,
+  meetings,
   projectName,
   projectCode,
   statusLabel,
@@ -38,6 +41,7 @@ export function PortalProjectTabs({
   tasks: PortalTask[];
   team: PortalTeamMember[];
   files: PortalFile[];
+  meetings: PortalMeetingSummary[];
   projectName: string;
   projectCode: string | null;
   statusLabel: string;
@@ -69,6 +73,7 @@ export function PortalProjectTabs({
     { key: 'tasks', label: 'Εργασίες', count: total },
     { key: 'team', label: 'Ομάδα', count: team.length },
     { key: 'files', label: 'Αρχεία', count: files.length },
+    { key: 'meetings', label: 'Συσκέψεις', count: meetings.length },
   ];
 
   return (
@@ -185,6 +190,24 @@ export function PortalProjectTabs({
         {tab === 'tasks' && <PortalProjectClient tasks={tasks} />}
         {tab === 'team' && <PortalTeam members={team} projectCode={projectCode} projectName={projectName} />}
         {tab === 'files' && <PortalFiles files={files} />}
+        {tab === 'meetings' && (
+          <section>
+            <h2 className="mb-2 font-display text-base font-semibold text-fluent-neutral-90">
+              Πρακτικά συσκέψεων
+            </h2>
+            {meetings.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-fluent-neutral-20 bg-white/60 px-4 py-8 text-center text-xs text-fluent-neutral-60">
+                Δεν έχουν δημοσιευτεί πρακτικά για αυτό το έργο ακόμα.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {meetings.map((m) => (
+                  <PortalMeetingCard key={m.id} meeting={m} showProject={false} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   );

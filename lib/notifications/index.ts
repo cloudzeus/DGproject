@@ -222,4 +222,16 @@ export async function notifyTaskStatusChange(params: {
   } catch (e) {
     console.error('[notifications] ticket propagation failed:', e);
   }
+
+  // 6. Customer portal → the same chokepoint reason as step 5: every path that
+  //    changes a status passes through here. The visibility gate lives inside
+  //    notifyCustomerTaskCompleted, not here, so no caller can bypass it.
+  if (to === 'done' && from !== 'done') {
+    try {
+      const { notifyCustomerTaskCompleted } = await import('./customer');
+      await notifyCustomerTaskCompleted(taskId);
+    } catch (e) {
+      console.error('[notifications] customer notify failed:', e);
+    }
+  }
 }

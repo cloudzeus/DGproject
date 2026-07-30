@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
+import { notifyCustomerAttachment } from '@/lib/notifications/customer';
 
 async function requireProjectEditor(projectId: string) {
   const session = await auth();
@@ -141,6 +142,14 @@ export async function setAttachmentVisibility(
   }
 
   await prisma.attachment.update({ where: { id: attachmentId }, data: { visibility } });
+
+  // Η στιγμή που ο πελάτης αποκτά πρόσβαση είναι ΕΔΩ, όχι στο ανέβασμα: τα
+  // αρχεία γεννιούνται `internal`, οπότε ειδοποίηση στο upload route δεν θα
+  // πυροδοτούσε ποτέ. Μόνο η μετάβαση προς `shared` είναι είδηση.
+  if (visibility === 'shared') {
+    await notifyCustomerAttachment(attachmentId);
+  }
+
   revalidatePath(`/projects/${att.projectId}`);
   revalidatePath(`/portal/projects/${att.projectId}`);
   return { ok: true as const };

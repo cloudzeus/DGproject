@@ -127,6 +127,8 @@ export default async function MeetingDetailPage({
           risks: risks.map((r) => ({ text: r.text, severity: r.severity })),
           openQuestions: openQuestions.map((q) => ({ question: q.question })),
         }}
+        initialPortalShared={meeting.momVisibility === 'shared'}
+        initialPortalSharedAt={meeting.momSharedAt ? meeting.momSharedAt.toISOString() : null}
         initialDeliveries={meeting.momDeliveries.map((d) => ({
           id: d.id,
           recipientEmail: d.recipientEmail,

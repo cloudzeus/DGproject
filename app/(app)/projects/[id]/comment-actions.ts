@@ -5,6 +5,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { visibilityForAuthor, type CommentVisibility } from '@/lib/comments/visibility'
 import { canSetTaskVisibility } from '@/lib/tasks/visibility'
+import { notifyCustomerComment } from '@/lib/notifications/customer'
 
 const MAX_LEN = 5000
 
@@ -48,14 +49,20 @@ export async function addTaskComment(input: {
   const access = await assertTaskAccess(input.taskId, session.user.id, isPrivileged)
   if ('error' in access) return { ok: false as const, error: access.error }
 
-  await prisma.comment.create({
+  const comment = await prisma.comment.create({
     data: {
       taskId: input.taskId,
       authorId: session.user.id,
       content,
       visibility: visibilityForAuthor(session.user.userType, input.visibility),
     },
+    select: { id: true },
   })
+
+  // Η πύλη ορατότητας ζει μέσα στο notifyCustomerComment, όχι εδώ: το σχόλιο
+  // μπορεί να γεννήθηκε `internal` και να γίνει `shared` αργότερα, οπότε ο
+  // έλεγχος πρέπει να διαβάζει την τρέχουσα τιμή, όχι το input.
+  await notifyCustomerComment(comment.id)
 
   revalidatePath(`/projects/${access.projectId}`)
   return { ok: true as const }

@@ -45,6 +45,8 @@ export function MomPanel({
   suggestedRecipients,
   insights,
   initialDeliveries,
+  initialPortalShared,
+  initialPortalSharedAt,
 }: {
   meetingId: string;
   projectId: string;
@@ -52,11 +54,29 @@ export function MomPanel({
   suggestedRecipients: Recipient[];
   insights: MomInsightsPreview;
   initialDeliveries: Delivery[];
+  initialPortalShared: boolean;
+  initialPortalSharedAt: string | null;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [deliveries, setDeliveries] = useState<Delivery[]>(initialDeliveries);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
+  const [portalShared, setPortalShared] = useState(initialPortalShared);
+  const [portalSharedAt, setPortalSharedAt] = useState(initialPortalSharedAt);
+  const [withdrawing, setWithdrawing] = useState(false);
+
+  async function withdraw() {
+    setWithdrawing(true);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/publish-portal`, { method: 'DELETE' });
+      if (res.ok) {
+        setPortalShared(false);
+        setPortalSharedAt(null);
+      }
+    } finally {
+      setWithdrawing(false);
+    }
+  }
 
   async function refresh() {
     setRefreshing(true);
@@ -107,6 +127,45 @@ export function MomPanel({
             Αποστολή σε…
           </button>
         </div>
+      </div>
+
+      {/* Κατάσταση δημοσίευσης στο portal — χωριστή γραμμή από τις παραδόσεις
+          email, γιατί είναι διαφορετικό είδος πρόσβασης: το email πάει σε
+          πρόσωπα, το portal ανοίγει σε ΟΛΗ την εταιρία του πελάτη, μόνιμα. */}
+      <div
+        className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded border px-3 py-2 text-xs ${
+          portalShared
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+            : 'border-gray-200 bg-gray-50 text-gray-600'
+        }`}
+      >
+        <span className="font-medium">
+          {portalShared ? '● Δημοσιευμένο στο portal πελάτη' : '○ Δεν είναι δημοσιευμένο στο portal'}
+        </span>
+        {portalShared && portalSharedAt && (
+          <span className="text-emerald-700">
+            από {new Intl.DateTimeFormat('el-GR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(portalSharedAt))}
+          </span>
+        )}
+        <span className="flex-1" />
+        {portalShared ? (
+          <button
+            type="button"
+            onClick={withdraw}
+            disabled={withdrawing}
+            className="rounded border border-emerald-300 bg-white px-2 py-1 font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {withdrawing ? 'Απόσυρση…' : 'Απόσυρση'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="rounded border border-gray-300 bg-white px-2 py-1 font-medium text-gray-700 hover:bg-gray-100"
+          >
+            Δημοσίευση…
+          </button>
+        )}
       </div>
 
       {deliveries.length > 0 && (
@@ -184,6 +243,11 @@ export function MomPanel({
           suggestedRecipients={suggestedRecipients}
           insights={insights}
           onClose={() => setModalOpen(false)}
+          onPublished={() => {
+            setPortalShared(true);
+            setPortalSharedAt(new Date().toISOString());
+            setModalOpen(false);
+          }}
           onSent={(result) => {
             const newDeliveries: Delivery[] = result.delivered.map((d) => ({
               id: d.deliveryId,
@@ -244,6 +308,7 @@ function MomModal({
   insights,
   onClose,
   onSent,
+  onPublished,
 }: {
   meetingId: string;
   meetingSubject: string;
@@ -251,6 +316,7 @@ function MomModal({
   insights: MomInsightsPreview;
   onClose: () => void;
   onSent: (result: SendResult) => void;
+  onPublished: () => void;
 }) {
   useDismissable(onClose);
 
@@ -258,6 +324,8 @@ function MomModal({
   const [extraEmails, setExtraEmails] = useState('');
   const [subject, setSubject] = useState(`Πρακτικά: ${meetingSubject}`);
   const [busy, setBusy] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishRisks, setPublishRisks] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Per-section selection state. Start with everything kept (all indexes included).
@@ -313,6 +381,37 @@ function MomModal({
     params.set('q', include.openQuestionIndexes.join(','));
     return `/api/meetings/${meetingId}/mom-preview?${params.toString()}`;
   }, [meetingId, include]);
+
+  /**
+   * Δημοσίευση στο portal με ΤΗΝ ΙΔΙΑ επιλογή που συνθέτει το email.
+   *
+   * Τα ρίσκα εξαιρούνται εκτός αν ζητηθεί ρητά: η ενότητα αφορά συχνά τον ίδιο
+   * τον πελάτη («καθυστερεί τις εγκρίσεις», «ασαφές scope»). Επειδή το φίλτρο
+   * είναι ούτως ή άλλως ανά στοιχείο, αυτό είναι μόνο default — όχι απαγόρευση.
+   */
+  async function publishToPortal() {
+    setError(null);
+    setPublishing(true);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/publish-portal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          include: { ...include, riskIndexes: publishRisks ? include.riskIndexes : [] },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Σφάλμα δημοσίευσης');
+        return;
+      }
+      onPublished();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   async function send() {
     setError(null);
@@ -498,17 +597,42 @@ function MomModal({
           )}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-3">
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 px-5 py-3">
+          {/* Η δημοσίευση στο portal ζει ΔΙΠΛΑ στην αποστολή, όχι μέσα της: η
+              ίδια επιμέλεια, δύο διαφορετικοί προορισμοί με διαφορετικό βεληνεκές. */}
+          <button
+            onClick={publishToPortal}
+            disabled={busy || publishing}
+            title="Τα ίδια επιλεγμένα περιεχόμενα γίνονται ορατά σε όλη την εταιρία του πελάτη"
+            className="rounded border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {publishing ? 'Δημοσίευση…' : 'Δημοσίευση στο portal'}
+          </button>
+
+          {insights.risks.length > 0 && (
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={publishRisks}
+                onChange={() => setPublishRisks((v) => !v)}
+                disabled={publishing}
+              />
+              με τα ρίσκα
+            </label>
+          )}
+
+          <span className="flex-1" />
+
           <button
             onClick={onClose}
-            disabled={busy}
+            disabled={busy || publishing}
             className="rounded border border-gray-300 px-4 py-1.5 text-sm hover:bg-gray-50"
           >
             Ακύρωση
           </button>
           <button
             onClick={send}
-            disabled={busy}
+            disabled={busy || publishing}
             className="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white disabled:bg-gray-300"
           >
             {busy ? 'Αποστολή…' : 'Αποστολή'}

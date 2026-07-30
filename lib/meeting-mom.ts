@@ -73,16 +73,40 @@ export function renderMom(input: MomInput, filter?: MomIncludeFilter): MomRender
   return { subject, html, text };
 }
 
+/** Τα πεδία περιεχομένου ενός MoM, χωρίς τα μεταδεδομένα της σύσκεψης. */
+export type MomInsights = {
+  summary: string | null;
+  decisions: Decision[];
+  actionItems: ActionItem[];
+  risks: Risk[];
+  openQuestions: OpenQuestion[];
+};
+
+/**
+ * Εφαρμογή του φίλτρου επιλογής στο περιεχόμενο.
+ *
+ * Εξάγεται επειδή το portal πελατών αποδίδει τα ΙΔΙΑ πρακτικά από το
+ * αποθηκευμένο `momSharedInclude`. Δύο υλοποιήσεις του ίδιου φιλτραρίσματος θα
+ * σήμαινε ότι το email και το portal μπορούν να αποκλίνουν — και η απόκλιση θα
+ * ήταν διαρροή: στοιχείο που η ομάδα ξετσέκαρε θα εμφανιζόταν στη μία επιφάνεια.
+ */
+export function filterMomInsights(
+  insights: MomInsights,
+  filter?: MomIncludeFilter,
+): MomInsights {
+  if (!filter) return insights;
+  return {
+    summary: filter.summary === false ? null : insights.summary,
+    decisions: pickByIndex(insights.decisions, filter.decisionIndexes),
+    actionItems: pickByIndex(insights.actionItems, filter.actionItemIndexes),
+    risks: pickByIndex(insights.risks, filter.riskIndexes),
+    openQuestions: pickByIndex(insights.openQuestions, filter.openQuestionIndexes),
+  };
+}
+
 function applyFilter(input: MomInput, filter?: MomIncludeFilter): MomInput {
   if (!filter) return input;
-  return {
-    ...input,
-    summary: filter.summary === false ? null : input.summary,
-    decisions: pickByIndex(input.decisions, filter.decisionIndexes),
-    actionItems: pickByIndex(input.actionItems, filter.actionItemIndexes),
-    risks: pickByIndex(input.risks, filter.riskIndexes),
-    openQuestions: pickByIndex(input.openQuestions, filter.openQuestionIndexes),
-  };
+  return { ...input, ...filterMomInsights(input, filter) };
 }
 
 function pickByIndex<T>(arr: T[], indexes: number[] | undefined): T[] {

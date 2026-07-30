@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { sendTicketStatusEmail, sendTicketResolvedEmail, reporterRecipients } from '@/lib/tickets/emails'
 import { formatDurationGr } from '@/lib/tickets/format-duration'
+import { notifyTicketReporter } from '@/lib/notifications/customer'
 
 // Reporter-facing labels/details per interesting task status.
 const STATUS_EMAIL: Record<string, { label: string; detail: string }> = {
@@ -54,6 +55,13 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
           solution: ticket.resolutionSummary,
         })
       }
+      await notifyTicketReporter(ticket.id, {
+        title: 'Το αίτημα επιλύθηκε',
+        message: `Το αίτημα ${ticket.code} «${ticket.subject}» ολοκληρώθηκε.`,
+        type: 'ticket',
+        link: `/portal/tickets/${ticket.id}`,
+      })
+
       void import('@/lib/tickets/kb')
         .then((m) => m.generateKbDraft(ticket.id))
         .catch((e) => console.error('[tickets] kb draft failed:', e))
@@ -72,6 +80,12 @@ export async function propagateTicketStatus(taskId: string, newStatus: string): 
           detail: email.detail,
         })
       }
+      await notifyTicketReporter(ticket.id, {
+        title: email.label,
+        message: `${ticket.code} «${ticket.subject}»: ${email.detail}`,
+        type: 'ticket',
+        link: `/portal/tickets/${ticket.id}`,
+      })
     }
   } catch (e) {
     console.error('[tickets] status propagation failed:', e)

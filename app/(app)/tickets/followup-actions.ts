@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { reporterRecipients, sendTicketClarificationEmail } from '@/lib/tickets/emails'
+import { notifyTicketReporter } from '@/lib/notifications/customer'
 
 const OPEN_FOR_CLARIFICATION = ['new', 'analyzing', 'triaged', 'converted', 'resolved', 'needs_info'] as const
 
@@ -42,6 +43,16 @@ export async function requestClarification(input: { ticketId: string; message: s
   for (const r of await reporterRecipients(ticket.id)) {
     await sendTicketClarificationEmail({ ...r, question: message })
   }
+
+  // Το email φεύγει στον αναφέροντα· η ειδοποίηση πάει σε ΟΛΗ την εταιρία, γιατί
+  // το portal δείχνει τα αιτήματα ανά εταιρία. Ο συνάδελφος που βλέπει το αίτημα
+  // στη λίστα πρέπει να μάθει ότι περιμένει απάντηση.
+  await notifyTicketReporter(ticket.id, {
+    title: 'Ζητήθηκε διευκρίνιση',
+    message: 'Η ομάδα χρειάζεται μια απάντηση για να συνεχίσει.',
+    type: 'ticket',
+    link: `/portal/tickets/${ticket.id}`,
+  })
 
   revalidatePath('/tickets')
   revalidatePath(`/tickets/${ticket.id}`)

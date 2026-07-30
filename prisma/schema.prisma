@@ -72,6 +72,8 @@ enum NotificationType {
   answer
   approval
   ticket
+  /// Δημοσιεύτηκαν πρακτικά σύσκεψης στο portal του πελάτη.
+  meeting
 }
 
 // ─── Ticketing ────────────────────────────────────────────────────────
@@ -119,6 +121,14 @@ enum UserType {
   employee
   customer
   supplier
+}
+
+/// Αν ο πελάτης βλέπει τα πρακτικά μιας σύσκεψης στο portal.
+enum MomVisibility {
+  /// Default. Η έξοδος του LLM δεν φτάνει ποτέ αφιλτράριστη στον πελάτη — χρειάζεται
+  /// ρητή δημοσίευση από την ομάδα, με τα ίδια checkboxes που συνθέτουν το email.
+  internal
+  shared
 }
 
 enum MeetingProcessingStatus {
@@ -910,6 +920,19 @@ model MeetingNote {
   status       MeetingProcessingStatus @default(pending)
   errorMessage String?                 @db.Text
   processedAt  DateTime?
+
+  // ─── Δημοσίευση στο portal πελατών ─────────────────────────────────
+  // Ο μηχανισμός επιλογής ΔΕΝ είναι καινούργιος: το mom-panel έχει ήδη checkbox
+  // ανά στοιχείο για να συνθέσει το email. Εδώ η ίδια επιλογή παύει να πετιέται
+  // και γίνεται η πύλη ορατότητας του portal — μία πράξη επιμέλειας, δύο
+  // προορισμοί.
+  momVisibility    MomVisibility @default(internal)
+  /// Παγωμένο `MomIncludeFilter` (lib/meeting-mom.ts) τη στιγμή της δημοσίευσης.
+  /// Ό,τι δεν τσεκαρίστηκε δεν φεύγει ποτέ από τον server: το portal αποδίδει
+  /// μέσω του ίδιου `applyFilter()` που φτιάχνει το email.
+  momSharedInclude Json?
+  momSharedById    String?
+  momSharedAt      DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-07-18T06:06:58.246Z",
+  "timestamp": "2026-07-30T18:46:53.276Z",
   "source": "auto-postool",
   "partial": false,
   "phase": null,
@@ -19,8 +19,152 @@
     {
       "status": "M",
       "path": ".planning/HANDOFF.json"
+    },
+    {
+      "status": "D",
+      "path": "app/(app)/notification-actions.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/actions.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/comment-actions.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/meetings/[meetingId]/mom-panel.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/projects/[id]/meetings/[meetingId]/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(app)/tickets/followup-actions.ts"
+    },
+    {
+      "status": "M",
+      "path": "app/(portal)/portal-shell.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(portal)/portal/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(portal)/portal/projects/[id]/page.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(portal)/portal/projects/[id]/portal-files.tsx"
+    },
+    {
+      "status": "M",
+      "path": "app/(portal)/portal/projects/[id]/portal-project-tabs.tsx"
+    },
+    {
+      "status": "M",
+      "path": "components/layout/topbar.tsx"
+    },
+    {
+      "status": "M",
+      "path": "lib/meeting-mom.ts"
+    },
+    {
+      "status": "RM",
+      "path": "lib/notifications.ts -> lib/notifications/index.ts"
+    },
+    {
+      "status": "M",
+      "path": "lib/portal/__tests__/leak.test.ts"
+    },
+    {
+      "status": "M",
+      "path": "lib/tickets/propagate.ts"
+    },
+    {
+      "status": "M",
+      "path": "prisma/schema.prisma"
+    },
+    {
+      "status": "??",
+      "path": "app/(portal)/portal/files/"
+    },
+    {
+      "status": "??",
+      "path": "app/(portal)/portal/meetings/"
+    },
+    {
+      "status": "??",
+      "path": "app/(portal)/portal/notifications/"
+    },
+    {
+      "status": "??",
+      "path": "app/(portal)/portal/timeline/"
+    },
+    {
+      "status": "??",
+      "path": "app/api/meetings/[id]/publish-portal/"
+    },
+    {
+      "status": "??",
+      "path": "components/portal/file-row.tsx"
+    },
+    {
+      "status": "??",
+      "path": "components/portal/meeting-card.tsx"
+    },
+    {
+      "status": "??",
+      "path": "components/portal/milestones.tsx"
+    },
+    {
+      "status": "??",
+      "path": "components/portal/mom-view.tsx"
+    },
+    {
+      "status": "??",
+      "path": "components/portal/notification-bell.tsx"
+    },
+    {
+      "status": "??",
+      "path": "components/portal/notification-glyph.tsx"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-07-30-portal-dashboard-notifications-design.md"
+    },
+    {
+      "status": "??",
+      "path": "lib/__tests__/"
+    },
+    {
+      "status": "??",
+      "path": "lib/notifications/actions.ts"
+    },
+    {
+      "status": "??",
+      "path": "lib/notifications/customer.ts"
+    },
+    {
+      "status": "??",
+      "path": "lib/portal/files.ts"
+    },
+    {
+      "status": "??",
+      "path": "lib/portal/meetings.ts"
+    },
+    {
+      "status": "??",
+      "path": "lib/portal/timeline.ts"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/20260730220000_mom_portal_visibility/"
     }
   ],
   "next_action": null,
-  "context_notes": "Recent commits:\nc5c6f85 style(dashboard): capacity zone redesign — aligned grid rows, scrollable list with fade, segmented sort control, summary chips\n3a96863 feat(dashboard): radar zone as mini-Gantt — task spans with project colors, lane packing, assignee avatars, weekend/today tinting\n19aca61 style(dashboard): visual identity pass — colored kind badges, grouped attention items, accent KPI tiles, activity avatars, project-colored bars\nd34972a feat(dashboard): capacity, deadline radar and pulse zones\n44903c1 feat(dashboard): quick actions bar and command palette"
+  "context_notes": "Recent commits:\n49d41c5 refactor(ui): κάθε φόρμα σε modal· Escape και κλείδωμα scroll σε όλα τα overlays\n23549c6 feat(portal): tabbed project view, per-member email με κωδικό έργου, διαχείριση επαφών πελάτη\ncd21339 fix(portal): repair the broken header, tame the hero, move forms into modals\na1697ef feat(portal): show the project team with contact details, and shared files\nc97d2ac docs(plan): serial per-user capacity across all projects"
 }
