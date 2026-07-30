@@ -399,8 +399,8 @@ async function persistResult(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Project (PRJC) sync — unchanged from before. Pushes the Project to SoftOne
-// PRJC, wiring PRJC.TRDR to the customerUserId's softoneCustomerId.
+// Project (PRJC) sync. Pushes the Project to SoftOne PRJC, wiring PRJC.TRDR to
+// the primary company's TRDR (Project.primaryCompanyId → Company.TRDR).
 // ─────────────────────────────────────────────────────────────────────────
 
 export async function syncProjectToSoftOne(projectId: string): Promise<SyncResult> {
@@ -415,10 +415,12 @@ export async function syncProjectToSoftOne(projectId: string): Promise<SyncResul
     data: { softoneSyncStatus: 'syncing', softoneSyncError: null },
   });
 
-  const customer = project.customerUserId
-    ? await prisma.user.findUnique({
-        where: { id: project.customerUserId },
-        select: { softoneCustomerId: true },
+  // Ο πελάτης του έργου είναι εταιρία, όχι χρήστης. Το PRJC δέχεται ένα TRDR·
+  // null όταν η εταιρία υπάρχει μόνο τοπικά και δεν έχει καρτέλα στο ERP.
+  const customer = project.primaryCompanyId
+    ? await prisma.company.findUnique({
+        where: { id: project.primaryCompanyId },
+        select: { TRDR: true },
       })
     : null;
 
@@ -431,7 +433,7 @@ export async function syncProjectToSoftOne(projectId: string): Promise<SyncResul
     REMARKS: project.description ?? '',
     FROMDATE: toS1Date(project.startDate),
     FINALDATE: toS1Date(project.dueDate),
-    TRDR: customer?.softoneCustomerId ?? null,
+    TRDR: customer?.TRDR ?? null,
   };
 
   const payload: Record<string, unknown> = {

@@ -6,8 +6,8 @@ import { syncProjectToSoftOne } from '@/lib/softone-contacts';
  * POST /api/projects/:id/sync-softone
  *
  * Pushes a Project to SoftOne PRJC. Creates if no softoneId set, otherwise updates.
- * If the project has a customerUserId pointing to a customer-type User, that user's
- * softoneCustomerId is wired into PRJC.TRDR.
+ * If the project has a primaryCompanyId, that company's TRDR is wired into
+ * PRJC.TRDR. A company that exists only locally has no TRDR, so the field stays null.
  */
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id: projectId } = await ctx.params;
