@@ -21,6 +21,8 @@ export default async function AdminUsersPage() {
         softoneCustomerId: true,
         softoneSupplierId: true,
         softoneSyncStatus: true,
+        companyId: true,
+        company: { select: { id: true, NAME: true, AFM: true } },
       },
       orderBy: { createdAt: 'desc' },
     }),
@@ -47,6 +49,8 @@ export default async function AdminUsersPage() {
     softoneCustomerId: u.softoneCustomerId,
     softoneSupplierId: u.softoneSupplierId,
     softoneSyncStatus: u.softoneSyncStatus,
+    companyId: u.companyId,
+    company: u.company,
   }));
 
   return (

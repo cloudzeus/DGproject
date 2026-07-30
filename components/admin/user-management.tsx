@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef } from 'react';
 import { SoftOneCompanyCombobox } from '@/components/admin/softone-company-combobox';
+import { CompanyPicker } from '@/components/companies/company-picker';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Delete20Regular, Edit20Regular, Add20Filled,
@@ -44,6 +45,8 @@ type UserRow = {
   softoneCustomerId: number | null;
   softoneSupplierId: number | null;
   softoneSyncStatus: SyncStatus;
+  companyId: string | null;
+  company: { id: string; NAME: string; AFM: string | null } | null;
 };
 
 const roleVariant: Record<Role, 'red' | 'orange' | 'blue' | 'neutral'> = {
@@ -423,33 +426,50 @@ function UserForm({
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
-            Εταιρεία (από SoftOne)
-          </label>
-          <SoftOneCompanyCombobox
-            source={softoneSource}
-            fieldNamePrefix="softoneCompany"
-            initial={initialSelection}
-          />
-        </div>
+        {userType === 'customer' ? (
+          <div className="md:col-span-2">
+            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Εταιρία</label>
+            <CompanyPicker
+              name="companyId"
+              initial={initial?.company ?? null}
+            />
+            <p className="mt-1 text-[10px] text-fluent-neutral-60">
+              Οι πελάτες συνδέονται με εταιρία του καταλόγου μας. Η επωνυμία και το ΑΦΜ
+              συμπληρώνονται αυτόματα από αυτήν. Διαχείριση στο{' '}
+              <code className="font-mono">/admin/companies</code>.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
+                Εταιρεία (από SoftOne)
+              </label>
+              <SoftOneCompanyCombobox
+                source={softoneSource}
+                fieldNamePrefix="softoneCompany"
+                initial={initialSelection}
+              />
+            </div>
 
-        <div>
-          <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
-            Α.Φ.Μ. εταιρείας (προαιρετικό override)
-          </label>
-          <input
-            name="companyAfm"
-            defaultValue={initial?.companyAfm ?? ''}
-            placeholder="9-ψήφιο ΑΦΜ"
-            pattern="\d{9}"
-            className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
-          />
-          <p className="mt-1 text-[10px] text-fluent-neutral-60">
-            Αν επιλέξεις εταιρεία από το combobox, το ΑΦΜ συμπληρώνεται αυτόματα.
-            Συμπλήρωσε εδώ ΜΟΝΟ όταν θες override.
-          </p>
-        </div>
+            <div>
+              <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
+                Α.Φ.Μ. εταιρείας (προαιρετικό override)
+              </label>
+              <input
+                name="companyAfm"
+                defaultValue={initial?.companyAfm ?? ''}
+                placeholder="9-ψήφιο ΑΦΜ"
+                pattern="\d{9}"
+                className="w-full h-10 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+              />
+              <p className="mt-1 text-[10px] text-fluent-neutral-60">
+                Αν επιλέξεις εταιρεία από το combobox, το ΑΦΜ συμπληρώνεται αυτόματα.
+                Συμπλήρωσε εδώ ΜΟΝΟ όταν θες override.
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
       {mode === 'create' && (

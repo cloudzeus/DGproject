@@ -60,9 +60,13 @@ const USER_TYPES: UserType[] = ['employee', 'customer', 'supplier'];
  *   - customer  → softoneCustomerId    (a CUSTOMER record)
  *   - supplier  → softoneSupplierId    (a SUPPLIER record)
  *
+ * Customers additionally pick a local Company (hidden input "companyId"), which
+ * is the canonical affiliation — companyName/companyAfm are then filled from it
+ * as denormalized copies rather than typed by hand.
+ *
  * Returns a partial that can be spread into Prisma's create/update data.
  */
-function parseUserTypeAndCompany(formData: FormData) {
+async function parseUserTypeAndCompany(formData: FormData) {
   const userType = (String(formData.get('userType') ?? 'employee') as UserType);
   const safeType: UserType = USER_TYPES.includes(userType) ? userType : 'employee';
 
@@ -72,9 +76,11 @@ function parseUserTypeAndCompany(formData: FormData) {
   const fromCombobox = String(formData.get('softoneCompanyAfm') ?? '').trim();
   const fromOverride = String(formData.get('companyAfm') ?? '').trim();
   const companyAfm = (fromOverride || fromCombobox) || null;
+  const companyId = String(formData.get('companyId') ?? '').trim() || null;
 
   const data: {
     userType: UserType;
+    companyId: string | null;
     companyName: string | null;
     companyAfm: string | null;
     softoneCompany: number | null;
@@ -83,6 +89,7 @@ function parseUserTypeAndCompany(formData: FormData) {
     softoneSyncStatus: 'unsynced';
   } = {
     userType: safeType,
+    companyId,
     companyName,
     companyAfm,
     softoneCompany: safeType === 'employee' ? id : null,
@@ -92,6 +99,30 @@ function parseUserTypeAndCompany(formData: FormData) {
     // status would be misleading after the linked record was swapped.
     softoneSyncStatus: 'unsynced',
   };
+
+  // Όταν έχει επιλεγεί τοπική εταιρία, αυτή είναι η αυθεντία: γεμίζει τα
+  // denormalized πεδία ώστε να μη διαφωνούν με τη σχέση.
+  if (companyId) {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { NAME: true, AFM: true, TRDR: true },
+    });
+    if (company) {
+      data.companyName = company.NAME;
+      data.companyAfm = company.AFM;
+      if (safeType === 'customer') {
+        // softoneCustomerId είναι @unique — μη το γράψεις αν το κρατά άλλος χρήστης.
+        const taken = company.TRDR
+          ? await prisma.user.findFirst({
+              where: { softoneCustomerId: company.TRDR },
+              select: { id: true },
+            })
+          : null;
+        data.softoneCustomerId = taken ? null : company.TRDR;
+      }
+    }
+  }
+
   return data;
 }
 
@@ -124,7 +155,7 @@ export async function createUser(formData: FormData) {
   if (existing) return { ok: false, error: 'Υπάρχει ήδη χρήστης με αυτό το email.' };
 
   const hashed = await bcryptjs.hash(plainPassword, 10);
-  const typeAndCompany = parseUserTypeAndCompany(formData);
+  const typeAndCompany = await parseUserTypeAndCompany(formData);
   await prisma.user.create({
     data: {
       name,
@@ -215,13 +246,13 @@ export async function updateUser(id: string, formData: FormData) {
   const clash = await prisma.user.findFirst({ where: { email, NOT: { id } } });
   if (clash) return { ok: false, error: 'Υπάρχει ήδη άλλος χρήστης με αυτό το email.' };
 
-  const typeAndCompany = parseUserTypeAndCompany(formData);
+  const typeAndCompany = await parseUserTypeAndCompany(formData);
   const data: {
     name: string;
     email: string;
     role: Role;
     password?: string;
-  } & ReturnType<typeof parseUserTypeAndCompany> = {
+  } & Awaited<ReturnType<typeof parseUserTypeAndCompany>> = {
     name,
     email,
     role,
