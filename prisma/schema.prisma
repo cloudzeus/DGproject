@@ -153,6 +153,11 @@ model User {
   // and must change it before accessing the rest of the app.
   mustChangePassword Boolean  @default(false)
 
+  // ─── Στοιχεία επικοινωνίας ─────────────────────────────────────────
+  // Ανήκουν στο πρόσωπο, όχι στο έργο: αλλαγή εδώ φαίνεται σε κάθε έργο.
+  phone  String?
+  mobile String?
+
   // ─── User type & company affiliation ───────────────────────────────
   // Every user is one of three types, each mapping to a different SoftOne object.
   userType       UserType @default(employee)
@@ -490,7 +495,18 @@ model ProjectMember {
   id        String   @id @default(cuid())
   projectId String
   userId    String
+  /// Ρόλος δικαιωμάτων. Δεν γράφεται από κανένα UI σήμερα — μένει στο default.
   role      UserRole @default(member)
+
+  /// Ιδιότητα στο ΣΥΓΚΕΚΡΙΜΕΝΟ έργο, π.χ. "Υπεύθυνος εγκατάστασης". Χωριστό από
+  /// τον ρόλο δικαιωμάτων και από τα στοιχεία του χρήστη: ο ίδιος άνθρωπος έχει
+  /// άλλη ιδιότητα σε άλλο έργο.
+  title             String?
+  /// Σύντομη περιγραφή αρμοδιοτήτων — αυτό διαβάζει ο πελάτης για να ξέρει σε
+  /// ποιον να απευθυνθεί.
+  responsibilities  String?  @db.Text
+  /// Αν ο πελάτης βλέπει αυτό το μέλος στο portal.
+  visibleToCustomer Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

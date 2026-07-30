@@ -2,10 +2,10 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PersonAdd20Regular, Dismiss16Regular, Search20Regular } from '@fluentui/react-icons';
+import { PersonAdd20Regular, Dismiss16Regular, Search20Regular, Edit16Regular, Eye16Regular, EyeOff16Regular } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { addProjectMember, removeProjectMember } from './actions';
+import { addProjectMember, removeProjectMember, updateProjectMemberProfile } from './actions';
 
 type MemberUser = {
   id: string;
@@ -13,6 +13,13 @@ type MemberUser = {
   email: string;
   image: string | null;
   role: string;
+  /** Ιδιότητα σε ΑΥΤΟ το έργο. */
+  title?: string | null;
+  responsibilities?: string | null;
+  visibleToCustomer?: boolean;
+  /** Ανήκουν στον χρήστη — αλλαγή φαίνεται σε κάθε έργο. */
+  phone?: string | null;
+  mobile?: string | null;
 };
 
 type Props = {
@@ -21,9 +28,12 @@ type Props = {
   ownerId: string;
   members: MemberUser[];
   allUsers: MemberUser[];
+  /** Το έργο έχει πελάτη; Ελέγχει αν φαίνεται ο διακόπτης ορατότητας. */
+  projectHasCustomer?: boolean;
 };
 
-export function MembersManager({ projectId, canEdit, ownerId, members, allUsers }: Props) {
+export function MembersManager({ projectId, canEdit, ownerId, members, allUsers, projectHasCustomer = false }: Props) {
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -132,30 +142,220 @@ export function MembersManager({ projectId, canEdit, ownerId, members, allUsers 
         {members.map((m) => {
           const isOwner = m.id === ownerId;
           return (
-            <div key={m.id} className="px-4 py-3 flex items-center gap-3">
-              <Avatar user={{ name: m.name || m.email, avatarUrl: m.image ?? undefined }} size="sm" />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-fluent-neutral-90 truncate">{m.name || m.email}</div>
-                <div className="text-xs text-fluent-neutral-60 truncate">{m.email}</div>
+            <div key={m.id}>
+              <div className="px-4 py-3 flex items-center gap-3">
+                <Avatar user={{ name: m.name || m.email, avatarUrl: m.image ?? undefined }} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-fluent-neutral-90 truncate">
+                    {m.name || m.email}
+                    {m.title && (
+                      <span className="ml-2 text-xs font-normal text-fluent-neutral-70">· {m.title}</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-fluent-neutral-60 truncate">
+                    {[m.email, m.phone, m.mobile].filter(Boolean).join(' · ')}
+                  </div>
+                  {m.responsibilities && (
+                    <div className="mt-0.5 text-[11px] text-fluent-neutral-60 line-clamp-1">
+                      {m.responsibilities}
+                    </div>
+                  )}
+                </div>
+
+                {projectHasCustomer && m.visibleToCustomer === false && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-fluent-neutral-60 bg-fluent-neutral-8 px-2 py-0.5 rounded"
+                    title="Δεν εμφανίζεται στο portal πελατών"
+                  >
+                    <EyeOff16Regular className="h-3 w-3" /> κρυφό
+                  </span>
+                )}
+
+                {isOwner && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-fluent-blue-700 bg-fluent-blue-50 px-2 py-0.5 rounded">
+                    Ιδιοκτήτης
+                  </span>
+                )}
+
+                {canEdit && (
+                  <button
+                    onClick={() => setEditingId(editingId === m.id ? null : m.id)}
+                    className="h-7 w-7 rounded-md hover:bg-fluent-neutral-8 flex items-center justify-center text-fluent-neutral-60"
+                    aria-label="Επεξεργασία ιδιότητας"
+                    title="Ιδιότητα, αρμοδιότητες, τηλέφωνα"
+                  >
+                    <Edit16Regular className="h-4 w-4" />
+                  </button>
+                )}
+
+                {canEdit && !isOwner && (
+                  <button
+                    onClick={() => handleRemove(m.id)}
+                    disabled={pending}
+                    className="h-7 w-7 rounded-md hover:bg-fluent-accent-red hover:text-white flex items-center justify-center text-fluent-neutral-60 disabled:opacity-50"
+                    aria-label="Αφαίρεση"
+                  >
+                    <Dismiss16Regular className="h-4 w-4" />
+                  </button>
+                )}
               </div>
-              {isOwner && (
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-fluent-blue-700 bg-fluent-blue-50 px-2 py-0.5 rounded">
-                  Ιδιοκτήτης
-                </span>
-              )}
-              {canEdit && !isOwner && (
-                <button
-                  onClick={() => handleRemove(m.id)}
-                  disabled={pending}
-                  className="h-7 w-7 rounded-md hover:bg-fluent-accent-red hover:text-white flex items-center justify-center text-fluent-neutral-60 disabled:opacity-50"
-                  aria-label="Αφαίρεση"
-                >
-                  <Dismiss16Regular className="h-4 w-4" />
-                </button>
+
+              {canEdit && editingId === m.id && (
+                <MemberProfileForm
+                  projectId={projectId}
+                  member={m}
+                  projectHasCustomer={projectHasCustomer}
+                  onDone={() => setEditingId(null)}
+                />
               )}
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Φόρμα ιδιότητας μέλους.
+ *
+ * Τα δύο πάνω πεδία ζουν στη σχέση μέλους–έργου· τα τηλέφωνα ζουν στον χρήστη.
+ * Η διάκριση γράφεται ρητά στη φόρμα, γιατί αλλιώς κάποιος θα άλλαζε τηλέφωνο
+ * νομίζοντας ότι το κάνει «για αυτό το έργο».
+ */
+function MemberProfileForm({
+  projectId,
+  member,
+  projectHasCustomer,
+  onDone,
+}: {
+  projectId: string;
+  member: MemberUser;
+  projectHasCustomer: boolean;
+  onDone: () => void;
+}) {
+  const [title, setTitle] = useState(member.title ?? '');
+  const [responsibilities, setResponsibilities] = useState(member.responsibilities ?? '');
+  const [visible, setVisible] = useState(member.visibleToCustomer ?? true);
+  const [phone, setPhone] = useState(member.phone ?? '');
+  const [mobile, setMobile] = useState(member.mobile ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, startSave] = useTransition();
+
+  return (
+    <div className="border-t border-black/5 bg-fluent-neutral-4 px-4 py-4 space-y-3">
+      {error && <p className="text-xs text-fluent-accent-red">{error}</p>}
+
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-fluent-neutral-50">
+          Σε αυτό το έργο
+        </p>
+        <div className="mt-1.5 space-y-2.5">
+          <div>
+            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Ιδιότητα</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={200}
+              placeholder="π.χ. Υπεύθυνος εγκατάστασης"
+              className="w-full h-9 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
+              Αρμοδιότητες
+            </label>
+            <textarea
+              value={responsibilities}
+              onChange={(e) => setResponsibilities(e.target.value)}
+              rows={2}
+              maxLength={2000}
+              placeholder="Τι αναλαμβάνει, ώστε ο πελάτης να ξέρει σε ποιον να απευθυνθεί"
+              className="w-full px-3 py-2 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-fluent-neutral-50">
+          Στοιχεία επικοινωνίας
+        </p>
+        <p className="text-[10px] text-fluent-neutral-60">
+          Ανήκουν στον χρήστη — η αλλαγή φαίνεται σε κάθε έργο.
+        </p>
+        <div className="mt-1.5 grid grid-cols-2 gap-2.5">
+          <div>
+            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Τηλέφωνο</label>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              maxLength={200}
+              inputMode="tel"
+              className="w-full h-9 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Κινητό</label>
+            <input
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              maxLength={200}
+              inputMode="tel"
+              className="w-full h-9 px-3 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+            />
+          </div>
+        </div>
+      </div>
+
+      {projectHasCustomer && (
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={visible}
+            onChange={(e) => setVisible(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="flex items-center gap-1.5 text-xs font-medium text-fluent-neutral-90">
+              {visible ? <Eye16Regular className="h-3.5 w-3.5" /> : <EyeOff16Regular className="h-3.5 w-3.5" />}
+              Ορατό στον πελάτη
+            </span>
+            <span className="block text-[10px] text-fluent-neutral-60">
+              Εμφανίζεται στην ομάδα του έργου στο portal, με ιδιότητα και στοιχεία επικοινωνίας.
+            </span>
+          </span>
+        </label>
+      )}
+
+      <div className="flex gap-2 pt-1">
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={saving}
+          onClick={() =>
+            startSave(async () => {
+              setError(null);
+              const res = await updateProjectMemberProfile(projectId, member.id, {
+                title,
+                responsibilities,
+                visibleToCustomer: visible,
+                phone,
+                mobile,
+              });
+              if (!res.ok) {
+                setError(res.error);
+                return;
+              }
+              onDone();
+            })
+          }
+        >
+          {saving ? 'Αποθήκευση…' : 'Αποθήκευση'}
+        </Button>
+        <Button size="sm" variant="secondary" onClick={onDone}>
+          Άκυρο
+        </Button>
       </div>
     </div>
   );

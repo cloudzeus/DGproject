@@ -433,6 +433,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     email: m.user.email,
     image: m.user.image,
     role: m.user.role,
+    // Ιδιότητα στη σχέση μέλους–έργου· τηλέφωνα από τον χρήστη.
+    title: m.title,
+    responsibilities: m.responsibilities,
+    visibleToCustomer: m.visibleToCustomer,
+    phone: m.user.phone,
+    mobile: m.user.mobile,
   }));
 
   const userOptions = allUsers.map((u) => ({ id: u.id, name: u.name ?? '', email: u.email }));
@@ -729,6 +735,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         <MembersManager
           projectId={project.id}
           canEdit={canEdit}
+          projectHasCustomer={project.primaryCompanyId !== null}
           ownerId={project.ownerId}
           members={memberUsers}
           allUsers={allUsers.map((u) => ({

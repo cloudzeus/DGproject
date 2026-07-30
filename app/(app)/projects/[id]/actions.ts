@@ -66,3 +66,53 @@ export async function setProjectApprover(projectId: string, userId: string | nul
   revalidatePath('/projects');
   return { ok: true };
 }
+
+/**
+ * Ιδιότητα και αρμοδιότητες ενός μέλους ΣΕ ΑΥΤΟ το έργο, μαζί με τα τηλέφωνά του.
+ *
+ * Δύο ξεχωριστές γραφές επίτηδες, γιατί αγγίζουν διαφορετικά πράγματα:
+ * το `title`/`responsibilities`/`visibleToCustomer` ζουν στη σχέση μέλους–έργου
+ * (ο ίδιος άνθρωπος έχει άλλη ιδιότητα αλλού), ενώ τα τηλέφωνα ζουν στον χρήστη
+ * και η αλλαγή τους φαίνεται σε ΚΑΘΕ έργο. Το UI το λέει ρητά στον χρήστη.
+ */
+export async function updateProjectMemberProfile(
+  projectId: string,
+  userId: string,
+  input: {
+    title: string | null;
+    responsibilities: string | null;
+    visibleToCustomer: boolean;
+    phone: string | null;
+    mobile: string | null;
+  },
+) {
+  await requireProjectEditor(projectId);
+
+  const membership = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+    select: { id: true },
+  });
+  if (!membership) return { ok: false as const, error: 'Ο χρήστης δεν είναι μέλος του έργου.' };
+
+  const t = (v: string | null) => (v ?? '').trim().slice(0, 200) || null;
+
+  await prisma.$transaction([
+    prisma.projectMember.update({
+      where: { id: membership.id },
+      data: {
+        title: t(input.title),
+        responsibilities: (input.responsibilities ?? '').trim().slice(0, 2000) || null,
+        visibleToCustomer: input.visibleToCustomer,
+      },
+    }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { phone: t(input.phone), mobile: t(input.mobile) },
+    }),
+  ]);
+
+  revalidatePath(`/projects/${projectId}`);
+  // Ο πελάτης βλέπει αυτά τα στοιχεία στο portal μόλις αλλάξουν.
+  revalidatePath(`/portal/projects/${projectId}`);
+  return { ok: true as const };
+}
