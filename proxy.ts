@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { gateRedirect } from "@/lib/portal/route-gate";
 
 const publicRoutes = ["/auth/signin", "/auth/signup", "/"];
 
@@ -50,15 +51,20 @@ export async function proxy(request: NextRequest) {
     return clearStaleSessionCookies(request, NextResponse.redirect(signInUrl));
   }
 
-  const role = (session.user as any).role || "member";
+  const role = (session.user as { role?: string }).role || "member";
+  const userType = (session.user as { userType?: string }).userType || "employee";
 
-  if (pathname.startsWith("/admin") && role !== "admin") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+  // Ένα σημείο ελέγχου για τον διαχωρισμό πελάτη/ομάδας. Η απόφαση ζει στο
+  // lib/portal/route-gate.ts ώστε να δοκιμάζεται χωρίς HTTP server.
+  const redirectTo = gateRedirect(pathname, userType, role);
+  if (redirectTo && redirectTo !== pathname) {
+    return NextResponse.redirect(new URL(redirectTo, request.url));
   }
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-user-id", session.user.id);
-  requestHeaders.set("x-user-role", (session.user as any).role || "member");
+  requestHeaders.set("x-user-type", userType);
+  requestHeaders.set("x-user-role", role);
 
   return NextResponse.next({
     request: {
