@@ -598,19 +598,29 @@ model TaskTag {
 }
 
 // Comments & Interactions
+enum CommentVisibility {
+  /// Μόνο η ομάδα. Το default — τα υπάρχοντα σχόλια μένουν αόρατα στους πελάτες
+  /// χωρίς backfill, και η παράλειψη επιλογής δεν διαρρέει.
+  internal
+  /// Ορατό και στον πελάτη στο portal.
+  shared
+}
+
 model Comment {
-  id        String   @id @default(cuid())
-  taskId    String
-  authorId  String
-  content   String   @db.Text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String            @id @default(cuid())
+  taskId     String
+  authorId   String
+  content    String            @db.Text
+  visibility CommentVisibility @default(internal)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
 
   task           Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
   author         User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
   mentionedUsers CommentMention[]
 
   @@index([taskId])
+  @@index([taskId, visibility])
   @@index([authorId])
   @@index([createdAt])
 }
