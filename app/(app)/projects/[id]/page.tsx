@@ -5,6 +5,7 @@ import { ProjectDetail } from './project-detail';
 import { MembersManager } from './members-manager';
 import { ApproverSelector } from './approver-selector';
 import { ProjectActionsBar } from './project-actions-bar';
+import { ProjectCompaniesManager } from './project-companies-manager';
 import type { ProjectFileItem } from './project-files';
 import type { ProjectEmail } from './project-emails-tab';
 import type { HistoryEntry } from './project-history-tab';
@@ -19,6 +20,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       include: {
         owner: true,
         primaryCompany: { select: { id: true, NAME: true, AFM: true } },
+        companies: {
+          select: { id: true, role: true, company: { select: { id: true, NAME: true, AFM: true } } },
+          orderBy: { role: 'asc' },
+        },
         members: { include: { user: true } },
         approver: { select: { id: true, name: true, email: true, image: true } },
         // Customer contact (User with userType=customer) — its email is the
@@ -709,6 +714,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             image: u.image,
             role: u.role,
           }))}
+        />
+        <ProjectCompaniesManager
+          projectId={project.id}
+          canEdit={canEdit}
+          client={project.primaryCompany}
+          associates={project.companies}
         />
       </div>
     </>
