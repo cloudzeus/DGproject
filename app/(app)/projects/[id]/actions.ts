@@ -116,3 +116,32 @@ export async function updateProjectMemberProfile(
   revalidatePath(`/portal/projects/${projectId}`);
   return { ok: true as const };
 }
+
+/**
+ * Ορατότητα αρχείου έργου προς τον πελάτη.
+ *
+ * Default `internal`, οπότε χωρίς αυτή την ενέργεια κανένα αρχείο δεν φτάνει
+ * ποτέ στο portal. Το ανεβασμένο από τον πελάτη δεν γίνεται εσωτερικό — θα
+ * εξαφανιζόταν από αυτόν που το έστειλε.
+ */
+export async function setAttachmentVisibility(
+  attachmentId: string,
+  visibility: 'internal' | 'shared',
+) {
+  const att = await prisma.attachment.findUnique({
+    where: { id: attachmentId },
+    select: { projectId: true, uploadedBy: { select: { userType: true } } },
+  });
+  if (!att?.projectId) return { ok: false as const, error: 'Δεν βρέθηκε το αρχείο.' };
+
+  await requireProjectEditor(att.projectId);
+
+  if (att.uploadedBy.userType === 'customer' && visibility === 'internal') {
+    return { ok: false as const, error: 'Τα αρχεία του πελάτη είναι πάντα ορατά σε αυτόν.' };
+  }
+
+  await prisma.attachment.update({ where: { id: attachmentId }, data: { visibility } });
+  revalidatePath(`/projects/${att.projectId}`);
+  revalidatePath(`/portal/projects/${att.projectId}`);
+  return { ok: true as const };
+}

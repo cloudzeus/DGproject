@@ -624,6 +624,14 @@ model TaskTag {
 }
 
 // Comments & Interactions
+enum AttachmentVisibility {
+  /// Μόνο η ομάδα. Default — τα αρχεία έργου περιέχουν ήδη προσφορές και
+  /// εσωτερικά έγγραφα, οπότε αναδρομική έκθεση θα ήταν διαρροή.
+  internal
+  /// Ορατό στον πελάτη στο portal.
+  shared
+}
+
 enum TaskVisibility {
   /// Μόνο η ομάδα υλοποίησης. Δεν εμφανίζεται στο portal πελατών, ούτε μετράει
   /// στα ποσοστά και τις κατανομές που βλέπει ο πελάτης.
@@ -689,6 +697,8 @@ model Attachment {
   mimeType         String
   url              String     @db.Text
   source           FileSource @default(local)
+  /// Αν ο πελάτης βλέπει αυτό το αρχείο στο portal.
+  visibility       AttachmentVisibility @default(internal)
   sharepointFileId String?
   uploadedById     String
   createdAt        DateTime   @default(now())
@@ -699,6 +709,7 @@ model Attachment {
 
   @@index([taskId])
   @@index([projectId])
+  @@index([projectId, visibility])
   @@index([uploadedById])
   @@index([source])
 }

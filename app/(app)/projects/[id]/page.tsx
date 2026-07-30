@@ -72,7 +72,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           where: { taskId: null },
           orderBy: { createdAt: 'desc' },
           include: {
-            uploadedBy: { select: { name: true, email: true } },
+            uploadedBy: { select: { name: true, email: true, userType: true } },
           },
         },
       },
@@ -84,7 +84,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     prisma.attachment.findMany({
       where: { task: { projectId: id }, taskId: { not: null } },
       include: {
-        uploadedBy: { select: { name: true, email: true } },
+        uploadedBy: { select: { name: true, email: true, userType: true } },
         task: { select: { id: true, title: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -92,7 +92,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     prisma.taskQuestionAttachment.findMany({
       where: { question: { task: { projectId: id } } },
       include: {
-        uploadedBy: { select: { name: true, email: true } },
+        uploadedBy: { select: { name: true, email: true, userType: true } },
         question: {
           select: {
             id: true,
@@ -370,6 +370,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     mimeType: a.mimeType,
     url: a.url,
     uploadedByName: a.uploadedBy.name ?? a.uploadedBy.email,
+    visibility: a.visibility,
+    fromCustomer: a.uploadedBy.userType === 'customer',
   }));
 
   // Aggregate every file attached to the project — at the project level, on a task,

@@ -8,9 +8,12 @@ import {
   DocumentPdf20Regular,
   Image20Regular,
   Document20Regular,
+  Eye16Regular,
+  EyeOff16Regular,
 } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { deleteProjectAttachment } from './task-actions';
+import { setAttachmentVisibility } from './actions';
 import { uploadFileWithProgress, type UploadProgress } from '@/lib/upload-client';
 
 export type ProjectAttachmentInfo = {
@@ -21,6 +24,9 @@ export type ProjectAttachmentInfo = {
   mimeType: string;
   url: string;
   uploadedByName: string;
+  visibility: 'internal' | 'shared';
+  /** Ανέβηκε από τον πελάτη — δεν γίνεται εσωτερικό. */
+  fromCustomer: boolean;
 };
 
 function formatBytes(n: number): string {
@@ -41,9 +47,11 @@ interface Props {
   projectId: string;
   attachments: ProjectAttachmentInfo[];
   canEdit: boolean;
+  /** Το έργο έχει πελάτη; Χωρίς πελάτη ο διακόπτης ορατότητας δεν έχει νόημα. */
+  projectHasCustomer?: boolean;
 }
 
-export function ProjectAttachments({ projectId, attachments, canEdit }: Props) {
+export function ProjectAttachments({ projectId, attachments, canEdit, projectHasCustomer = false }: Props) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -214,6 +222,41 @@ export function ProjectAttachments({ projectId, attachments, canEdit }: Props) {
                 <span className="text-[11px] text-fluent-neutral-60 tabular-nums shrink-0">
                   {formatBytes(a.size)}
                 </span>
+                {projectHasCustomer && canEdit && !a.fromCustomer && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      startTransition(async () => {
+                        await setAttachmentVisibility(
+                          a.id,
+                          a.visibility === 'shared' ? 'internal' : 'shared',
+                        );
+                        router.refresh();
+                      })
+                    }
+                    title={
+                      a.visibility === 'shared'
+                        ? 'Ορατό στον πελάτη — κλικ για απόκρυψη'
+                        : 'Κρυφό από τον πελάτη — κλικ για κοινοποίηση'
+                    }
+                    className={`inline-flex h-7 shrink-0 items-center gap-1 rounded px-2 text-[10px] font-semibold uppercase tracking-wide transition-colors ${
+                      a.visibility === 'shared'
+                        ? 'bg-fluent-blue-50 text-fluent-blue-700 hover:bg-fluent-blue-100'
+                        : 'bg-fluent-neutral-8 text-fluent-neutral-60 hover:bg-fluent-neutral-10'
+                    }`}
+                  >
+                    {a.visibility === 'shared' ? (
+                      <><Eye16Regular className="h-3 w-3" /> κοινό</>
+                    ) : (
+                      <><EyeOff16Regular className="h-3 w-3" /> εσωτερικό</>
+                    )}
+                  </button>
+                )}
+                {projectHasCustomer && a.fromCustomer && (
+                  <span className="shrink-0 rounded bg-fluent-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fluent-blue-700">
+                    από πελάτη
+                  </span>
+                )}
                 {canEdit && (
                   <button
                     type="button"

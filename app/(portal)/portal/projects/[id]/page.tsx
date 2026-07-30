@@ -5,6 +5,9 @@ import { prisma } from '@/lib/prisma';
 import { getPortalScope } from '@/lib/portal/scope';
 import { commentVisibilityFilter } from '@/lib/comments/visibility';
 import { taskVisibilityFilter } from '@/lib/tasks/visibility';
+import { attachmentVisibilityFilter } from '@/lib/attachments/visibility';
+import { PortalTeam } from './portal-team';
+import { PortalFiles } from './portal-files';
 import { PortalStatusBar } from '@/components/portal/status-bar';
 import { countByState, completionPct, totalOf } from '@/components/portal/task-status';
 import { PortalProjectClient } from './portal-project-client';
@@ -39,6 +42,29 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
       status: true,
       startDate: true,
       dueDate: true,
+      ownerId: true,
+      // Μόνο τα μέλη που η ομάδα έχει σημειώσει ως ορατά στον πελάτη.
+      members: {
+        where: { visibleToCustomer: true },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          title: true,
+          responsibilities: true,
+          user: {
+            select: { id: true, name: true, email: true, image: true, phone: true, mobile: true },
+          },
+        },
+      },
+      // Το φίλτρο ορατότητας εδώ: εσωτερικό αρχείο δεν φεύγει από τον server.
+      attachments: {
+        where: attachmentVisibilityFilter('customer'),
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, name: true, title: true, size: true, mimeType: true, url: true,
+          createdAt: true,
+          uploadedBy: { select: { name: true, email: true, userType: true } },
+        },
+      },
       tasks: {
         // Οι εσωτερικές εργασίες δεν φεύγουν ποτέ από τον server — ούτε στη
         // λίστα, ούτε στα ποσοστά που υπολογίζονται παρακάτω.
@@ -200,6 +226,34 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
             createdAt: q.createdAt.toISOString(),
             askedByName: q.askedBy.name ?? q.askedBy.email,
           })),
+        }))}
+      />
+
+      <PortalTeam
+        members={project.members.map((m) => ({
+          id: m.user.id,
+          name: m.user.name ?? m.user.email,
+          email: m.user.email,
+          avatarUrl: m.user.image ?? undefined,
+          title: m.title,
+          responsibilities: m.responsibilities,
+          phone: m.user.phone,
+          mobile: m.user.mobile,
+          isOwner: m.user.id === project.ownerId,
+        }))}
+      />
+
+      <PortalFiles
+        files={project.attachments.map((a) => ({
+          id: a.id,
+          name: a.name,
+          title: a.title,
+          size: a.size,
+          mimeType: a.mimeType,
+          url: a.url,
+          createdAt: a.createdAt.toISOString(),
+          uploadedByName: a.uploadedBy.name ?? a.uploadedBy.email,
+          fromUs: a.uploadedBy.userType === 'customer',
         }))}
       />
     </div>

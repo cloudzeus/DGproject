@@ -367,6 +367,7 @@ export function ProjectDetail({
           <div className="space-y-4">
             <ProjectAttachments
               projectId={project.id}
+              projectHasCustomer={project.hasCustomer}
               attachments={projectAttachments}
               canEdit={canEdit}
             />
