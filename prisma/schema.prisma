@@ -227,6 +227,8 @@ model User {
   taskTemplates       TaskTemplate[]           @relation("TaskTemplateCreator")
   organizedMeetings   MeetingNote[]            @relation("MeetingOrganizer")
   createdCostLines    ProjectCostLine[]        @relation("CostLineCreator")
+  proposalAnalyses    ProposalAnalysis[]       @relation("ProposalAnalysisCreator")
+  createdRequirements ProjectRequirement[]     @relation("RequirementCreator")
   mailConnection      UserMailConnection?
   emailMessages       EmailMessage[]           @relation("EmailMessageUser")
 
@@ -488,6 +490,8 @@ model Project {
   ticketSources TicketSource[]    @relation("SourceDefaultProject")
   primaryCompany Company?         @relation("ProjectPrimaryCompany", fields: [primaryCompanyId], references: [id], onDelete: SetNull)
   companies      ProjectCompany[]
+  proposalAnalyses ProposalAnalysis[]
+  requirements     ProjectRequirement[]
 
   @@index([workspaceId])
   @@index([ownerId])
@@ -565,6 +569,16 @@ model Task {
   // before this task is treated as authoritative.
   meetingNeedsReview      Boolean @default(false)
 
+  // ─── Προέλευση από πρόταση έργου ───────────────────────────────────
+  // Ίδιο μοτίβο με τα meeting* από πάνω: όταν η εργασία γεννήθηκε από την
+  // ανάλυση της πρότασης, κρατάμε ΠΟΥ το βρήκε το μοντέλο και πόσο σίγουρο ήταν.
+  generatedFromProposalId String?
+  /// Το αυτούσιο απόσπασμα της πρότασης. ΠΑΝΤΑ εσωτερικό — περιέχει τιμές.
+  proposalSourceQuote     String? @db.Text
+  proposalConfidence      Float?
+  /// Παραδοτέο, όχι απλή προθεσμία. Το χρονοδιάγραμμα του portal το ξεχωρίζει.
+  isMilestone             Boolean @default(false)
+
   // ─── In-progress time tracking ─────────────────────────────────────
   // Wall-clock duration the task has spent in status=in_progress. The clock
   // ticks while inProgressStartedAt is non-null; when status leaves in_progress
@@ -593,6 +607,8 @@ model Task {
   dependents           TaskDependency[] @relation("TaskPrerequisites")
   emailMessages        EmailMessage[]
   ticket               Ticket?          @relation("TicketTask")
+  generatedFromProposal ProposalAnalysis? @relation("ProposalGeneratedTask", fields: [generatedFromProposalId], references: [id], onDelete: SetNull)
+  requirements          TaskRequirement[]
 
   @@index([projectId, visibility])
   @@index([projectId])
@@ -604,6 +620,8 @@ model Task {
   @@index([parentTaskId])
   @@index([generatedFromMeetingId])
   @@index([meetingNeedsReview])
+  @@index([generatedFromProposalId])
+  @@index([projectId, isMilestone])
 }
 
 model TaskAssignee {
@@ -1382,4 +1400,162 @@ model TicketMessage {
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([ticketId, createdAt])
+}
+
+// ───────────────────── Ανάλυση πρότασης έργου ─────────────────────
+// Η πρόταση που κερδίσαμε περιέχει ήδη το πλάνο: φάσεις, παραδοτέα,
+// απαιτήσεις. Εδώ διαβάζεται μία φορά και γίνεται δομή που δουλεύεται.
+
+enum ProposalAnalysisStatus {
+  pending
+  analyzing
+  ready
+  failed
+}
+
+enum ProposalItemKind {
+  /// Βήμα υλοποίησης — γίνεται εργασία.
+  step
+  /// Παραδοτέο με ημερομηνία — γίνεται εργασία με isMilestone.
+  milestone
+  /// Συμφωνημένο εύρος — γίνεται ProjectRequirement, όχι εργασία.
+  requirement
+}
+
+enum ProposalItemStatus {
+  draft
+  rejected
+  converted
+}
+
+enum RequirementStatus {
+  open
+  covered
+  out_of_scope
+}
+
+model ProposalAnalysis {
+  id           String @id @default(cuid())
+  projectId    String
+  /// Το ανεβασμένο αρχείο στα συνημμένα του έργου. null αν διαγράφηκε.
+  attachmentId String?
+  fileName     String
+  mimeType     String
+  /// Το κείμενο ΟΠΩΣ εξήχθη — αμάσκαρο. Η μάσκα εφαρμόζεται τη στιγμή που
+  /// φεύγει προς το μοντέλο, ώστε τα αποσπάσματα να δείχνουν το πρωτότυπο.
+  extractedText String @db.LongText
+  charCount     Int    @default(0)
+  chunkCount    Int    @default(0)
+
+  status  ProposalAnalysisStatus @default(pending)
+  aiError String?                @db.Text
+
+  provider     String?
+  model        String?
+  inputTokens  Int     @default(0)
+  outputTokens Int     @default(0)
+  durationMs   Int     @default(0)
+  summary      String? @db.Text
+
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy      User           @relation("ProposalAnalysisCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  items          ProposalItem[]
+  generatedTasks Task[]         @relation("ProposalGeneratedTask")
+
+  @@index([projectId])
+  @@index([status])
+  @@index([createdById])
+  @@index([status, updatedAt])
+}
+
+model ProposalItem {
+  id         String           @id @default(cuid())
+  analysisId String
+  kind       ProposalItemKind
+  order      Int              @default(0)
+
+  title       String
+  description String? @db.Text
+
+  // ── βήματα & ορόσημα ──
+  suggestedDueDate DateTime?
+  /// Για προτάσεις που λένε «εβδομάδα 3» αντί για ημερομηνία: μέρες από την
+  /// έναρξη του έργου. Το UI το μετατρέπει σε πραγματική ημερομηνία.
+  suggestedOffsetDays Int?
+  estimatedHours      Float?
+  priority            TaskPriority?
+  /// Ορατότητα της εργασίας που θα προκύψει. Το πλάνο είναι ό,τι συμφωνήθηκε,
+  /// οπότε shared — αλλά αλλάζει ανά γραμμή πριν τη μετατροπή.
+  visibility TaskVisibility @default(shared)
+
+  // ── απαιτήσεις ──
+  /// λειτουργική | τεχνική | εμπορική
+  requirementCategory String?
+
+  // ── ιχνηλασία ──
+  /// Το αυτούσιο απόσπασμα της πρότασης που στηρίζει το αντικείμενο. Χωρίς
+  /// αυτό το αντικείμενο απορρίπτεται στο parse: το μοντέλο το επινόησε.
+  sourceQuote String? @db.Text
+  confidence  Float?
+  /// True όταν το αντικείμενο το πρόσθεσε άνθρωπος, όχι το μοντέλο.
+  manual      Boolean @default(false)
+
+  status                 ProposalItemStatus @default(draft)
+  convertedTaskId        String?            @unique
+  convertedRequirementId String?            @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  analysis ProposalAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+  @@index([analysisId, kind, order])
+  @@index([status])
+}
+
+model ProjectRequirement {
+  id        String @id @default(cuid())
+  projectId String
+  /// REQ-001, REQ-002… μοναδικό ανά έργο, σταθερό για αναφορά σε συζητήσεις.
+  code      String
+
+  title       String
+  description String? @db.Text
+  category    String?
+  status      RequirementStatus @default(open)
+
+  sourceAnalysisId String?
+  sourceQuote      String? @db.Text
+
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User              @relation("RequirementCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  tasks     TaskRequirement[]
+
+  @@unique([projectId, code])
+  @@index([projectId])
+  @@index([projectId, status])
+  @@index([createdById])
+}
+
+/// Η ιχνηλασία: ποια εργασία καλύπτει ποια απαίτηση. Αυτό απαντά στο
+/// «καλύψαμε ό,τι υποσχεθήκαμε;» στο τέλος του έργου.
+model TaskRequirement {
+  taskId        String
+  requirementId String
+  createdAt     DateTime @default(now())
+
+  task        Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  requirement ProjectRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, requirementId])
+  @@index([requirementId])
 }

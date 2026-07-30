@@ -12,6 +12,7 @@ import {
   CalendarLtr20Regular,
   Money20Regular,
   History20Regular,
+  DocumentSearch20Regular,
 } from '@fluentui/react-icons';
 import { ReportModal } from './report-modal';
 import { AvatarStack } from '@/components/ui/avatar';
@@ -32,6 +33,7 @@ import {
 } from './project-costing-tab';
 import { ProjectEmailsTab, type ProjectEmail } from './project-emails-tab';
 import { ProjectHistoryTab, type HistoryEntry } from './project-history-tab';
+import { ProposalTab, type ProposalAnalysisView } from './proposal-tab';
 
 type AvatarUser = { name: string; avatarUrl?: string };
 
@@ -61,13 +63,14 @@ type ProjectDetailProps = {
   meetings: ProjectMeeting[];
   regressionCount: number;
   costLines: CostLine[];
+  proposalAnalysis: ProposalAnalysisView | null;
   catalogProducts: CatalogPickerItem[];
   catalogServices: CatalogPickerItem[];
   emails: ProjectEmail[];
   historyEntries: HistoryEntry[];
 };
 
-type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'costing' | 'reports' | 'emails' | 'history';
+type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'costing' | 'proposal' | 'reports' | 'emails' | 'history';
 
 function MenuItem({
   icon,
@@ -102,6 +105,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Board20Regular; privilegedOnl
   { id: 'emails', label: 'Email', Icon: Mail20Regular, hideForCustomer: true },
   { id: 'history', label: 'Ιστορικό', Icon: History20Regular, hideForCustomer: true },
   { id: 'costing', label: 'Κοστολόγηση', Icon: Money20Regular, privilegedOnly: true },
+  { id: 'proposal', label: 'Πρόταση', Icon: DocumentSearch20Regular, privilegedOnly: true },
   { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular, hideForCustomer: true },
 ];
 
@@ -118,6 +122,7 @@ export function ProjectDetail({
   meetings,
   regressionCount,
   costLines,
+  proposalAnalysis,
   catalogProducts,
   catalogServices,
   emails,
@@ -332,6 +337,8 @@ export function ProjectDetail({
                 ? meetings.length
                 : t.id === 'costing'
                 ? costLines.length
+                : t.id === 'proposal'
+                ? proposalAnalysis?.items.length ?? null
                 : t.id === 'emails'
                 ? emails.length
                 : t.id === 'history'
@@ -400,6 +407,9 @@ export function ProjectDetail({
             products={catalogProducts}
             services={catalogServices}
           />
+        )}
+        {tab === 'proposal' && isPrivileged && (
+          <ProposalTab projectId={project.id} analysis={proposalAnalysis} />
         )}
         {tab === 'emails' && !isCustomer && (
           <ProjectEmailsTab

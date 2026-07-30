@@ -169,6 +169,45 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const isPrivileged = role === 'admin' || role === 'manager';
   const isCustomer = session?.user?.userType === 'customer';
 
+  // Η τελευταία ανάλυση πρότασης — μόνο για admin/manager, όπως η κοστολόγηση:
+  // η πρόταση και τα αποσπάσματά της περιέχουν τιμές. Μόνο η τελευταία, γιατί
+  // αυτή είναι το τρέχον πλάνο· οι παλιότερες μένουν στη βάση για ιστορικό.
+  const proposalAnalysisRaw = isPrivileged
+    ? await prisma.proposalAnalysis.findFirst({
+        where: { projectId: id },
+        orderBy: { createdAt: 'desc' },
+        include: { items: { orderBy: [{ kind: 'asc' }, { order: 'asc' }] } },
+      })
+    : null;
+  const proposalAnalysis = proposalAnalysisRaw
+    ? {
+        id: proposalAnalysisRaw.id,
+        fileName: proposalAnalysisRaw.fileName,
+        status: proposalAnalysisRaw.status,
+        aiError: proposalAnalysisRaw.aiError,
+        summary: proposalAnalysisRaw.summary,
+        charCount: proposalAnalysisRaw.charCount,
+        chunkCount: proposalAnalysisRaw.chunkCount,
+        createdAt: proposalAnalysisRaw.createdAt.toISOString(),
+        items: proposalAnalysisRaw.items.map((i) => ({
+          id: i.id,
+          kind: i.kind,
+          title: i.title,
+          description: i.description,
+          suggestedDueDate: i.suggestedDueDate ? i.suggestedDueDate.toISOString().slice(0, 10) : null,
+          suggestedOffsetDays: i.suggestedOffsetDays,
+          estimatedHours: i.estimatedHours,
+          priority: i.priority,
+          visibility: i.visibility,
+          requirementCategory: i.requirementCategory,
+          sourceQuote: i.sourceQuote,
+          confidence: i.confidence,
+          manual: i.manual,
+          status: i.status,
+        })),
+      }
+    : null;
+
   // Costing data fetched only for admin/manager — viewers/members never see
   // the tab and never get the catalog payload (which can be large).
   const costLinesRaw = isPrivileged
@@ -694,6 +733,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         meetings={meetingsForClient}
         regressionCount={regressionCount}
         costLines={costLines}
+        proposalAnalysis={proposalAnalysis}
         catalogProducts={catalogProducts}
         catalogServices={catalogServices}
         emails={emails}
