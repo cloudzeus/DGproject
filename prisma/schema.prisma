@@ -163,6 +163,9 @@ model User {
   companyName    String?
   // Greek tax id (Α.Φ.Μ.) of the affiliated company — required for SoftOne sync.
   companyAfm     String?
+  // Canonical link to the Company record. companyName/companyAfm above are kept
+  // for one release as denormalized read-only copies; this relation is the truth.
+  companyId      String?
   // SoftOne tenant company id (the COMPANY value in the ERP — tenant-specific,
   // configured per environment via S1_COMPANY env var).
   softoneCompany Int?
@@ -187,6 +190,8 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
+  company             Company?                 @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contact             Contact?                 @relation("ContactUser")
   ownedWorkspaces     Workspace[]              @relation("WorkspaceOwner")
   ownedProjects       Project[]                @relation("ProjectOwner")
   approverProjects    Project[]                @relation("ProjectApprover")
@@ -214,10 +219,146 @@ model User {
   @@index([role])
   @@index([createdAt])
   @@index([userType])
+  @@index([companyId])
   @@index([softoneCustomerId])
   @@index([softoneSupplierId])
   @@index([softoneUserId])
   @@index([softoneSyncStatus])
+}
+
+/// Πελάτης/συνεργαζόμενη εταιρία.
+///
+/// Τα πεδία που προέρχονται από SoftOne κρατούν τα ονόματα του SoftOne αυτούσια,
+/// ώστε το sync να είναι απευθείας αντιγραφή χωρίς μεταφραστικό στρώμα. Τα πεδία
+/// από ΑΑΔΕ και τα app-only μένουν camelCase, ώστε να φαίνεται η προέλευση κάθε
+/// στήλης με μια ματιά. (Ίδια σύμβαση με το Trdr model του damask.)
+///
+/// Το TRDR είναι το unique κλειδί. Το AFM ΔΕΝ είναι unique: στο ζωντανό SoftOne
+/// υπάρχουν 3061 πελάτες με ΑΦΜ αλλά μόνο 2998 διακριτά — υποκαταστήματα και
+/// ιστορικές καρτέλες μοιράζονται ΑΦΜ νόμιμα.
+model Company {
+  id String @id @default(cuid())
+
+  /// null = η εταιρία υπάρχει μόνο εδώ, δεν έχει συγχρονιστεί με SoftOne.
+  TRDR       Int?      @unique
+  /// 13 = Πελάτης, 12 = Προμηθευτής
+  SODTYPE    Int       @default(13)
+  CODE       String?
+  NAME       String
+  AFM        String?
+  /// Ονομασία ΔΟΥ — έτσι το κρατά το SoftOne σε αυτό το tenant (π.χ. "ΠΑΛΛΗΝΗΣ ΑΘΗΝΩΝ").
+  IRSDATA    String?
+  /// επάγγελμα / κύρια δραστηριότητα, free text
+  JOBTYPETRD String?
+  ADDRESS    String?
+  ZIP        String?
+  DISTRICT   String?
+  CITY       String?
+  COUNTRY    Int?
+  PHONE01    String?
+  PHONE02    String?
+  FAX        String?
+  EMAIL      String?
+  WEBPAGE    String?
+  ISACTIVE   Int       @default(1)
+  REMARKS    String?   @db.Text
+  /// τελευταία μεταβολή στο SoftOne
+  UPDDATE    DateTime?
+  syncedAt   DateTime?
+
+  // ── ΑΑΔΕ (vat.wwa.gr/afm2info) ──
+  /// Αριθμητικός κωδικός ΔΟΥ της ΑΑΔΕ (basic_rec.doy) — το SoftOne IRSDATA
+  /// κρατά την ονομασία, οπότε ο κωδικός χρειάζεται δικό του πεδίο.
+  doyCode      String?
+  foundingDate DateTime?
+  aadeStatus   String?
+  aadeFirmKind String?
+  appLegalForm String?
+  aadeSyncedAt DateTime?
+
+  // ── app-only ──
+  appNotes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contacts        Contact[]
+  users           User[]
+  activities      CompanyActivity[]
+  primaryProjects Project[]         @relation("ProjectPrimaryCompany")
+  projectRoles    ProjectCompany[]
+
+  @@index([AFM])
+  @@index([NAME])
+  @@index([SODTYPE, ISACTIVE])
+}
+
+/// Δραστηριότητες (ΚΑΔ) από την ΑΑΔΕ. Μία κύρια, πολλές δευτερεύουσες.
+model CompanyActivity {
+  id          String  @id @default(cuid())
+  companyId   String
+  code        String?
+  description String? @db.Text
+  /// 'PRIMARY' | 'SECONDARY'
+  kind        String
+  order       Int     @default(0)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+/// Επαφή εταιρίας. Μπορεί προαιρετικά να αποκτήσει λογαριασμό portal.
+model Contact {
+  id        String  @id @default(cuid())
+  companyId String
+  name      String
+  position  String?
+  email     String?
+  phone     String?
+  mobile    String?
+  isPrimary Boolean @default(false)
+  notes     String? @db.Text
+
+  // Mirror του CUSPRSN/SUPPRSN (S1 person-on-trader link) για μελλοντικό sync επαφών.
+  PRSN      Int?
+  TRDBRANCH Int?
+  LINENUM   Int?
+
+  /// Προαιρετικός λογαριασμός portal. Null = η επαφή δεν συνδέεται.
+  userId String? @unique
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation("ContactUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([email])
+}
+
+enum ProjectCompanyRole {
+  partner
+  subcontractor
+  consultant
+  other
+}
+
+/// Εταιρίες συσχετιζόμενες με έργο σε ρόλο ΕΚΤΟΣ πελάτη. Ο πελάτης είναι το
+/// Project.primaryCompanyId και ΔΕΝ διπλοεγγράφεται εδώ.
+model ProjectCompany {
+  id        String             @id @default(cuid())
+  projectId String
+  companyId String
+  role      ProjectCompanyRole
+  notes     String?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, companyId])
+  @@index([companyId])
 }
 
 model Account {
@@ -299,9 +440,12 @@ model Project {
   // SoftOne tenant company id (per S1_COMPANY env). Allows multi-company tenants
   // to scope projects without hard-coding values.
   softoneCompany    Int?
-  // Optional customer this project belongs to (PRJC.TRDR → CUSTOMER).
-  // Points to a User of type=customer whose softoneCustomerId is the TRDR.
+  // Primary contact person for this project (the mailto default). Note this is a
+  // User, not a company — it is read-only today, never set by any form.
   customerUserId    String?
+  // The client: which company the project is delivered to. Source of PRJC.TRDR
+  // and the only company that sees this project in the customer portal.
+  primaryCompanyId  String?
   // Hash of last-known synced payload — used for optimistic concurrency.
   softoneVersion    String?
   softoneSyncStatus SoftOneSyncStatus @default(unsynced)
@@ -322,6 +466,8 @@ model Project {
   costLines     ProjectCostLine[]
   emailMessages EmailMessage[]
   ticketSources TicketSource[]    @relation("SourceDefaultProject")
+  primaryCompany Company?         @relation("ProjectPrimaryCompany", fields: [primaryCompanyId], references: [id], onDelete: SetNull)
+  companies      ProjectCompany[]
 
   @@index([workspaceId])
   @@index([ownerId])
@@ -330,6 +476,7 @@ model Project {
   @@index([updatedAt])
   @@index([order])
   @@index([projectCode])
+  @@index([primaryCompanyId])
   @@index([softoneId])
   @@index([softoneSyncStatus])
 }
