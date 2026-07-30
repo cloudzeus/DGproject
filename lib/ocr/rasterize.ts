@@ -14,14 +14,15 @@
  * οι περισσότεροι χρήστες δεν ανεβάζουν ποτέ σαρωμένη πρόταση.
  */
 
-export type OcrImageMimeType = 'image/jpeg' | 'image/png' | 'image/webp'
+import {
+  MAX_OCR_PAGES,
+  MIN_SELECTABLE_CHARS,
+  type OcrImageMimeType,
+  type RasterizedPage,
+} from './limits'
 
-export interface RasterizedPage {
-  base64: string
-  mimeType: OcrImageMimeType
-  width: number
-  height: number
-}
+export { MAX_OCR_PAGES, isPdfFile } from './limits'
+export type { OcrImageMimeType, RasterizedPage } from './limits'
 
 export interface RasterizeResult {
   pages: RasterizedPage[]
@@ -32,22 +33,9 @@ export interface RasterizeResult {
   truncated: boolean
 }
 
-/**
- * Οροφή σελίδων για OCR. Το damask κόβει στις 4 γιατί δουλεύει με τιμολόγια·
- * μια πρόταση έργου είναι άχρηστη μισή, οπότε το όριο είναι πολύ ψηλότερα και
- * λειτουργεί ως φρένο κόστους, όχι ως φίλτρο περιεχομένου.
- */
-export const MAX_OCR_PAGES = 30
-
 const DEFAULT_SCALE = 1.8
 const DEFAULT_MIME: OcrImageMimeType = 'image/webp'
 const DEFAULT_QUALITY = 0.82
-/** Κάτω από αυτό, το «επιλέξιμο κείμενο» είναι υπολείμματα, όχι περιεχόμενο. */
-const MIN_SELECTABLE_CHARS = 200
-
-export function isPdfFile(file: File): boolean {
-  return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-}
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {

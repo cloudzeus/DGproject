@@ -29,14 +29,12 @@ import {
 } from '@/lib/proposals/extract'
 import { ocrPagesToText } from '@/lib/ocr/read'
 import { isGeminiConfigured } from '@/lib/ocr/gemini'
-import { MAX_OCR_PAGES, type RasterizedPage } from '@/lib/ocr/rasterize'
+import { MAX_OCR_PAGES } from '@/lib/ocr/limits'
+import { parseOcrPages } from '@/lib/ocr/payload'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
-
-/** Οροφή για τις εικόνες σελίδων — 30 σελίδες webp χωράνε άνετα μέσα σε αυτό. */
-const MAX_OCR_PAYLOAD_BYTES = 40 * 1024 * 1024
 
 /** Ίδια πύλη με την Κοστολόγηση: η πρόταση περιέχει τιμές. */
 async function requirePrivileged(): Promise<string> {
@@ -45,44 +43,6 @@ async function requirePrivileged(): Promise<string> {
   const role = session.user.role
   if (role !== 'admin' && role !== 'manager') throw new Error('Forbidden')
   return session.user.id
-}
-
-/**
- * Διαβάζει τις εικόνες σελίδων που έστειλε ο browser. Ό,τι δεν έχει τη σωστή
- * μορφή πέφτει σιωπηλά: μια χαλασμένη σελίδα δεν πρέπει να ρίξει το ανέβασμα,
- * και ο μετρητής σελίδων στο τέλος δείχνει τι πραγματικά διαβάστηκε.
- */
-function parseOcrPages(raw: unknown): RasterizedPage[] {
-  if (typeof raw !== 'string' || raw.length === 0) return []
-  if (raw.length > MAX_OCR_PAYLOAD_BYTES) return []
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return []
-  }
-  if (!Array.isArray(parsed)) return []
-
-  const pages: RasterizedPage[] = []
-  for (const p of parsed.slice(0, MAX_OCR_PAGES)) {
-    if (
-      typeof p === 'object' &&
-      p !== null &&
-      typeof (p as RasterizedPage).base64 === 'string' &&
-      typeof (p as RasterizedPage).mimeType === 'string' &&
-      (p as RasterizedPage).base64.length > 0
-    ) {
-      const page = p as RasterizedPage
-      pages.push({
-        base64: page.base64,
-        mimeType: page.mimeType,
-        width: Number(page.width) || 0,
-        height: Number(page.height) || 0,
-      })
-    }
-  }
-  return pages
 }
 
 export async function POST(

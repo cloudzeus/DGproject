@@ -11,11 +11,25 @@
  * παρτίδες, ό,τι πέρασε μένει.
  */
 
-import { geminiGenerate, type GeminiPart } from './gemini'
-import type { RasterizedPage } from './rasterize'
+import { geminiGenerate, type GeminiPart, type GeminiResult } from './gemini'
+import type { RasterizedPage } from './limits'
 
 /** Σελίδες ανά κλήση. Τέσσερις χωράνε άνετα και κρατούν την έξοδο διαχειρίσιμη. */
-const PAGES_PER_BATCH = 4
+export const PAGES_PER_BATCH = 4
+
+/**
+ * Η κλήση προς το μοντέλο όρασης, ως παράμετρος.
+ *
+ * Υπάρχει για να ελέγχεται το χώρισμα σε παρτίδες, η σειρά των σελίδων και η
+ * συμπεριφορά σε μερική αποτυχία — χωρίς δίκτυο και χωρίς κλειδί. Αυτά είναι
+ * ακριβώς τα σημεία που σπάνε σιωπηλά: μια παρτίδα που χάνεται αφήνει τρύπα
+ * στη μεταγραφή, και η τρύπα δεν φαίνεται πουθενά αν δεν μετρηθεί.
+ */
+export type VisionGenerator = (args: {
+  parts: GeminiPart[]
+  systemInstruction?: string
+  maxOutputTokens?: number
+}) => Promise<GeminiResult>
 
 const SYSTEM = `Είσαι μηχανή οπτικής αναγνώρισης κειμένου για ελληνικά επαγγελματικά έγγραφα.
 
@@ -40,8 +54,12 @@ export type OcrOutcome = {
   failedPages: number[]
 }
 
-export async function ocrPagesToText(pages: RasterizedPage[]): Promise<OcrOutcome> {
+export async function ocrPagesToText(
+  pages: RasterizedPage[],
+  opts: { generate?: VisionGenerator } = {},
+): Promise<OcrOutcome> {
   if (pages.length === 0) throw new Error('Δεν δόθηκαν σελίδες για OCR.')
+  const generate = opts.generate ?? geminiGenerate
 
   const outcome: OcrOutcome = {
     text: '',
@@ -70,7 +88,7 @@ export async function ocrPagesToText(pages: RasterizedPage[]): Promise<OcrOutcom
     ]
 
     try {
-      const res = await geminiGenerate({ parts, systemInstruction: SYSTEM, maxOutputTokens: 8192 })
+      const res = await generate({ parts, systemInstruction: SYSTEM, maxOutputTokens: 8192 })
       chunks.push(cleanTranscription(res.text))
       outcome.model = res.model
       outcome.inputTokens += res.inputTokens
