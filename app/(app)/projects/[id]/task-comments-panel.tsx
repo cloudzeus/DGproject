@@ -167,6 +167,7 @@ export function TaskCommentsPanel({
             </label>
             <Button
               size="sm"
+              variant="primary"
               icon={<Send20Regular />}
               disabled={pending || !content.trim()}
               onClick={() =>
