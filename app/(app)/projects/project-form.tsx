@@ -42,6 +42,7 @@ export type ProjectFormInitial = {
   // Ο πελάτης του έργου. Καθορίζει το PRJC.TRDR και ποιος βλέπει το έργο στο
   // portal πελατών. Δεν είχε UI πριν — το customerUserId μόνο διαβαζόταν.
   primaryCompany?: CompanySelection | null;
+  isInternal?: boolean;
 };
 
 export type ProjectFormResult = { ok: boolean; error?: string };
@@ -64,6 +65,10 @@ export function ProjectForm({ users, initial, onSubmit, onCancel, submitLabel }:
   const [color, setColor] = useState(initial?.color ?? PRESET_COLORS[0]);
   const [memberIds, setMemberIds] = useState<string[]>(initial?.memberIds ?? []);
   const [ownerId, setOwnerId] = useState<string>(initial?.ownerId ?? users[0]?.id ?? '');
+  const [isInternal, setIsInternal] = useState(initial?.isInternal ?? false);
+  const [pickedCompany, setPickedCompany] = useState<CompanySelection | null>(
+    initial?.primaryCompany ?? null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -165,13 +170,46 @@ export function ProjectForm({ users, initial, onSubmit, onCancel, submitLabel }:
         </select>
       </div>
 
-      <div>
-        <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Πελάτης (εταιρία)</label>
-        <CompanyPicker name="primaryCompanyId" initial={initial?.primaryCompany ?? null} />
-        <p className="mt-1 text-[10px] text-fluent-neutral-60">
-          Καθορίζει το <code className="font-mono">PRJC.TRDR</code> στο SoftOne και ποιος βλέπει το έργο
-          στο portal πελατών. Διαχείριση στο <code className="font-mono">/admin/companies</code>.
-        </p>
+      <div className="rounded-lg border border-fluent-neutral-20 p-3 space-y-2.5">
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            name="isInternal"
+            checked={isInternal}
+            onChange={(e) => setIsInternal(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="block text-sm font-medium text-fluent-neutral-90">Εσωτερικό έργο</span>
+            <span className="block text-[11px] text-fluent-neutral-60">
+              Δική μας δουλειά, χωρίς πελάτη. Δεν εμφανίζεται σε κανένα portal.
+            </span>
+          </span>
+        </label>
+
+        {!isInternal && (
+          <div>
+            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">
+              Πελάτης (εταιρία)
+            </label>
+            <CompanyPicker
+              name="primaryCompanyId"
+              initial={initial?.primaryCompany ?? null}
+              onSelect={setPickedCompany}
+            />
+            <p className="mt-1 text-[10px] text-fluent-neutral-60">
+              Καθορίζει το <code className="font-mono">PRJC.TRDR</code> στο SoftOne και ποιος βλέπει
+              το έργο στο portal πελατών. Διαχείριση στο{' '}
+              <code className="font-mono">/admin/companies</code>.
+            </p>
+            {!pickedCompany && (
+              <p className="mt-1 text-[10px] text-fluent-accent-orange">
+                Χωρίς πελάτη το έργο δεν φαίνεται σε κανένα portal. Αν είναι δική μας δουλειά,
+                τσέκαρε «Εσωτερικό έργο».
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <div>

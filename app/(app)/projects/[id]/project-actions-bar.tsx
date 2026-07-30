@@ -22,6 +22,7 @@ type Props = {
     ownerId: string;
     memberIds: string[];
     primaryCompany: { id: string; NAME: string; AFM: string | null } | null;
+    isInternal: boolean;
   };
   users: UserOption[];
   canEdit: boolean;
@@ -90,6 +91,7 @@ export function ProjectActionsBar({ project, users, canEdit, sessionEmail }: Pro
                 ownerId: project.ownerId,
                 memberIds: project.memberIds,
                 primaryCompany: project.primaryCompany,
+                isInternal: project.isInternal,
               }}
               submitLabel="Αποθήκευση"
               onCancel={() => setEditing(false)}

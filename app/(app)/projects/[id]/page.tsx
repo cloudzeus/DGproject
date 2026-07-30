@@ -701,6 +701,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               ownerId: project.ownerId,
               memberIds: project.members.map((m) => m.userId),
               primaryCompany: project.primaryCompany,
+              isInternal: project.isInternal,
             }}
             users={userOptions}
             canEdit={canEdit}

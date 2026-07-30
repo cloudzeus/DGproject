@@ -446,6 +446,11 @@ model Project {
   // The client: which company the project is delivered to. Source of PRJC.TRDR
   // and the only company that sees this project in the customer portal.
   primaryCompanyId  String?
+  // Internal work with no client. Explicit rather than inferred from a null
+  // primaryCompanyId, because that null is ambiguous — it also means "external
+  // but the client has not been set yet". With the flag, the second case is
+  // findable instead of hiding among the first.
+  isInternal        Boolean           @default(false)
   // Hash of last-known synced payload — used for optimistic concurrency.
   softoneVersion    String?
   softoneSyncStatus SoftOneSyncStatus @default(unsynced)

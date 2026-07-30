@@ -65,6 +65,7 @@ export default async function ProjectsPage() {
     softoneSyncedAt: p.softoneSyncedAt,
     softoneSyncError: p.softoneSyncError,
     primaryCompany: p.primaryCompany,
+    isInternal: p.isInternal,
   }));
 
   return (

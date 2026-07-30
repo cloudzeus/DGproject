@@ -68,6 +68,8 @@ export async function createProject(formData: FormData) {
   const nextSeq = String((lastSeq ? parseInt(lastSeq, 10) : 0) + 1).padStart(3, '0');
   const projectCode = `PRJ-${year}-${nextSeq}`;
 
+  const internalFlag = String(formData.get('isInternal') ?? '') === 'on';
+
   const created = await prisma.project.create({
     data: {
       name: input.name,
@@ -79,7 +81,13 @@ export async function createProject(formData: FormData) {
       ownerId,
       workspaceId,
       projectCode,
-      primaryCompanyId: String(formData.get('primaryCompanyId') ?? '').trim() || null,
+      // Εσωτερικό έργο σημαίνει ρητά «χωρίς πελάτη» — το checkbox υπερισχύει του
+      // picker, ώστε να μη μείνει κρεμασμένη εταιρία αν κάποιος διάλεξε και μετά
+      // τσέκαρε το εσωτερικό.
+      isInternal: internalFlag,
+      primaryCompanyId: internalFlag
+        ? null
+        : String(formData.get('primaryCompanyId') ?? '').trim() || null,
       members: {
         create: allMemberIds.map((userId) => ({ userId })),
       },
@@ -115,6 +123,7 @@ export async function updateProject(id: string, formData: FormData) {
     ownerId?: string;
     softoneCompany?: number | null;
     primaryCompanyId?: string | null;
+    isInternal?: boolean;
     // If the target company changed, the existing softone row no longer matches —
     // we drop sync status so admin re-syncs intentionally.
     softoneSyncStatus?: 'unsynced';
@@ -128,11 +137,19 @@ export async function updateProject(id: string, formData: FormData) {
 
   // Ο πελάτης του έργου. Το CompanyPicker στέλνει πάντα το hidden input, οπότε
   // κενή τιμή σημαίνει «καμία εταιρία» και είναι έγκυρη εντολή καθαρισμού.
-  const primaryCompanyId = String(formData.get('primaryCompanyId') ?? '').trim() || null;
+  // Το checkbox υπερισχύει του picker: εσωτερικό έργο δεν κρατά πελάτη.
+  const isInternal = String(formData.get('isInternal') ?? '') === 'on';
+  const primaryCompanyId = isInternal
+    ? null
+    : String(formData.get('primaryCompanyId') ?? '').trim() || null;
+
   const existingProject = await prisma.project.findUnique({
     where: { id },
-    select: { primaryCompanyId: true },
+    select: { primaryCompanyId: true, isInternal: true },
   });
+  if (existingProject && existingProject.isInternal !== isInternal) {
+    data.isInternal = isInternal;
+  }
   if (existingProject && existingProject.primaryCompanyId !== primaryCompanyId) {
     data.primaryCompanyId = primaryCompanyId;
     // Αλλαγή πελάτη σημαίνει άλλο PRJC.TRDR — το SoftOne row δεν ταιριάζει πια.
