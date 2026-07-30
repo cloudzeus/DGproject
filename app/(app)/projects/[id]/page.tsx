@@ -40,6 +40,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             dependencies: {
               select: { dependsOnId: true },
             },
+            comments: {
+              orderBy: { createdAt: 'asc' },
+              include: {
+                author: { select: { id: true, name: true, email: true, image: true, userType: true } },
+              },
+            },
             questions: {
               orderBy: { createdAt: 'desc' },
               include: {
@@ -271,6 +277,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           assignees: [] as { id: string; name: string; avatarUrl?: string }[],
           attachments: [] as never[],
           questions: [] as never[],
+          comments: [] as never[],
           _redacted: true as const,
         };
       }
@@ -334,6 +341,19 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           mimeType: a.mimeType,
           url: a.url,
         })),
+      })),
+      comments: t.comments.map((c) => ({
+        id: c.id,
+        content: c.content,
+        visibility: c.visibility,
+        createdAt: c.createdAt.toISOString(),
+        author: {
+          id: c.author.id,
+          name: c.author.name ?? c.author.email,
+          email: c.author.email,
+          avatarUrl: c.author.image ?? undefined,
+        },
+        authorIsCustomer: c.author.userType === 'customer',
       })),
       };
     }),

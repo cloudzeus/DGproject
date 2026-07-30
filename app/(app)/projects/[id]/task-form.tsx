@@ -19,6 +19,7 @@ import {
   type TaskQuestionInfo,
   type ProjectMemberOption,
 } from './task-questions-panel';
+import { TaskCommentsPanel, type TaskCommentInfo } from './task-comments-panel';
 import {
   listTaskTemplates,
   saveTaskTemplate,
@@ -94,6 +95,7 @@ type Props = {
   taskTitleForEmail?: string;
   attachments?: TaskAttachmentInfo[];
   questions?: TaskQuestionInfo[];
+  comments?: TaskCommentInfo[];
   questionMembers?: ProjectMemberOption[];
   currentUserId?: string;
   isPrivileged?: boolean;
@@ -115,6 +117,7 @@ export function TaskForm({
   taskTitleForEmail,
   attachments,
   questions,
+  comments,
   questionMembers,
   currentUserId,
   isPrivileged,
@@ -417,6 +420,15 @@ export function TaskForm({
           isPrivileged={isPrivileged ?? false}
           members={questionMembers}
           questions={questions ?? []}
+        />
+      )}
+
+      {taskId && currentUserId && (
+        <TaskCommentsPanel
+          taskId={taskId}
+          comments={comments ?? []}
+          currentUserId={currentUserId}
+          canComment={!readOnly}
         />
       )}
 

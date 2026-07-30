@@ -29,6 +29,7 @@ import {
   type TaskOption,
 } from './task-form';
 import type { TaskQuestionInfo, ProjectMemberOption } from './task-questions-panel';
+import type { TaskCommentInfo } from './task-comments-panel';
 import { createTask, updateTask, deleteTask, updateTaskStatus, updateTaskDates } from './task-actions';
 import { Gantt, type GanttTask, type GanttZoom } from '@/components/gantt/gantt';
 import { ChevronLeft20Regular, ChevronRight20Regular } from '@fluentui/react-icons';
@@ -63,6 +64,7 @@ export type TaskRow = {
   assignees: Array<{ id: string; name: string; avatarUrl?: string }>;
   attachments: TaskAttachment[];
   questions: TaskQuestionInfo[];
+  comments: TaskCommentInfo[];
   addToCalendar: boolean;
   addToTeams: boolean;
   dependencyIds: string[];
@@ -267,6 +269,7 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, ques
               taskId={editing.id}
               attachments={editing.attachments}
               questions={editing.questions}
+              comments={editing.comments}
               questionMembers={questionMembers}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
@@ -410,6 +413,7 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, que
               taskId={editing.id}
               attachments={editing.attachments}
               questions={editing.questions}
+              comments={editing.comments}
               questionMembers={questionMembers}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
@@ -608,6 +612,7 @@ export function TimelineView({
               taskId={editing.id}
               attachments={editing.attachments}
               questions={editing.questions}
+              comments={editing.comments}
               questionMembers={questionMembers}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
