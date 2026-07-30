@@ -13,6 +13,7 @@ import {
   Settings24Regular, Settings24Filled,
   PeopleTeam24Regular, PeopleTeam24Filled,
   BuildingMultiple24Regular, BuildingMultiple24Filled,
+  Building24Regular, Building24Filled,
   DataBarVertical24Regular, DataBarVertical24Filled,
   ChatBubblesQuestion24Regular, ChatBubblesQuestion24Filled,
   Video24Regular, Video24Filled,
@@ -218,6 +219,7 @@ export function Sidebar({
             <div className="space-y-0.5">
               {[
                 { href: '/admin/users', label: 'Χρήστες', Regular: PeopleTeam24Regular, Filled: PeopleTeam24Filled },
+                { href: '/admin/companies', label: 'Εταιρίες', Regular: Building24Regular, Filled: Building24Filled },
                 { href: '/admin/departments', label: 'Τμήματα', Regular: BuildingMultiple24Regular, Filled: BuildingMultiple24Filled },
                 { href: '/admin/meetings', label: 'Recordings', Regular: Calendar24Regular, Filled: Calendar24Filled },
                 { href: '/admin/ticket-sources', label: 'Πηγές Tickets', Regular: Wrench24Regular, Filled: Wrench24Filled },
