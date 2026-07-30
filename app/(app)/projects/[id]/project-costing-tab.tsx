@@ -17,6 +17,7 @@ import {
 } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { addCostLines, updateCostLine, deleteCostLine } from './cost-actions';
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 export type CatalogPickerItem = {
   mtrl: number;
@@ -371,6 +372,8 @@ function PickerOverlay({
   existingMtrls: Set<number>;
   onClose: () => void;
 }) {
+  useDismissable(onClose);
+
   const router = useRouter();
   const [tab, setTab] = useState<'product' | 'service'>('product');
   const [search, setSearch] = useState('');

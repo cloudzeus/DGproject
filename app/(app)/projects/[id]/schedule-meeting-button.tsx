@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Video20Regular } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 type MemberOption = { id: string; name: string; email: string };
 
@@ -71,6 +72,8 @@ function ScheduleMeetingModal({
   sessionEmail: string;
   onClose: () => void;
 }) {
+  useDismissable(onClose);
+
   const router = useRouter();
 
   const defaults = useMemo(() => buildDefaults(), []);

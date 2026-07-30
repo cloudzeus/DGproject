@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { Modal } from '@/components/ui/modal'
 import { createTicketSource, updateTicketSource, rotateTicketSourceSecret } from './actions'
 
 type SourceView = {
@@ -137,9 +138,16 @@ export function TicketSourcesClient({ sources, projects }: Props) {
         </table>
       </div>
 
-      {showCreate ? (
-        <div className="rounded-lg border border-black/5 bg-white shadow-fluent-2 p-5 max-w-lg">
-          <h2 className="text-sm font-semibold text-fluent-neutral-90 mb-3">Νέα πηγή</h2>
+      <button onClick={() => { setShowCreate(true); setError(null) }} className="rounded-md bg-fluent-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-fluent-blue-700">
+        + Νέα πηγή
+      </button>
+
+      {showCreate && (
+        <Modal
+          title="Νέα πηγή"
+          description="Η πηγή παίρνει δικό της API key, ορατό μία μόνο φορά μετά τη δημιουργία."
+          onClose={() => setShowCreate(false)}
+        >
           <label className="block text-xs font-semibold text-fluent-neutral-60 mb-1">Κωδικός (π.χ. DGSHOP)</label>
           <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm font-mono" />
           <label className="mt-3 block text-xs font-semibold text-fluent-neutral-60 mb-1">Όνομα</label>
@@ -162,11 +170,7 @@ export function TicketSourcesClient({ sources, projects }: Props) {
               Άκυρο
             </button>
           </div>
-        </div>
-      ) : (
-        <button onClick={() => setShowCreate(true)} className="rounded-md bg-fluent-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-fluent-blue-700">
-          + Νέα πηγή
-        </button>
+        </Modal>
       )}
     </div>
   )

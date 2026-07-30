@@ -15,6 +15,7 @@ import { Gantt, type GanttTask, type GanttRow, type GanttZoom } from '@/componen
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { rescheduleTask, reassignTask } from './actions';
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 type UserOption = { id: string; name: string; email: string; image: string | null };
 
@@ -228,6 +229,8 @@ function TaskQuickPanel({
   onClose: () => void;
   onReassign: (userId: string | null) => Promise<void>;
 }) {
+  useDismissable(onClose);
+
   const current = task.assignees[0];
 
   return (

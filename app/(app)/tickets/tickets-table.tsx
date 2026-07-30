@@ -20,6 +20,7 @@ import {
   rejectTicket,
 } from './actions'
 import { requestClarification } from './followup-actions'
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 export type TicketRow = {
   id: string
@@ -474,6 +475,8 @@ export function TicketsTable({ rows, users }: { rows: TicketRow[]; users: UserOp
 }
 
 function ClarifyDialog({ ticketId, code, onClose }: { ticketId: string; code: string; onClose: () => void }) {
+  useDismissable(onClose);
+
   const router = useRouter()
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -553,6 +556,8 @@ function MergeDialog({
   onClose: () => void
   onMerged: () => void
 }) {
+  useDismissable(onClose);
+
   const [primaryId, setPrimaryId] = useState(rows[0]?.id ?? '')
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()

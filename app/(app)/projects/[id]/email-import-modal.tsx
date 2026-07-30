@@ -12,6 +12,7 @@ import {
   applyIngest,
   searchProjectInbox,
 } from './email-ingest-actions';
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 type Step = 'search' | 'analyze' | 'apply';
 
@@ -26,6 +27,8 @@ type Props = {
 };
 
 export function EmailImportModal({ open, onClose, projectId, projectCode, openTasks }: Props) {
+  useDismissable(onClose, open);
+
   const [step, setStep] = useState<Step>('search');
   const [candidates, setCandidates] = useState<InboxCandidate[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());

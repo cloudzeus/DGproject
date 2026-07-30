@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef } from 'react';
 import { SoftOneCompanyCombobox } from '@/components/admin/softone-company-combobox';
 import { CompanyPicker } from '@/components/companies/company-picker';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Modal } from '@/components/ui/modal';
 import {
   Delete20Regular, Edit20Regular, Add20Filled,
   ArrowUpload20Regular, Dismiss20Regular,
@@ -77,6 +77,8 @@ export function UserManagementClient({
   const [pending, startTransition] = useTransition();
 
   const [info, setInfo] = useState<string | null>(null);
+
+  const editingUser = editingId ? initialUsers.find((u) => u.id === editingId) ?? null : null;
 
   function submitCreate(formData: FormData) {
     setError(null);
@@ -163,43 +165,51 @@ export function UserManagementClient({
         </div>
       )}
 
-      <AnimatePresence>
-        {showAdd && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-6"
-          >
-            <UserForm
-              mode="create"
-              departments={departments}
-              pending={pending}
-              onCancel={() => setShowAdd(false)}
-              onSubmit={submitCreate}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {showAdd && (
+        <Modal title="Νέος χρήστης" onClose={() => setShowAdd(false)} size="lg">
+          {/* Το σφάλμα επαναλαμβάνεται μέσα στο modal — το banner της σελίδας
+              βρίσκεται πίσω από το scrim και δεν διαβάζεται. */}
+          {error && (
+            <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+          )}
+          <UserForm
+            mode="create"
+            departments={departments}
+            pending={pending}
+            onCancel={() => setShowAdd(false)}
+            onSubmit={submitCreate}
+          />
+        </Modal>
+      )}
+
+      {editingUser && (
+        <Modal
+          title="Επεξεργασία χρήστη"
+          description={editingUser.email}
+          onClose={() => setEditingId(null)}
+          size="lg"
+        >
+          {error && (
+            <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+          )}
+          <UserForm
+            mode="edit"
+            initial={editingUser}
+            departments={departments}
+            pending={pending}
+            onCancel={() => setEditingId(null)}
+            onSubmit={(fd) => submitUpdate(editingUser.id, fd)}
+          />
+        </Modal>
+      )}
 
       <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 overflow-hidden">
         <div className="divide-y divide-black/5">
           {initialUsers.map((user) => {
             const userDepts = departments.filter((d) => user.departmentIds.includes(d.id));
             const avatarUser = { name: user.name || user.email, avatarUrl: user.image ?? undefined };
-            const isEditing = editingId === user.id;
             return (
               <div key={user.id} className="p-4">
-                {isEditing ? (
-                  <UserForm
-                    mode="edit"
-                    initial={user}
-                    departments={departments}
-                    pending={pending}
-                    onCancel={() => setEditingId(null)}
-                    onSubmit={(fd) => submitUpdate(user.id, fd)}
-                  />
-                ) : (
                   <div className="flex items-center gap-4">
                     <div className="relative group shrink-0">
                       <Avatar user={avatarUser} size="md" />
@@ -288,7 +298,6 @@ export function UserManagementClient({
                       </button>
                     </div>
                   </div>
-                )}
               </div>
             );
           })}

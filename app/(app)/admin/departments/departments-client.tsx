@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Add20Filled, Edit20Regular, Delete20Regular } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal';
 import { createDepartment, updateDepartment, deleteDepartment } from './actions';
 
 type Department = {
@@ -60,23 +60,33 @@ export function DepartmentsClient({ initial }: { initial: Department[] }) {
         </Button>
       </div>
 
-      <AnimatePresence>
-        {showAdd && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-5"
-          >
-            <DepartmentForm
-              onCancel={() => setShowAdd(false)}
-              onSubmit={submitCreate}
-              pending={pending}
-              error={error}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {showAdd && (
+        <Modal title="Νέο τμήμα" onClose={() => setShowAdd(false)} size="sm">
+          <DepartmentForm
+            onCancel={() => setShowAdd(false)}
+            onSubmit={submitCreate}
+            pending={pending}
+            error={error}
+          />
+        </Modal>
+      )}
+
+      {editing && (
+        <Modal
+          title="Επεξεργασία τμήματος"
+          description={editing.name}
+          onClose={() => setEditing(null)}
+          size="sm"
+        >
+          <DepartmentForm
+            initial={editing}
+            onCancel={() => setEditing(null)}
+            onSubmit={(fd) => submitUpdate(editing.id, fd)}
+            pending={pending}
+            error={error}
+          />
+        </Modal>
+      )}
 
       <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 overflow-hidden">
         {initial.length === 0 && (
@@ -85,15 +95,6 @@ export function DepartmentsClient({ initial }: { initial: Department[] }) {
         <div className="divide-y divide-black/5">
           {initial.map((d) => (
             <div key={d.id} className="p-4">
-              {editing?.id === d.id ? (
-                <DepartmentForm
-                  initial={d}
-                  onCancel={() => setEditing(null)}
-                  onSubmit={(fd) => submitUpdate(d.id, fd)}
-                  pending={pending}
-                  error={error}
-                />
-              ) : (
                 <div className="flex items-center gap-4">
                   <span className="h-3 w-3 rounded-full shrink-0" style={{ background: d.color }} />
                   <div className="flex-1 min-w-0">
@@ -118,7 +119,6 @@ export function DepartmentsClient({ initial }: { initial: Department[] }) {
                     </button>
                   </div>
                 </div>
-              )}
             </div>
           ))}
         </div>

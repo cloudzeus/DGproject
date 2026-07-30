@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { createPortalTicket } from '../../actions';
 
-export function PortalNewTicketForm() {
+export function PortalNewTicketForm({ onCancel }: { onCancel?: () => void }) {
   const router = useRouter();
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -16,7 +16,7 @@ export function PortalNewTicketForm() {
   const bodyOk = body.trim().length >= 10;
 
   return (
-    <div className="mt-4 space-y-3">
+    <div className="space-y-3">
       {error && (
         <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{error}</p>
       )}
@@ -47,23 +47,30 @@ export function PortalNewTicketForm() {
         </p>
       </div>
 
-      <Button
-        variant="primary"
-        disabled={pending || !subjectOk || !bodyOk}
-        onClick={() =>
-          startTransition(async () => {
-            setError(null);
-            const res = await createPortalTicket({ subject, body });
-            if (!res.ok) {
-              setError(res.error);
-              return;
-            }
-            router.push(`/portal/tickets/${res.id}`);
-          })
-        }
-      >
-        {pending ? 'Υποβολή…' : 'Υποβολή'}
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          variant="primary"
+          disabled={pending || !subjectOk || !bodyOk}
+          onClick={() =>
+            startTransition(async () => {
+              setError(null);
+              const res = await createPortalTicket({ subject, body });
+              if (!res.ok) {
+                setError(res.error);
+                return;
+              }
+              router.push(`/portal/tickets/${res.id}`);
+            })
+          }
+        >
+          {pending ? 'Υποβολή…' : 'Υποβολή'}
+        </Button>
+        {onCancel && (
+          <Button variant="secondary" onClick={onCancel} disabled={pending}>
+            Άκυρο
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

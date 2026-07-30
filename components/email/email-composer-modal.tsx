@@ -14,6 +14,7 @@ import {
   Document20Regular,
 } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 export type EmailRecipientOption = {
   id: string;
@@ -86,6 +87,8 @@ export function EmailComposerModal({
   defaultBody = '',
   onSend,
 }: Props) {
+  useDismissable(onClose, open);
+
   const [to, setTo] = useState<string[]>(defaultTo);
   const [cc, setCc] = useState<string[]>([]);
   const [subject, setSubject] = useState(defaultSubject);
@@ -109,15 +112,6 @@ export function EmailComposerModal({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
 
   function toggleRecipient(list: string[], setList: (v: string[]) => void, email: string) {
     setList(list.includes(email) ? list.filter((e) => e !== email) : [...list, email]);

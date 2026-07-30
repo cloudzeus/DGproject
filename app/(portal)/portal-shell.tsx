@@ -12,6 +12,7 @@ import {
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { NewTicketButton } from './portal/tickets/new-ticket-button';
 
 /**
  * Trimmed shell για το portal πελατών: ίδιο design system με το (app), αλλά
@@ -71,13 +72,10 @@ export function PortalShell({
             })}
           </nav>
 
-          <Link
-            href="/portal/tickets/new"
-            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-fluent-blue-600 text-white text-sm font-medium hover:bg-fluent-blue-700 shrink-0"
-          >
+          <NewTicketButton className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-fluent-blue-600 px-3 text-sm font-medium text-white hover:bg-fluent-blue-700">
             <Add16Regular />
             <span className="hidden sm:inline">Νέο αίτημα</span>
-          </Link>
+          </NewTicketButton>
 
           <div className="flex min-w-0 shrink items-center gap-2.5 pl-2">
             <Avatar user={{ name: user.name, avatarUrl: user.avatarUrl }} size="sm" />

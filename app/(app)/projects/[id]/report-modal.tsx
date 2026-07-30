@@ -12,6 +12,7 @@ import {
 } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { sendProjectReport, buildProjectReportPreview } from './report-actions';
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 export function ReportModal({
   projectId,
@@ -24,6 +25,8 @@ export function ReportModal({
   defaultRecipientName?: string;
   onClose: () => void;
 }) {
+  useDismissable(onClose);
+
   const [recipients, setRecipients] = useState('');
   const [recipientName, setRecipientName] = useState(defaultRecipientName ?? '');
   const [coverMessage, setCoverMessage] = useState('');

@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Dismiss20Regular } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { createMyCalendarEvent } from './actions';
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 interface Props {
   defaultDate?: string;
@@ -30,6 +31,8 @@ function addHour(local: string): string {
 }
 
 export function NewEventModal({ defaultDate, onClose, onCreated }: Props) {
+  useDismissable(onClose);
+
   const [isAllDay, setIsAllDay] = useState(false);
   const [start, setStart] = useState(() => defaultStart(defaultDate));
   const [end, setEnd] = useState(() => addHour(defaultStart(defaultDate)));

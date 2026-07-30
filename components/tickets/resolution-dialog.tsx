@@ -8,6 +8,7 @@ import {
   saveResolution,
   getResolutionPromptInfo,
 } from '@/app/(app)/tickets/resolution-actions';
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 export type ResolutionPromptInfo = { ticketId: string; code: string; subject: string };
 
@@ -30,6 +31,8 @@ export function ResolutionDialog({
   info: ResolutionPromptInfo;
   onClose: () => void;
 }) {
+  useDismissable(onClose);
+
   const [text, setText] = useState('');
   const [original, setOriginal] = useState<string | null>(null); // pre-polish text, for undo
   const [error, setError] = useState<string | null>(null);

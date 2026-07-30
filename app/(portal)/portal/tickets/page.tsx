@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { getPortalScope } from '@/lib/portal/scope';
 import { TICKET_PUBLIC_STATUS_LABEL } from '@/lib/tickets/status-labels';
+import { NewTicketButton } from './new-ticket-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,12 +40,7 @@ export default async function PortalTickets() {
     <div>
       <div className="flex items-center justify-between mb-4 gap-3">
         <h1 className="text-2xl font-semibold text-fluent-neutral-90">Αιτήματα</h1>
-        <Link
-          href="/portal/tickets/new"
-          className="h-9 px-3 inline-flex items-center rounded-md bg-fluent-blue-600 text-white text-sm font-medium hover:bg-fluent-blue-700 shrink-0"
-        >
-          Νέο αίτημα
-        </Link>
+        <NewTicketButton className="h-9 shrink-0 inline-flex items-center rounded-md bg-fluent-blue-600 px-3 text-sm font-medium text-white hover:bg-fluent-blue-700" />
       </div>
 
       {tickets.length === 0 ? (

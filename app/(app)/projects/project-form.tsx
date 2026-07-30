@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { motion } from 'framer-motion';
 import { Dismiss20Regular } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { SoftOneCompanyCombobox } from '@/components/admin/softone-company-combobox';
 import { CompanyPicker, type CompanySelection } from '@/components/companies/company-picker';
+import { Modal } from '@/components/ui/modal';
 
 type Status = 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
 
@@ -349,26 +349,8 @@ export function ProjectModal({
   children: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.18 }}
-        className="relative bg-white rounded-xl shadow-fluent-16 w-full max-w-xl max-h-[90vh] overflow-y-auto"
-      >
-        <div className="flex items-center justify-between p-4 border-b border-black/5 sticky top-0 bg-white z-10">
-          <h2 className="font-display text-lg font-semibold text-fluent-neutral-90">{title}</h2>
-          <button
-            onClick={onClose}
-            className="h-8 w-8 rounded-md hover:bg-fluent-neutral-8 flex items-center justify-center text-fluent-neutral-70"
-            aria-label="Κλείσιμο"
-          >
-            <Dismiss20Regular />
-          </button>
-        </div>
-        <div className="p-5">{children}</div>
-      </motion.div>
-    </div>
+    <Modal title={title} onClose={onClose}>
+      {children}
+    </Modal>
   );
 }

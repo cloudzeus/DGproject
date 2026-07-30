@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useDismissable } from '@/components/ui/use-dismissable';
 
 type Recipient = { email: string; name: string | null };
 
@@ -251,6 +252,8 @@ function MomModal({
   onClose: () => void;
   onSent: (result: SendResult) => void;
 }) {
+  useDismissable(onClose);
+
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [extraEmails, setExtraEmails] = useState('');
   const [subject, setSubject] = useState(`Πρακτικά: ${meetingSubject}`);

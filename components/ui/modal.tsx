@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Dismiss20Regular } from '@fluentui/react-icons';
+import { useDismissable } from './use-dismissable';
 
 /**
  * Κοινό modal για φόρμες.
@@ -28,20 +28,7 @@ export function Modal({
   children: React.ReactNode;
   size?: 'sm' | 'md' | 'lg';
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    // Κλείδωμα scroll του body όσο είναι ανοιχτό, αλλιώς η σελίδα από πίσω
-    // κυλάει κάτω από το modal.
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
+  useDismissable(onClose);
 
   const width =
     size === 'sm' ? 'max-w-md' : size === 'lg' ? 'max-w-3xl' : 'max-w-xl';
