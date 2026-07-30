@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { getPortalScope } from '@/lib/portal/scope';
+import { taskVisibilityFilter } from '@/lib/tasks/visibility';
 import { PortalProjectCard } from '@/components/portal/project-card';
 import { countByState } from '@/components/portal/task-status';
 
@@ -32,12 +33,18 @@ export default async function PortalProjects() {
         color: true,
         status: true,
         dueDate: true,
-        tasks: { select: { status: true } },
+        tasks: { where: taskVisibilityFilter('customer'), select: { status: true } },
       },
       orderBy: [{ dueDate: 'asc' }, { name: 'asc' }],
     }),
     prisma.taskQuestion.findMany({
-      where: { askedToId: { in: scope.userIds }, answer: null },
+      // Ερώτηση σε εσωτερική εργασία δεν εμφανίζεται: ο πελάτης δεν βλέπει την
+      // εργασία, οπότε η ερώτηση θα ήταν χωρίς συμφραζόμενα.
+      where: {
+        askedToId: { in: scope.userIds },
+        answer: null,
+        task: taskVisibilityFilter('customer'),
+      },
       select: { task: { select: { projectId: true } } },
     }),
   ]);

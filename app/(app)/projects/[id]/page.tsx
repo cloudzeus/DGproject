@@ -248,6 +248,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     dueDate: project.dueDate,
     projectCode: project.projectCode,
     customerEmail,
+    hasCustomer: project.primaryCompanyId !== null,
     members: project.members.map((m) => ({
       name: m.user.name ?? m.user.email,
       avatarUrl: m.user.image ?? undefined,
@@ -278,12 +279,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           attachments: [] as never[],
           questions: [] as never[],
           comments: [] as never[],
+          visibility: 'shared' as const,
           _redacted: true as const,
         };
       }
       return {
       id: t.id,
       title: t.title,
+      visibility: t.visibility,
       description: t.description,
       status: t.status,
       priority: t.priority,

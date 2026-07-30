@@ -20,6 +20,7 @@ import {
   type ProjectMemberOption,
 } from './task-questions-panel';
 import { TaskCommentsPanel, type TaskCommentInfo } from './task-comments-panel';
+import { TaskVisibilityToggle } from './task-visibility-toggle';
 import {
   listTaskTemplates,
   saveTaskTemplate,
@@ -96,6 +97,9 @@ type Props = {
   attachments?: TaskAttachmentInfo[];
   questions?: TaskQuestionInfo[];
   comments?: TaskCommentInfo[];
+  taskVisibility?: 'internal' | 'shared';
+  /** Το έργο έχει πελάτη; Χωρίς πελάτη ο διακόπτης ορατότητας δεν έχει νόημα. */
+  projectHasCustomer?: boolean;
   questionMembers?: ProjectMemberOption[];
   currentUserId?: string;
   isPrivileged?: boolean;
@@ -118,6 +122,8 @@ export function TaskForm({
   attachments,
   questions,
   comments,
+  taskVisibility,
+  projectHasCustomer,
   questionMembers,
   currentUserId,
   isPrivileged,
@@ -420,6 +426,14 @@ export function TaskForm({
           isPrivileged={isPrivileged ?? false}
           members={questionMembers}
           questions={questions ?? []}
+        />
+      )}
+
+      {taskId && projectHasCustomer && (
+        <TaskVisibilityToggle
+          taskId={taskId}
+          visibility={taskVisibility ?? 'shared'}
+          canEdit={!readOnly}
         />
       )}
 

@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { getPortalScope } from '@/lib/portal/scope';
 import { commentVisibilityFilter } from '@/lib/comments/visibility';
+import { taskVisibilityFilter } from '@/lib/tasks/visibility';
 import { PortalStatusBar } from '@/components/portal/status-bar';
 import { countByState, completionPct, totalOf } from '@/components/portal/task-status';
 import { PortalProjectClient } from './portal-project-client';
@@ -39,6 +40,9 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
       startDate: true,
       dueDate: true,
       tasks: {
+        // Οι εσωτερικές εργασίες δεν φεύγουν ποτέ από τον server — ούτε στη
+        // λίστα, ούτε στα ποσοστά που υπολογίζονται παρακάτω.
+        where: taskVisibilityFilter('customer'),
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
         select: {
           id: true,

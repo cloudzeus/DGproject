@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { visibilityForAuthor, type CommentVisibility } from '@/lib/comments/visibility'
+import { canSetTaskVisibility } from '@/lib/tasks/visibility'
 
 const MAX_LEN = 5000
 
@@ -103,5 +104,27 @@ export async function deleteTaskComment(commentId: string) {
 
   await prisma.comment.delete({ where: { id: commentId } })
   revalidatePath(`/projects/${comment.task.projectId}`)
+  return { ok: true as const }
+}
+
+/**
+ * Αλλάζει αν ο πελάτης βλέπει την εργασία στο portal.
+ *
+ * Το κάνει όλη η ομάδα υλοποίησης, όχι μόνο διαχειριστές: αυτός που γράφει την
+ * εργασία ξέρει αν αφορά τον πελάτη ή μόνο εμάς.
+ */
+export async function setTaskVisibility(taskId: string, visibility: 'internal' | 'shared') {
+  const session = await auth()
+  if (!session?.user?.id) return { ok: false as const, error: 'Απαιτείται σύνδεση.' }
+  if (!canSetTaskVisibility(session.user.userType, session.user.role)) {
+    return { ok: false as const, error: 'Δεν έχεις δικαίωμα αλλαγής ορατότητας.' }
+  }
+
+  const isPrivileged = session.user.role === 'admin' || session.user.role === 'manager'
+  const access = await assertTaskAccess(taskId, session.user.id, isPrivileged)
+  if ('error' in access) return { ok: false as const, error: access.error }
+
+  await prisma.task.update({ where: { id: taskId }, data: { visibility } })
+  revalidatePath(`/projects/${access.projectId}`)
   return { ok: true as const }
 }

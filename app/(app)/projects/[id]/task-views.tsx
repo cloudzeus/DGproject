@@ -54,6 +54,7 @@ export type TaskAttachment = {
 export type TaskRow = {
   id: string;
   title: string;
+  visibility: 'internal' | 'shared';
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
@@ -97,6 +98,8 @@ type ViewProps = {
   tasks: TaskRow[];
   members: TaskAssigneeOption[];
   canEdit: boolean;
+  /** Το έργο έχει πελάτη; Ελέγχει αν φαίνεται ο διακόπτης ορατότητας. */
+  projectHasCustomer: boolean;
   questionMembers: ProjectMemberOption[];
   currentUserId: string;
   isPrivileged: boolean;
@@ -159,7 +162,7 @@ function useTaskMutations(projectId: string) {
   return { create, update, remove, setStatus, pending, resolutionDialog };
 }
 
-export function ListView({ projectId, projectCode, tasks, members, canEdit, questionMembers, currentUserId, isPrivileged }: ViewProps) {
+export function ListView({ projectId, projectCode, tasks, members, canEdit, projectHasCustomer, questionMembers, currentUserId, isPrivileged }: ViewProps) {
   const mutations = useTaskMutations(projectId);
   const [creating, setCreating] = useState(false);
   // Track only the id; derive `editing` from the live `tasks` array so router.refresh()
@@ -270,6 +273,8 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, ques
               attachments={editing.attachments}
               questions={editing.questions}
               comments={editing.comments}
+              taskVisibility={editing.visibility}
+              projectHasCustomer={projectHasCustomer}
               questionMembers={questionMembers}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
@@ -303,7 +308,7 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, ques
   );
 }
 
-export function BoardView({ projectId, projectCode, tasks, members, canEdit, questionMembers, currentUserId, isPrivileged }: ViewProps) {
+export function BoardView({ projectId, projectCode, tasks, members, canEdit, projectHasCustomer, questionMembers, currentUserId, isPrivileged }: ViewProps) {
   const mutations = useTaskMutations(projectId);
   const [creating, setCreating] = useState<TaskStatus | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -414,6 +419,8 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, que
               attachments={editing.attachments}
               questions={editing.questions}
               comments={editing.comments}
+              taskVisibility={editing.visibility}
+              projectHasCustomer={projectHasCustomer}
               questionMembers={questionMembers}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}
@@ -479,6 +486,7 @@ function timelineAnchorLabel(d: Date, zoom: GanttZoom): string {
 }
 
 export function TimelineView({
+  projectHasCustomer,
   projectId,
   projectCode,
   projectName,
@@ -613,6 +621,8 @@ export function TimelineView({
               attachments={editing.attachments}
               questions={editing.questions}
               comments={editing.comments}
+              taskVisibility={editing.visibility}
+              projectHasCustomer={projectHasCustomer}
               questionMembers={questionMembers}
               currentUserId={currentUserId}
               isPrivileged={isPrivileged}

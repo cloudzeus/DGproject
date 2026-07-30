@@ -45,6 +45,8 @@ type ProjectDetailProps = {
     dueDate: Date | null;
     projectCode: string | null;
     customerEmail: string | null;
+    /** Έχει το έργο πελάτη-εταιρία; Ελέγχει τον διακόπτη ορατότητας εργασιών. */
+    hasCustomer: boolean;
     members: AvatarUser[];
     tasks: TaskRow[];
   };
@@ -358,9 +360,9 @@ export function ProjectDetail({
       </div>
 
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
-        {tab === 'board' && <BoardView projectId={project.id} projectCode={project.projectCode} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
-        {tab === 'list' && <ListView projectId={project.id} projectCode={project.projectCode} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
-        {tab === 'timeline' && !isCustomer && <TimelineView projectId={project.id} projectName={project.name} projectColor={project.color} tasks={project.tasks} members={projectMembers} canEdit={canEdit} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
+        {tab === 'board' && <BoardView projectId={project.id} projectCode={project.projectCode} tasks={project.tasks} members={projectMembers} canEdit={canEdit} projectHasCustomer={project.hasCustomer} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
+        {tab === 'list' && <ListView projectId={project.id} projectCode={project.projectCode} tasks={project.tasks} members={projectMembers} canEdit={canEdit} projectHasCustomer={project.hasCustomer} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
+        {tab === 'timeline' && !isCustomer && <TimelineView projectId={project.id} projectName={project.name} projectColor={project.color} tasks={project.tasks} members={projectMembers} canEdit={canEdit} projectHasCustomer={project.hasCustomer} questionMembers={questionMembers} currentUserId={currentUserId} isPrivileged={isPrivileged} />}
         {tab === 'files' && (
           <div className="space-y-4">
             <ProjectAttachments

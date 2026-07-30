@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { getPortalScope, type PortalScope } from '@/lib/portal/scope'
+import { taskVisibilityFilter } from '@/lib/tasks/visibility'
 import { nextTicketCode } from '@/lib/tickets/codes'
 import { sendTicketReceivedEmail } from '@/lib/tickets/emails'
 import { checkRateLimit } from '@/lib/tickets/source-auth'
@@ -149,10 +150,11 @@ export async function addPortalComment(taskId: string, content: string) {
   const text = content.trim().slice(0, 5000)
   if (!text) return { ok: false as const, error: 'Το σχόλιο είναι κενό.' }
 
-  // Η εργασία πρέπει να ανήκει σε έργο του scope — δηλαδή σε έργο όπου η
-  // εταιρία είναι ΠΕΛΑΤΗΣ.
-  const task = await prisma.task.findUnique({
-    where: { id: taskId },
+  // Η εργασία πρέπει να είναι ΚΑΙ ορατή ΚΑΙ σε έργο του scope. Χωρίς τον πρώτο
+  // έλεγχο, ένα id εσωτερικής εργασίας θα δεχόταν σχόλιο που ο πελάτης δεν
+  // μπορεί καν να δει.
+  const task = await prisma.task.findFirst({
+    where: { id: taskId, ...taskVisibilityFilter('customer') },
     select: { projectId: true },
   })
   if (!task || !scope.projectIds.includes(task.projectId)) {
@@ -178,8 +180,8 @@ export async function answerPortalQuestion(questionId: string, answer: string) {
   const text = answer.trim().slice(0, 5000)
   if (!text) return { ok: false as const, error: 'Η απάντηση είναι κενή.' }
 
-  const question = await prisma.taskQuestion.findUnique({
-    where: { id: questionId },
+  const question = await prisma.taskQuestion.findFirst({
+    where: { id: questionId, task: taskVisibilityFilter('customer') },
     select: { id: true, askedToId: true, answer: true, task: { select: { projectId: true } } },
   })
   // Διπλός έλεγχος: η ερώτηση απευθύνεται σε ΕΜΕΝΑ ΚΑΙ το έργο είναι στο scope.

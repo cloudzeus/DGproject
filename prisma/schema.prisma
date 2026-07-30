@@ -510,6 +510,10 @@ model Task {
   description    String?      @db.Text
   status         TaskStatus   @default(todo)
   priority       TaskPriority @default(medium)
+  /// Αν ο πελάτης βλέπει αυτή την εργασία στο portal. Default `shared`: οι
+  /// περισσότερες εργασίες αφορούν τον πελάτη, και οι εσωτερικές σημειώνονται
+  /// ρητά από την ομάδα.
+  visibility     TaskVisibility @default(shared)
   dueDate        DateTime?
   startDate      DateTime?
   estimatedHours Float?
@@ -564,6 +568,7 @@ model Task {
   emailMessages        EmailMessage[]
   ticket               Ticket?          @relation("TicketTask")
 
+  @@index([projectId, visibility])
   @@index([projectId])
   @@index([status])
   @@index([priority])
@@ -603,6 +608,16 @@ model TaskTag {
 }
 
 // Comments & Interactions
+enum TaskVisibility {
+  /// Μόνο η ομάδα υλοποίησης. Δεν εμφανίζεται στο portal πελατών, ούτε μετράει
+  /// στα ποσοστά και τις κατανομές που βλέπει ο πελάτης.
+  internal
+  /// Ορατή στον πελάτη. Το default: οι περισσότερες εργασίες αφορούν τον πελάτη
+  /// και το να χρειάζεται ρητή ενέργεια για κάθε μία θα σήμαινε ότι το portal
+  /// ξεκινά άδειο και μένει άδειο.
+  shared
+}
+
 enum CommentVisibility {
   /// Μόνο η ομάδα. Το default — τα υπάρχοντα σχόλια μένουν αόρατα στους πελάτες
   /// χωρίς backfill, και η παράλειψη επιλογής δεν διαρρέει.
