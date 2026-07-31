@@ -1,15 +1,18 @@
 'use client';
 
 /**
- * Μια γραμμή προσχεδίου, επεξεργάσιμη επιτόπου.
+ * Μια γραμμή προσχεδίου: εμφάνιση και ενέργειες.
  *
- * Η αποθήκευση γίνεται στο blur, όχι με κουμπί «αποθήκευση» ανά γραμμή: σε μια
- * λίστα είκοσι αντικειμένων, είκοσι κουμπιά είναι θόρυβος. Η τοπική κατάσταση
- * κρατά ό,τι γράφει ο χρήστης ώστε το πεδίο να μην «αναπηδά» όσο τρέχει το
- * action.
+ * Η επεξεργασία έφυγε σε modal (proposal-item-modal.tsx). Ήταν επιτόπου, με
+ * διάφανα πεδία που αποκαλύπτονταν μόνο στο focus — συμπαγές, αλλά ο χρήστης
+ * δεν είχε κανένα σημάδι ότι μπορεί να επέμβει, και δύο πράγματα δεν χωρούσαν
+ * με τίποτα εκεί: η αλλαγή είδους και τα πεδία των απαιτήσεων.
  *
- * Το απόσπασμα προέλευσης είναι διπλωμένο αλλά πάντα προσβάσιμο. Είναι ο μόνος
- * τρόπος να απαντηθεί «πού το βρήκε αυτό;» — και μια χαμηλή βεβαιότητα χωρίς
+ * Στη γραμμή μένουν οι ενέργειες που ΔΕΝ είναι φόρμα: επιλογή, απόρριψη,
+ * άνοιγμα του αποσπάσματος, και οι διευκρινίσεις προς το μοντέλο.
+ *
+ * Το απόσπασμα προέλευσης είναι διπλωμένο αλλά πάντα προσβάσιμο — είναι ο μόνος
+ * τρόπος να απαντηθεί «πού το βρήκε αυτό;», και μια χαμηλή βεβαιότητα χωρίς
  * απόσπασμα να ελεγχθεί είναι απλώς ένα πορτοκαλί σήμα που κανείς δεν εμπιστεύεται.
  */
 
@@ -21,13 +24,12 @@ import {
   ArrowUndo16Regular,
   Warning16Regular,
   CheckmarkCircle16Filled,
-  Eye16Regular,
+  Edit16Regular,
   EyeOff16Regular,
   Person16Regular,
   ArrowSync16Regular,
 } from '@fluentui/react-icons';
 import {
-  updateProposalItem,
   setProposalItemRejected,
   regenerateProposalItemWithClarification,
 } from './proposal-actions';
@@ -57,23 +59,29 @@ export type ProposalItemView = {
 /** Κάτω από αυτό, ο άνθρωπος πρέπει να κοιτάξει πριν το εμπιστευτεί. */
 const LOW_CONFIDENCE = 0.6;
 
+const PRIORITY_LABEL: Record<string, string> = {
+  low: 'Χαμηλή',
+  medium: 'Μεσαία',
+  high: 'Υψηλή',
+  urgent: 'Επείγον',
+};
+
 export function ProposalItemRow({
   item,
-  members,
+  team,
   selected,
   onToggle,
+  onEdit,
   onChanged,
 }: {
   item: ProposalItemView;
-  members: ProposalMember[];
+  /** Όλη η ομάδα — για να δείξουμε το όνομα του αναδόχου. */
+  team: ProposalMember[];
   selected: boolean;
   onToggle: () => void;
+  onEdit: () => void;
   onChanged: () => void;
 }) {
-  const [title, setTitle] = useState(item.title);
-  const [description, setDescription] = useState(item.description ?? '');
-  const [dueDate, setDueDate] = useState(item.suggestedDueDate ?? '');
-  const [hours, setHours] = useState(item.estimatedHours?.toString() ?? '');
   const [showQuote, setShowQuote] = useState(false);
   const [clarifyOpen, setClarifyOpen] = useState(false);
   const [clarification, setClarification] = useState('');
@@ -83,18 +91,7 @@ export function ProposalItemRow({
   const converted = item.status === 'converted';
   const rejected = item.status === 'rejected';
   const lowConfidence = !item.manual && (item.confidence ?? 1) < LOW_CONFIDENCE;
-  const locked = converted || rejected || pending;
-
-  function save(patch: Parameters<typeof updateProposalItem>[1]) {
-    startTransition(async () => {
-      const res = await updateProposalItem(item.id, patch);
-      if (!res.ok) setError(res.error);
-      else {
-        setError(null);
-        onChanged();
-      }
-    });
-  }
+  const assignee = item.assigneeId ? team.find((m) => m.id === item.assigneeId) : null;
 
   function toggleRejected() {
     startTransition(async () => {
@@ -138,10 +135,7 @@ export function ProposalItemRow({
     >
       <div className="flex items-start gap-2.5">
         {converted ? (
-          <span
-            className="mt-1 shrink-0 text-fluent-accent-green"
-            title="Έγινε ήδη εργασία"
-          >
+          <span className="mt-0.5 shrink-0 text-fluent-accent-green" title="Έγινε ήδη εργασία">
             <CheckmarkCircle16Filled />
           </span>
         ) : (
@@ -156,125 +150,62 @@ export function ProposalItemRow({
         )}
 
         <div className="min-w-0 flex-1">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => title !== item.title && save({ title })}
-            disabled={locked}
-            className="w-full bg-transparent text-sm font-semibold text-fluent-neutral-90 outline-none focus:rounded focus:bg-fluent-neutral-6 focus:px-1 disabled:cursor-default"
-          />
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={converted}
+            className="block w-full text-left text-sm font-semibold text-fluent-neutral-90 hover:text-fluent-blue-700 disabled:cursor-default disabled:hover:text-fluent-neutral-90"
+            title={converted ? 'Έγινε εργασία — άλλαξέ την από το board' : 'Επεξεργασία'}
+          >
+            {item.title}
+          </button>
 
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onBlur={() =>
-              description !== (item.description ?? '') && save({ description })
-            }
-            disabled={locked}
-            rows={description.length > 90 ? 3 : 1}
-            placeholder="Περιγραφή…"
-            className="mt-1 w-full resize-none bg-transparent text-xs leading-relaxed text-fluent-neutral-60 outline-none focus:rounded focus:bg-fluent-neutral-6 focus:px-1 disabled:cursor-default"
-          />
+          {item.description && (
+            <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-fluent-neutral-60">
+              {item.description}
+            </p>
+          )}
 
-          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
             {item.kind !== 'requirement' && (
               <>
-                <label className="flex items-center gap-1 text-fluent-neutral-50">
-                  <span>Προθεσμία</span>
-                  <input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    onBlur={() =>
-                      dueDate !== (item.suggestedDueDate ?? '') &&
-                      save({ suggestedDueDate: dueDate || null })
-                    }
-                    disabled={locked}
-                    className="rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-80 outline-none focus:border-fluent-blue-500"
-                  />
-                </label>
-
-                {item.suggestedOffsetDays != null && !item.suggestedDueDate && (
-                  <span
-                    className="rounded bg-fluent-neutral-8 px-1.5 py-0.5 text-fluent-neutral-60"
-                    title="Η πρόταση δίνει διάστημα, όχι ημερομηνία — υπολογίζεται από την έναρξη του έργου"
-                  >
-                    +{item.suggestedOffsetDays} μέρες
-                  </span>
+                {item.suggestedDueDate && (
+                  <Chip title="Προθεσμία της εργασίας που θα δημιουργηθεί">
+                    {new Date(item.suggestedDueDate).toLocaleDateString('el-GR')}
+                  </Chip>
                 )}
-
-                <label className="flex items-center gap-1 text-fluent-neutral-50">
-                  <span>Ώρες</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    value={hours}
-                    onChange={(e) => setHours(e.target.value)}
-                    onBlur={() => {
-                      const next = hours === '' ? null : Number(hours);
-                      if (next !== item.estimatedHours) save({ estimatedHours: next });
-                    }}
-                    disabled={locked}
-                    className="w-16 rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-80 outline-none focus:border-fluent-blue-500"
-                  />
-                </label>
-
-                <select
-                  value={item.priority ?? 'medium'}
-                  onChange={(e) =>
-                    save({ priority: e.target.value as ProposalItemView['priority'] })
-                  }
-                  disabled={locked}
-                  className="rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-80 outline-none focus:border-fluent-blue-500"
-                >
-                  <option value="low">Χαμηλή</option>
-                  <option value="medium">Μεσαία</option>
-                  <option value="high">Υψηλή</option>
-                  <option value="urgent">Επείγον</option>
-                </select>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    save({ visibility: item.visibility === 'shared' ? 'internal' : 'shared' })
-                  }
-                  disabled={locked}
-                  className="flex items-center gap-1 rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-60 hover:bg-fluent-neutral-6 disabled:opacity-50"
-                  title={
-                    item.visibility === 'shared'
-                      ? 'Ο πελάτης θα βλέπει αυτή την εργασία'
-                      : 'Εσωτερική — ο πελάτης δεν τη βλέπει'
-                  }
-                >
-                  {item.visibility === 'shared' ? <Eye16Regular /> : <EyeOff16Regular />}
-                  {item.visibility === 'shared' ? 'Ορατή' : 'Εσωτερική'}
-                </button>
-
-                <label className="flex items-center gap-1 text-fluent-neutral-50">
-                  <Person16Regular />
-                  <select
-                    value={item.assigneeId ?? ''}
-                    onChange={(e) => save({ assigneeId: e.target.value || null })}
-                    disabled={locked}
-                    className="max-w-[140px] rounded border border-fluent-neutral-20 px-1.5 py-0.5 text-fluent-neutral-80 outline-none focus:border-fluent-blue-500"
-                    title="Ποιος θα αναλάβει την εργασία"
-                  >
-                    <option value="">— χωρίς ανάθεση —</option>
-                    {members.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name || m.email}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {item.suggestedOffsetDays != null && !item.suggestedDueDate && (
+                  <Chip title="Η πρόταση δίνει διάστημα, όχι ημερομηνία — υπολογίζεται από την έναρξη του έργου">
+                    +{item.suggestedOffsetDays} μέρες
+                  </Chip>
+                )}
+                {item.estimatedHours != null && <Chip>{item.estimatedHours}ω</Chip>}
+                {item.priority && item.priority !== 'medium' && (
+                  <Chip>{PRIORITY_LABEL[item.priority]}</Chip>
+                )}
+                {assignee ? (
+                  <Chip title="Ανάδοχος της εργασίας">
+                    <Person16Regular className="h-3.5 w-3.5" />
+                    {assignee.name || assignee.email}
+                  </Chip>
+                ) : (
+                  <Chip muted title="Δεν έχει οριστεί ανάδοχος">
+                    <Person16Regular className="h-3.5 w-3.5" />
+                    χωρίς ανάθεση
+                  </Chip>
+                )}
               </>
             )}
 
             {item.kind === 'requirement' && item.requirementCategory && (
-              <span className="rounded bg-fluent-neutral-8 px-1.5 py-0.5 text-fluent-neutral-60">
-                {item.requirementCategory}
-              </span>
+              <Chip>{item.requirementCategory}</Chip>
+            )}
+
+            {item.visibility === 'internal' && (
+              <Chip title="Ο πελάτης δεν τη βλέπει στο portal">
+                <EyeOff16Regular className="h-3.5 w-3.5" />
+                εσωτερική
+              </Chip>
             )}
 
             {lowConfidence && (
@@ -287,11 +218,7 @@ export function ProposalItemRow({
               </span>
             )}
 
-            {item.manual && (
-              <span className="rounded bg-fluent-neutral-8 px-1.5 py-0.5 text-fluent-neutral-60">
-                χειροκίνητο
-              </span>
-            )}
+            {item.manual && <Chip muted>χειροκίνητο</Chip>}
 
             {item.regeneratedFromId && (
               <span
@@ -300,6 +227,17 @@ export function ProposalItemRow({
               >
                 από διευκρίνιση
               </span>
+            )}
+
+            {item.sourceQuote && (
+              <button
+                type="button"
+                onClick={() => setShowQuote((v) => !v)}
+                className="flex items-center gap-0.5 text-fluent-blue-600 hover:underline"
+              >
+                {showQuote ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
+                απόσπασμα
+              </button>
             )}
 
             {!converted && !rejected && (
@@ -311,17 +249,6 @@ export function ProposalItemRow({
               >
                 <ArrowSync16Regular />
                 διευκρινίσεις
-              </button>
-            )}
-
-            {item.sourceQuote && (
-              <button
-                type="button"
-                onClick={() => setShowQuote((v) => !v)}
-                className="flex items-center gap-0.5 text-fluent-blue-600 hover:underline"
-              >
-                {showQuote ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
-                απόσπασμα
               </button>
             )}
           </div>
@@ -374,19 +301,54 @@ export function ProposalItemRow({
           {error && <p className="mt-1 text-[11px] text-fluent-accent-red">{error}</p>}
         </div>
 
-        {!converted && (
-          <button
-            type="button"
-            onClick={toggleRejected}
-            disabled={pending}
-            className="mt-0.5 shrink-0 rounded p-1 text-fluent-neutral-40 transition-colors hover:bg-fluent-neutral-8 hover:text-fluent-neutral-70"
-            title={rejected ? 'Επαναφορά' : 'Απόρριψη'}
-            aria-label={rejected ? 'Επαναφορά' : 'Απόρριψη'}
-          >
-            {rejected ? <ArrowUndo16Regular /> : <Dismiss16Regular />}
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-0.5">
+          {!converted && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="rounded p-1.5 text-fluent-neutral-50 transition-colors hover:bg-fluent-neutral-8 hover:text-fluent-neutral-80"
+              title="Επεξεργασία"
+              aria-label="Επεξεργασία"
+            >
+              <Edit16Regular />
+            </button>
+          )}
+          {!converted && (
+            <button
+              type="button"
+              onClick={toggleRejected}
+              disabled={pending}
+              className="rounded p-1.5 text-fluent-neutral-40 transition-colors hover:bg-fluent-neutral-8 hover:text-fluent-neutral-70"
+              title={rejected ? 'Επαναφορά' : 'Απόρριψη'}
+              aria-label={rejected ? 'Επαναφορά' : 'Απόρριψη'}
+            >
+              {rejected ? <ArrowUndo16Regular /> : <Dismiss16Regular />}
+            </button>
+          )}
+        </div>
       </div>
     </div>
+  );
+}
+
+function Chip({
+  children,
+  title,
+  muted,
+}: {
+  children: React.ReactNode;
+  title?: string;
+  muted?: boolean;
+}) {
+  return (
+    <span
+      title={title}
+      className={[
+        'inline-flex items-center gap-1 rounded px-1.5 py-0.5',
+        muted ? 'bg-fluent-neutral-6 text-fluent-neutral-50' : 'bg-fluent-neutral-8 text-fluent-neutral-70',
+      ].join(' ')}
+    >
+      {children}
+    </span>
   );
 }

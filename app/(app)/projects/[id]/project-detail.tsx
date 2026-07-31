@@ -64,6 +64,7 @@ type ProjectDetailProps = {
   regressionCount: number;
   costLines: CostLine[];
   proposalAnalysis: ProposalAnalysisView | null;
+  proposalTeam: { id: string; name: string; email: string }[];
   catalogProducts: CatalogPickerItem[];
   catalogServices: CatalogPickerItem[];
   emails: ProjectEmail[];
@@ -123,6 +124,7 @@ export function ProjectDetail({
   regressionCount,
   costLines,
   proposalAnalysis,
+  proposalTeam,
   catalogProducts,
   catalogServices,
   emails,
@@ -413,6 +415,7 @@ export function ProjectDetail({
             projectId={project.id}
             analysis={proposalAnalysis}
             members={projectMembers}
+            team={proposalTeam}
           />
         )}
         {tab === 'emails' && !isCustomer && (

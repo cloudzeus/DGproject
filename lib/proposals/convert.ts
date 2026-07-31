@@ -118,6 +118,18 @@ export async function convertProposalItems(args: {
       })
       if (item.assigneeId) {
         await tx.taskAssignee.create({ data: { taskId: task.id, userId: item.assigneeId } })
+
+        // Ο ανάδοχος μπορεί να επιλεγεί από ΟΛΗ την ομάδα, όχι μόνο από τα μέλη
+        // του έργου. Χωρίς εγγραφή μέλους όμως, ένας απλός χρήστης δεν βλέπει
+        // καν το έργο — θα του ανατίθετο εργασία που δεν μπορεί να ανοίξει.
+        await tx.projectMember.upsert({
+          where: {
+            projectId_userId: { projectId: analysis.projectId, userId: item.assigneeId },
+          },
+          create: { projectId: analysis.projectId, userId: item.assigneeId },
+          update: {},
+        })
+
         const list = assigned.get(item.assigneeId) ?? []
         list.push(item.title)
         assigned.set(item.assigneeId, list)

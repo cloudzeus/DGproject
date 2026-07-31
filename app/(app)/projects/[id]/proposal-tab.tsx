@@ -27,10 +27,10 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { MAX_OCR_PAGES, isPdfFile } from '@/lib/ocr/rasterize';
 import { ProposalItemRow, type ProposalItemView, type ProposalMember } from './proposal-item-row';
+import { ProposalItemModal } from './proposal-item-modal';
 import {
   getProposalStatus,
   retryProposalAnalysis,
-  addProposalItem,
   convertSelectedProposalItems,
 } from './proposal-actions';
 
@@ -61,14 +61,20 @@ export function ProposalTab({
   projectId,
   analysis,
   members,
+  team,
 }: {
   projectId: string;
   analysis: ProposalAnalysisView | null;
+  /** Μέλη του έργου — εμφανίζονται πρώτα στη λίστα αναδόχων. */
   members: ProposalMember[];
+  /** Όλη η ομάδα — μπορείς να αναθέσεις και εκτός έργου. */
+  team: ProposalMember[];
 }) {
   const router = useRouter();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** Ανοιχτή φόρμα: `item` null σημαίνει δημιουργία νέου στο συγκεκριμένο είδος. */
+  const [editing, setEditing] = useState<{ item: ProposalItemView | null; kind: ProposalItemView['kind'] } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -282,7 +288,9 @@ export function ProposalTab({
             hint={section.hint}
             kind={section.kind}
             items={grouped.get(section.kind) ?? []}
-            members={members}
+            team={team}
+            onAdd={() => setEditing({ item: null, kind: section.kind })}
+            onEdit={(item) => setEditing({ item, kind: item.kind })}
             selected={selected}
             onToggle={toggle}
             onSetMany={setMany}
@@ -323,6 +331,21 @@ export function ProposalTab({
           }}
         />
       )}
+
+      {editing && (
+        <ProposalItemModal
+          analysisId={analysis.id}
+          item={editing.item}
+          defaultKind={editing.kind}
+          members={members}
+          team={team}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -333,10 +356,12 @@ function Section({
   hint,
   kind,
   items,
-  members,
+  team,
   selected,
   onToggle,
   onSetMany,
+  onAdd,
+  onEdit,
   onChanged,
 }: {
   analysisId: string;
@@ -344,31 +369,16 @@ function Section({
   hint: string;
   kind: ProposalItemView['kind'];
   items: ProposalItemView[];
-  members: ProposalMember[];
+  team: ProposalMember[];
   selected: Set<string>;
   onToggle: (id: string) => void;
   onSetMany: (ids: string[], nextSelected: boolean) => void;
+  onAdd: () => void;
+  onEdit: (item: ProposalItemView) => void;
   onChanged: () => void;
 }) {
-  const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState('');
-  const [pending, startTransition] = useTransition();
-
   const drafts = items.filter((i) => i.status === 'draft');
   const allSelected = drafts.length > 0 && drafts.every((i) => selected.has(i.id));
-
-  function add() {
-    const t = title.trim();
-    if (t.length < 3) return;
-    startTransition(async () => {
-      const res = await addProposalItem(analysisId, { kind, title: t });
-      if (res.ok) {
-        setTitle('');
-        setAdding(false);
-        onChanged();
-      }
-    });
-  }
 
   return (
     <section className="rounded-lg border border-fluent-neutral-10 bg-white shadow-fluent-2">
@@ -392,7 +402,7 @@ function Section({
           )}
           <button
             type="button"
-            onClick={() => setAdding((v) => !v)}
+            onClick={onAdd}
             className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-fluent-neutral-60 hover:bg-fluent-neutral-8"
           >
             <Add16Regular />
@@ -402,26 +412,7 @@ function Section({
       </header>
 
       <div className="space-y-2 p-3">
-        {adding && (
-          <div className="flex items-center gap-2">
-            <input
-              autoFocus
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') add();
-                if (e.key === 'Escape') setAdding(false);
-              }}
-              placeholder="Τίτλος…"
-              className="h-8 flex-1 rounded-md border border-fluent-neutral-20 px-2 text-sm outline-none focus:border-fluent-blue-500"
-            />
-            <Button size="sm" variant="primary" onClick={add} disabled={pending}>
-              Προσθήκη
-            </Button>
-          </div>
-        )}
-
-        {items.length === 0 && !adding && (
+        {items.length === 0 && (
           <p className="px-1 py-3 text-center text-xs text-fluent-neutral-50">
             Τίποτα εδώ.
           </p>
@@ -431,9 +422,10 @@ function Section({
           <ProposalItemRow
             key={item.id}
             item={item}
-            members={members}
+            team={team}
             selected={selected.has(item.id)}
             onToggle={() => onToggle(item.id)}
+            onEdit={() => onEdit(item)}
             onChanged={onChanged}
           />
         ))}

@@ -169,6 +169,22 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const isPrivileged = role === 'admin' || role === 'manager';
   const isCustomer = session?.user?.userType === 'customer';
 
+  // Όλη η ομάδα, για την ανάθεση βημάτων της πρότασης: ο ανάδοχος δεν
+  // περιορίζεται στα μέλη του έργου — στη μετατροπή, όποιος λείπει προστίθεται.
+  const proposalTeam = isPrivileged
+    ? await prisma.user.findMany({
+        where: { userType: 'employee' },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: 'asc' },
+      })
+    : [];
+  // Το User.name είναι nullable στο σχήμα· το UI πέφτει στο email όταν λείπει.
+  const proposalTeamOptions = proposalTeam.map((u) => ({
+    id: u.id,
+    name: u.name ?? '',
+    email: u.email,
+  }));
+
   // Η τελευταία ανάλυση πρότασης — μόνο για admin/manager, όπως η κοστολόγηση:
   // η πρόταση και τα αποσπάσματά της περιέχουν τιμές. Μόνο η τελευταία, γιατί
   // αυτή είναι το τρέχον πλάνο· οι παλιότερες μένουν στη βάση για ιστορικό.
@@ -740,6 +756,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         regressionCount={regressionCount}
         costLines={costLines}
         proposalAnalysis={proposalAnalysis}
+        proposalTeam={proposalTeamOptions}
         catalogProducts={catalogProducts}
         catalogServices={catalogServices}
         emails={emails}

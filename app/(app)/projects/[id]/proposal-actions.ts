@@ -157,7 +157,7 @@ export async function updateProposalItem(itemId: string, patch: ItemPatch): Prom
 
 export async function addProposalItem(
   analysisId: string,
-  input: { kind: 'step' | 'milestone' | 'requirement'; title: string; description?: string },
+  input: ItemPatch & { kind: 'step' | 'milestone' | 'requirement'; title: string },
 ): Promise<Result<{ id: string }>> {
   try {
     await requirePrivileged()
@@ -177,6 +177,12 @@ export async function addProposalItem(
         kind: input.kind,
         title,
         description: input.description?.trim() || null,
+        suggestedDueDate: input.suggestedDueDate ? new Date(input.suggestedDueDate) : null,
+        estimatedHours: input.estimatedHours ?? null,
+        priority: input.priority ?? null,
+        visibility: input.visibility ?? 'shared',
+        requirementCategory: input.requirementCategory || null,
+        assigneeId: input.assigneeId || null,
         order: (max._max.order ?? -1) + 1,
         // Χειροκίνητο: επιβιώνει μιας νέας ανάλυσης, και δεν έχει απόσπασμα
         // γιατί δεν το βρήκε το μοντέλο — το έγραψε άνθρωπος.

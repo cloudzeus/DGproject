@@ -146,6 +146,7 @@ before(async () => {
 
 after(async () => {
   await prisma.notification.deleteMany({ where: { link: `/projects/${projectId}` } })
+  await prisma.projectMember.deleteMany({ where: { projectId } })
   await prisma.taskAssignee.deleteMany({ where: { task: { projectId } } })
   await prisma.taskRequirement.deleteMany({ where: { requirement: { projectId } } })
   await prisma.projectRequirement.deleteMany({ where: { projectId } })
@@ -251,6 +252,15 @@ test('η ανάθεση περνά στην εργασία', async () => {
     false,
     'το αντικείμενο χωρίς ανάδοχο δεν πρέπει να πάρει',
   )
+})
+
+test('ο ανάδοχος εκτός έργου γίνεται μέλος — αλλιώς δεν βλέπει την εργασία', async () => {
+  // Ο ανάδοχος επιλέγεται από ΟΛΗ την ομάδα. Χωρίς εγγραφή μέλους, ένας απλός
+  // χρήστης δεν βλέπει καν το έργο στο οποίο μόλις του ανατέθηκε δουλειά.
+  const membership = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId, userId: staffId } },
+  })
+  assert.ok(membership, 'ο ανάδοχος έπρεπε να προστεθεί στο έργο')
 })
 
 test('μία συγκεντρωτική ειδοποίηση ανά άτομο, όχι μία ανά εργασία', async () => {
