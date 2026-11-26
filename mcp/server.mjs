@@ -30,6 +30,19 @@ export function createMcpServer(service) {
 
   register("list_projects", "List real PMS projects with their tasks and approval owners.", {}, () => service.listProjects());
 
+  register("create_project", "Create a real PMS project owned by the configured human operator. Uses the operator's default workspace unless workspace_id is supplied.", {
+    name: z.string().min(2).max(300),
+    description: z.string().max(30000).optional(),
+    workspace_id: z.string().min(1).optional(),
+    status: z.enum(["planning", "active", "on_hold", "completed", "archived"]).default("planning"),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default("#0078D4"),
+    icon: z.string().min(1).max(50).optional(),
+    start_date: z.string().datetime().optional(),
+    due_date: z.string().datetime().optional(),
+    is_internal: z.boolean().default(false),
+    primary_company_id: z.string().min(1).optional(),
+  }, (args) => service.createProject(args));
+
   register("get_project_context", "Get a PMS project, workspace, members, tasks and attachments.", {
     project_id: z.string().min(1),
   }, (args) => service.getProjectContext(args));

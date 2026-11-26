@@ -23,12 +23,17 @@ const TASK_INCLUDE = {
       approver: { select: { id: true, name: true, email: true } },
     },
   },
-  activeAIAgent: { select: { id: true, name: true, agentKey: true } },
   assignees: { include: { user: { select: { id: true, name: true, email: true, isAIAgent: true, agentKey: true } } } },
   dependencies: { include: { dependsOn: { select: { id: true, title: true, status: true } } } },
   comments: { include: { author: { select: { id: true, name: true, email: true, agentKey: true } } }, orderBy: { createdAt: "asc" } },
   attachments: true,
-  resolutions: { orderBy: { submittedAt: "desc" } },
+  resolutions: {
+    orderBy: { submittedAt: "desc" },
+    include: {
+      agent: { select: { id: true, name: true, email: true } },
+      reviewedBy: { select: { id: true, name: true, email: true } },
+    },
+  },
 };
 
 export class TaskService {
@@ -81,6 +86,76 @@ export class TaskService {
     });
   }
 
+  async createProject(input) {
+    const operator = await this.operator();
+    assertCondition(["admin", "manager"].includes(operator.role), "FORBIDDEN", "Only an admin or manager can create projects.");
+
+    let lastError;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          let workspaceId = input.workspace_id;
+          if (workspaceId) {
+            const workspace = await tx.workspace.findUnique({ where: { id: workspaceId }, select: { id: true } });
+            assertCondition(workspace, "WORKSPACE_NOT_FOUND", `Workspace '${workspaceId}' was not found.`);
+          } else {
+            const existing = await tx.workspace.findFirst({ where: { ownerId: operator.id }, orderBy: { createdAt: "asc" }, select: { id: true } });
+            workspaceId = existing?.id ?? (await tx.workspace.create({ data: { name: "Default Workspace", ownerId: operator.id }, select: { id: true } })).id;
+          }
+
+          const year = this.now().getFullYear();
+          const lastForYear = await tx.project.findFirst({
+            where: { projectCode: { startsWith: `PRJ-${year}-` } },
+            orderBy: { projectCode: "desc" },
+            select: { projectCode: true },
+          });
+          const lastSequence = lastForYear?.projectCode?.match(/-(\d+)$/)?.[1];
+          const nextSequence = String((lastSequence ? Number.parseInt(lastSequence, 10) : 0) + 1).padStart(3, "0");
+          const projectCode = `PRJ-${year}-${nextSequence}`;
+          const isInternal = input.is_internal ?? false;
+
+          const project = await tx.project.create({
+            data: {
+              name: input.name,
+              description: input.description?.trim() || null,
+              color: input.color ?? "#0078D4",
+              icon: input.icon ?? input.name.slice(0, 1).toUpperCase(),
+              status: input.status ?? "planning",
+              startDate: input.start_date ? new Date(input.start_date) : null,
+              dueDate: input.due_date ? new Date(input.due_date) : null,
+              ownerId: operator.id,
+              workspaceId,
+              projectCode,
+              isInternal,
+              primaryCompanyId: isInternal ? null : input.primary_company_id ?? null,
+              members: { create: [{ userId: operator.id }] },
+            },
+            include: {
+              workspace: { select: { id: true, name: true } },
+              owner: { select: { id: true, name: true, email: true } },
+              members: { include: { user: { select: { id: true, name: true, email: true } } } },
+            },
+          });
+          await tx.activity.create({
+            data: {
+              workspaceId,
+              projectId: project.id,
+              actorId: operator.id,
+              action: "created",
+              targetType: "project",
+              metadata: { source: "mcp", projectCode },
+            },
+          });
+          return project;
+        });
+      } catch (error) {
+        lastError = error;
+        if (error?.code !== "P2002" || attempt === 2) throw error;
+      }
+    }
+    throw lastError;
+  }
+
   async listProjects() {
     return this.prisma.project.findMany({
       include: {
@@ -123,7 +198,6 @@ export class TaskService {
         ...(activeAIAgentId ? { activeAIAgentId } : {}),
       },
       include: {
-        activeAIAgent: { select: { id: true, name: true, agentKey: true } },
         assignees: { include: { user: { select: { id: true, name: true, email: true, isAIAgent: true, agentKey: true } } } },
         dependencies: { include: { dependsOn: { select: { id: true, title: true, status: true } } } },
         _count: { select: { comments: true, resolutions: true } },
@@ -141,9 +215,9 @@ export class TaskService {
   async getTaskFeed({ task_id, limit = 100 }) {
     await this.getTask({ task_id });
     const [comments, activities, resolutions] = await Promise.all([
-      this.prisma.comment.findMany({ where: { taskId: task_id }, include: { author: { select: { id: true, name: true, agentKey: true } } } }),
-      this.prisma.activity.findMany({ where: { taskId: task_id }, include: { actor: { select: { id: true, name: true, agentKey: true } } } }),
-      this.prisma.taskResolution.findMany({ where: { taskId: task_id }, include: { agent: { select: { id: true, name: true, agentKey: true } }, reviewedBy: { select: { id: true, name: true } } } }),
+      this.prisma.comment.findMany({ where: { taskId: task_id }, include: { author: { select: { id: true, name: true, email: true } } } }),
+      this.prisma.activity.findMany({ where: { taskId: task_id }, include: { actor: { select: { id: true, name: true, email: true } } } }),
+      this.prisma.taskResolution.findMany({ where: { taskId: task_id }, include: { agent: { select: { id: true, name: true, email: true } }, reviewedBy: { select: { id: true, name: true, email: true } } } }),
     ]);
 
     const feed = [
@@ -163,7 +237,7 @@ export class TaskService {
     }
     return this.prisma.attachment.findMany({
       where: task_id ? { taskId: task_id } : { projectId: project_id },
-      include: { uploadedBy: { select: { id: true, name: true, agentKey: true, isAIAgent: true } } },
+      include: { uploadedBy: { select: { id: true, name: true, email: true } } },
       orderBy: { createdAt: "desc" },
     });
   }
@@ -171,7 +245,7 @@ export class TaskService {
   async readFile({ attachment_id }) {
     const attachment = await this.prisma.attachment.findUnique({
       where: { id: attachment_id },
-      include: { uploadedBy: { select: { id: true, name: true, agentKey: true, isAIAgent: true } } },
+      include: { uploadedBy: { select: { id: true, name: true, email: true } } },
     });
     assertCondition(attachment, "ATTACHMENT_NOT_FOUND", `Attachment '${attachment_id}' was not found.`);
     return downloadAttachment(attachment);
@@ -179,7 +253,7 @@ export class TaskService {
 
   async uploadFile(input) {
     assertCondition(Boolean(input.task_id) !== Boolean(input.project_id), "INVALID_PARENT", "Provide exactly one of task_id or project_id.");
-    const agent = await this.agent(this.prisma, input.agent_key);
+    const [operator, agent] = await Promise.all([this.operator(), this.agent(this.prisma, input.agent_key)]);
     const task = input.task_id
       ? await this.prisma.task.findUnique({ where: { id: input.task_id }, include: { project: true } })
       : null;
@@ -214,16 +288,16 @@ export class TaskService {
             url: uploaded.url,
             source: "local",
             visibility: input.visibility ?? "internal",
-            uploadedById: agent.id,
+            uploadedById: operator.id,
           },
-          include: { uploadedBy: { select: { id: true, name: true, agentKey: true, isAIAgent: true } } },
+          include: { uploadedBy: { select: { id: true, name: true, email: true } } },
         });
         await tx.activity.create({
           data: {
             workspaceId: project.workspaceId,
             projectId: project.id,
             taskId: task?.id ?? null,
-            actorId: agent.id,
+            actorId: operator.id,
             action: "updated",
             targetType: task ? "task" : "project",
             metadata: { source: "mcp", event: "file_uploaded", attachmentId: attachment.id, fileName, parentKind },
@@ -289,8 +363,8 @@ export class TaskService {
         );
 
         await tx.taskAssignee.upsert({
-          where: { taskId_userId: { taskId, userId: agent.id } },
-          create: { taskId, userId: agent.id },
+          where: { taskId_userId: { taskId, userId: operator.id } },
+          create: { taskId, userId: operator.id },
           update: {},
         });
         const updated = await tx.task.update({
@@ -311,7 +385,7 @@ export class TaskService {
 
   async startTask({ task_id, agent_key }) {
     return this.prisma.$transaction(async (tx) => {
-      const agent = await this.agent(tx, agent_key);
+      const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, agent_key)]);
       const task = await this.requireAssignedTask(tx, task_id, agent.id);
       assertCondition(!["review", "done"].includes(task.status), "INVALID_STATE", `A ${task.status} task cannot be started.`);
       const pending = unfinishedDependencies(task);
@@ -327,14 +401,14 @@ export class TaskService {
         },
         include: TASK_INCLUDE,
       });
-      await this.logActivity(tx, { task, actorId: agent.id, action: "moved", metadata: { source: "mcp", from: task.status, to: "in_progress", resumed: Boolean(task.aiBlockedReason) } });
+      await this.logActivity(tx, { task, actorId: operator.id, action: "moved", metadata: { source: "mcp", from: task.status, to: "in_progress", resumed: Boolean(task.aiBlockedReason) } });
       return updated;
     });
   }
 
   async releaseTask({ task_id, agent_key }) {
     return this.prisma.$transaction(async (tx) => {
-      const agent = await this.agent(tx, agent_key);
+      const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, agent_key)]);
       const task = await this.requireAssignedTask(tx, task_id, agent.id);
       assertCondition(!["review", "done"].includes(task.status), "INVALID_STATE", `A ${task.status} task cannot be released.`);
       const now = this.now();
@@ -348,8 +422,8 @@ export class TaskService {
         },
         include: TASK_INCLUDE,
       });
-      await tx.taskAssignee.deleteMany({ where: { taskId, userId: agent.id } });
-      await this.logActivity(tx, { task, actorId: agent.id, action: "updated", metadata: { source: "mcp", event: "assignment_released", from: task.status, to: "todo" } });
+      await tx.taskAssignee.deleteMany({ where: { taskId, userId: operator.id } });
+      await this.logActivity(tx, { task, actorId: operator.id, action: "updated", metadata: { source: "mcp", event: "assignment_released", from: task.status, to: "todo" } });
       return updated;
     });
   }
@@ -364,37 +438,37 @@ export class TaskService {
 
   async addAgentComment({ task_id, agent_key, content, event }) {
     return this.prisma.$transaction(async (tx) => {
-      const agent = await this.agent(tx, agent_key);
+      const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, agent_key)]);
       const task = await this.requireAssignedTask(tx, task_id, agent.id);
       assertCondition(task.status === "in_progress", "INVALID_STATE", "Start the task before adding progress or comments.");
-      const comment = await tx.comment.create({ data: { taskId: task_id, authorId: agent.id, content, visibility: "internal" } });
-      await this.logActivity(tx, { task, actorId: agent.id, action: "commented", metadata: { source: "mcp", event, commentId: comment.id } });
+      const comment = await tx.comment.create({ data: { taskId: task_id, authorId: operator.id, content, visibility: "internal" } });
+      await this.logActivity(tx, { task, actorId: operator.id, action: "commented", metadata: { source: "mcp", event, commentId: comment.id } });
       return comment;
     });
   }
 
   async reportBlocker({ task_id, agent_key, reason }) {
     return this.prisma.$transaction(async (tx) => {
-      const agent = await this.agent(tx, agent_key);
+      const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, agent_key)]);
       const task = await this.requireAssignedTask(tx, task_id, agent.id);
       assertCondition(task.status === "in_progress", "INVALID_STATE", "Only an in-progress task can be blocked.");
       const updated = await tx.task.update({ where: { id: task_id }, data: { aiBlockedReason: reason }, include: TASK_INCLUDE });
-      const comment = await tx.comment.create({ data: { taskId: task_id, authorId: agent.id, content: `[BLOCKED] ${reason}`, visibility: "internal" } });
-      await this.logActivity(tx, { task, actorId: agent.id, action: "updated", metadata: { source: "mcp", event: "blocked", reason, commentId: comment.id } });
+      const comment = await tx.comment.create({ data: { taskId: task_id, authorId: operator.id, content: `[BLOCKED] ${reason}`, visibility: "internal" } });
+      await this.logActivity(tx, { task, actorId: operator.id, action: "updated", metadata: { source: "mcp", event: "blocked", reason, commentId: comment.id } });
       return updated;
     });
   }
 
   async submitResolution(input) {
     return this.prisma.$transaction(async (tx) => {
-      const agent = await this.agent(tx, input.agent_key);
+      const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, input.agent_key)]);
       const task = await this.requireAssignedTask(tx, input.task_id, agent.id);
       assertCondition(task.status === "in_progress", "INVALID_STATE", "Only an in-progress task can submit a resolution.");
       const now = this.now();
       const resolution = await tx.taskResolution.create({
         data: {
           taskId: input.task_id,
-          agentId: agent.id,
+          agentId: operator.id,
           summary: input.summary,
           changes: input.changes ?? [],
           commits: input.commits ?? [],
@@ -402,13 +476,17 @@ export class TaskService {
           artifacts: input.artifacts ?? [],
           remainingIssues: input.remaining_issues ?? null,
         },
+        include: {
+          agent: { select: { id: true, name: true, email: true } },
+          reviewedBy: { select: { id: true, name: true, email: true } },
+        },
       });
       const updated = await tx.task.update({
         where: { id: input.task_id },
         data: { status: "review", aiBlockedReason: null, ...timerUpdate(task, "review", now) },
         include: TASK_INCLUDE,
       });
-      await this.logActivity(tx, { task, actorId: agent.id, action: "moved", metadata: { source: "mcp", from: task.status, to: "review", resolutionId: resolution.id } });
+      await this.logActivity(tx, { task, actorId: operator.id, action: "moved", metadata: { source: "mcp", from: task.status, to: "review", resolutionId: resolution.id } });
       return { task: updated, resolution };
     });
   }
@@ -423,6 +501,10 @@ export class TaskService {
       const resolution = await tx.taskResolution.update({
         where: { id: task.resolutions[0].id },
         data: { status: "changes_requested", reviewFeedback: feedback, reviewedById: operator.id, reviewedAt: now },
+        include: {
+          agent: { select: { id: true, name: true, email: true } },
+          reviewedBy: { select: { id: true, name: true, email: true } },
+        },
       });
       const updated = await tx.task.update({
         where: { id: task_id },
@@ -446,6 +528,10 @@ export class TaskService {
       const resolution = await tx.taskResolution.update({
         where: { id: task.resolutions[0].id },
         data: { status: "approved", reviewedById: operator.id, reviewedAt: now },
+        include: {
+          agent: { select: { id: true, name: true, email: true } },
+          reviewedBy: { select: { id: true, name: true, email: true } },
+        },
       });
       const updated = await tx.task.update({
         where: { id: task_id },

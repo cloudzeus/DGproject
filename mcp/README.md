@@ -66,7 +66,7 @@ Then list the available PMS projects.
 
 ## Προτεινόμενη ροή
 
-1. `list_projects` → ο χρήστης επιλέγει project.
+1. `list_projects` → ο χρήστης επιλέγει project. Εναλλακτικά, `create_project` δημιουργεί νέο πραγματικό PMS project.
 2. `get_project_context` και `list_tasks` → το AI παρουσιάζει τα πραγματικά tasks.
 3. Ο χρήστης επιλέγει tasks → `assign_tasks` με το `agent_key` του AI.
 4. `get_task` → πλήρες πακέτο με dependencies, σχόλια, attachments και προηγούμενα resolutions.
@@ -85,6 +85,15 @@ Then list the available PMS projects.
 ποια θέλω να αναθέσω. Μην ξεκινήσεις κάποιο χωρίς δική μου εντολή.
 ```
 
+Παράδειγμα δημιουργίας project:
+
+```text
+Δημιούργησε ένα εσωτερικό project με όνομα "Customer Portal",
+περιγραφή "Νέο portal πελατών" και χρώμα "#0078D4".
+```
+
+Το AI καλεί `create_project` με `name`, `description`, `color` και `is_internal: true`. Αν δεν δοθεί `workspace_id`, χρησιμοποιείται το πρώτο workspace του configured operator ή δημιουργείται `Default Workspace`.
+
 ## Διαθέσιμα tools
 
 | Tool | Λειτουργία |
@@ -92,6 +101,7 @@ Then list the available PMS projects.
 | `register_agent` | Δημιουργία/μετονομασία AI agent ως PMS user με `isAIAgent=true` |
 | `list_agents` | Λίστα registered AI agents |
 | `list_projects` | Πραγματικά PMS projects και tasks |
+| `create_project` | Νέο PMS project με owner/member τον operator, αυτόματο project code και προαιρετικό workspace |
 | `get_project_context` | Workspace, μέλη, tasks και attachments project |
 | `list_tasks` | Tasks με φίλτρα status/priority/agent |
 | `get_task` | Πλήρες task package και resolution history |
@@ -100,11 +110,11 @@ Then list the available PMS projects.
 | `read_file` | Κείμενο inline, screenshot ως MCP image και λοιπά binary ως embedded resource |
 | `upload_file` | Upload έως 10 MiB σε project ή assigned task, στο υπάρχον Bunny CDN |
 | `create_task` | Νέο PMS task με acceptance criteria, related files και dependencies |
-| `assign_tasks` | Ανάθεση από τον configured operator· προστασία από ακούσια αντικατάσταση agent |
+| `assign_tasks` | Ορατή ανάθεση στον operator και εσωτερικό active assignment στον agent |
 | `start_task` | Έναρξη ή resume με dependency checks |
 | `release_task` | Απελευθέρωση ανάθεσης και επιστροφή σε `todo` |
 | `report_progress` | Internal progress comment |
-| `add_task_comment` | Internal AI comment |
+| `add_task_comment` | Internal comment με συγγραφέα τον operator |
 | `report_blocker` | Καταγραφή blocker στο task και στο feed |
 | `submit_resolution` | Νέα resolution attempt και μετάβαση σε `review` |
 | `request_changes` | Απόρριψη attempt με feedback και επιστροφή στον agent |
@@ -114,18 +124,19 @@ Then list the available PMS projects.
 
 - Στο `upload_file` δίνεται ακριβώς ένα από `task_id`/`project_id` και ακριβώς ένα από `text_content`/`content_base64`.
 - Για task απαιτείται ενεργή ανάθεση στον agent. Σε project μπορεί να ανεβάσει registered agent.
-- Τα uploads είναι `internal` από default και καταγράφονται ως PMS `Attachment` και `Activity`.
+- Τα uploads είναι `internal` από default και καταγράφονται ως PMS `Attachment` και `Activity` με uploader/actor τον operator.
 - Το `read_file` επιτρέπει HTTPS downloads μόνο από το configured Bunny CDN hostname. Επιπλέον hosts ορίζονται, χωρισμένοι με κόμμα, στο `MCP_ATTACHMENT_ALLOWED_HOSTS`.
 - OneDrive/SharePoint links χρειάζονται δημόσια προσβάσιμο περιεχόμενο και ρητή προσθήκη του host στην allowlist· το MVP δεν εκτελεί Microsoft Graph OAuth.
 - Το όριο upload/download είναι 10 MiB. SVG αντιμετωπίζεται ως κείμενο και όχι ως ενσωματωμένη εικόνα.
 
 ## Αντιστοίχιση με το υπάρχον PMS
 
-- Η ανάθεση χρησιμοποιεί `Task.activeAIAgentId` και κανονικό `TaskAssignee`, ώστε ο agent να εμφανίζεται και στους assignees.
+- Ο configured operator είναι ο ορατός assignee, συγγραφέας comments/activities, uploader και resolution author. Ο AI agent δεν εμφανίζεται ως συνεργάτης στα tasks ή στα resolutions.
+- Το `Task.activeAIAgentId` και το `agent_key` χρησιμοποιούνται μόνο για το εσωτερικό active assignment και τον authorization έλεγχο της ροής.
 - Το blocker αποθηκεύεται στο `Task.aiBlockedReason` χωρίς νέο status που θα διέσπαγε το Kanban.
 - Κάθε resolution attempt είναι ξεχωριστό `TaskResolution`. Τα rejected attempts δεν διαγράφονται.
 - Progress, blockers και review feedback είναι κανονικά internal `Comment` records.
-- Οι αλλαγές καταγράφονται και ως `Activity` με τον πραγματικό actor.
+- Οι αλλαγές καταγράφονται και ως `Activity` με actor τον operator.
 - Η έγκριση τηρεί τον κανόνα owner/designated approver/admin του PMS και ενημερώνει τον υπάρχοντα in-progress timer.
 
 ## Δοκιμές
@@ -141,4 +152,4 @@ npm run mcp:tasks:test:db
 
 ## Όρια ασφάλειας του MVP
 
-Η σύνδεση `stdio` προορίζεται για τοπική, έμπιστη χρήση. Ο `MCP_OPERATOR_USER_ID` και το `agent_key` ταυτίζουν τον actor στα PMS records, αλλά δεν αποτελούν authentication: ένας συνδεδεμένος client μπορεί να δηλώσει άλλο agent key. Για απομακρυσμένη ή multi-user χρήση χρειάζεται authenticated transport, ανά-χρήστη authorization και περιορισμένα database credentials.
+Η σύνδεση `stdio` προορίζεται για τοπική, έμπιστη χρήση. Το `MCP_OPERATOR_USER_EMAIL` (ή το εναλλακτικό `MCP_OPERATOR_USER_ID`) επιλέγει τον ορατό PMS actor, ενώ το `agent_key` επιλέγει το εσωτερικό active assignment. Αυτά δεν αποτελούν authentication: ένας συνδεδεμένος client μπορεί να δηλώσει άλλο agent key. Για απομακρυσμένη ή multi-user χρήση χρειάζεται authenticated transport, ανά-χρήστη authorization και περιορισμένα database credentials.

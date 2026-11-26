@@ -28,19 +28,15 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
     const service = new TaskService(prisma, { operatorUserEmail: operator.email });
     agent = await service.registerAgent({ agent_key: agentKey, display_name: "Temporary MCP Test Agent" });
 
-    const workspace = await prisma.workspace.create({
-      data: { name: `MCP Test Workspace ${suffix}`, ownerId: operator.id },
+    const project = await service.createProject({
+      name: `MCP Test Project ${suffix}`,
+      description: "Temporary integration test project",
+      color: "#0078D4",
+      icon: "TestTube",
     });
-    const project = await prisma.project.create({
-      data: {
-        name: `MCP Test Project ${suffix}`,
-        workspaceId: workspace.id,
-        ownerId: operator.id,
-        approverId: operator.id,
-        color: "#0078D4",
-        icon: "TestTube",
-      },
-    });
+    assert.match(project.projectCode, /^PRJ-\d{4}-\d{3}$/);
+    assert.equal(project.ownerId, operator.id);
+    assert.equal(project.members[0].userId, operator.id);
 
     const prerequisite = await service.createTask({
       project_id: project.id,
@@ -55,7 +51,12 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
       dependency_task_ids: [prerequisite.id],
     });
 
-    await service.assignTasks({ task_ids: [prerequisite.id, dependent.id], agent_key: agentKey });
+    const assigned = await service.assignTasks({ task_ids: [prerequisite.id, dependent.id], agent_key: agentKey });
+    for (const task of assigned) {
+      assert.equal(task.activeAIAgentId, agent.id);
+      assert.deepEqual(task.assignees.map((assignee) => assignee.userId), [operator.id]);
+      assert.ok(task.assignees.every((assignee) => assignee.user.isAIAgent === false));
+    }
 
     const projectFile = await service.uploadFile({
       project_id: project.id,
@@ -64,6 +65,8 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
       text_content: "PMS project attachment integration",
       mime_type: "text/plain",
     });
+    assert.equal(projectFile.uploadedById, operator.id);
+    assert.equal(projectFile.uploadedBy.email, operator.email);
     uploadedStoragePaths.push(new URL(projectFile.url).pathname.slice(1));
     const taskScreenshot = await service.uploadFile({
       task_id: prerequisite.id,
@@ -105,10 +108,13 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
       test_results: [{ name: "integration", status: "passed" }],
     });
     assert.equal(first.task.status, "review");
+    assert.equal(first.resolution.agentId, operator.id);
+    assert.equal(first.resolution.agent.email, operator.email);
 
     const rejected = await service.requestChanges({ task_id: prerequisite.id, feedback: "Add dependency coverage." });
     assert.equal(rejected.task.status, "in_progress");
     assert.equal(rejected.resolution.status, "changes_requested");
+    assert.equal(rejected.resolution.reviewedById, operator.id);
 
     await service.submitResolution({
       task_id: prerequisite.id,
@@ -120,12 +126,17 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
     const approved = await service.approveResolution({ task_id: prerequisite.id });
     assert.equal(approved.task.status, "done");
     assert.equal(approved.resolution.status, "approved");
+    assert.equal(approved.resolution.agentId, operator.id);
+    assert.equal(approved.resolution.reviewedById, operator.id);
     assert.ok(approved.task.completedAt);
 
     await service.startTask({ task_id: dependent.id, agent_key: agentKey });
     const feed = await service.getTaskFeed({ task_id: prerequisite.id });
     assert.ok(feed.filter((entry) => entry.kind === "resolution").length >= 2);
     assert.ok(feed.some((entry) => entry.kind === "comment" && entry.item.content.includes("Implementation complete")));
+    assert.ok(feed.filter((entry) => entry.kind === "comment").every((entry) => entry.item.authorId === operator.id && entry.item.author.email === operator.email));
+    assert.ok(feed.filter((entry) => entry.kind === "activity").every((entry) => entry.item.actorId === operator.id && entry.item.actor.email === operator.email));
+    assert.ok(feed.filter((entry) => entry.kind === "resolution").every((entry) => entry.item.agentId === operator.id && entry.item.agent.email === operator.email));
     assert.equal((await service.getTask({ task_id: prerequisite.id })).resolutions.length, 2);
 
     const visibleProjects = await service.listProjects();
