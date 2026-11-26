@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type MotionStyle } from 'framer-motion';
 import {
   MoreHorizontal20Regular,
   Calendar16Regular,
@@ -366,7 +366,7 @@ function SortableCard({
   return (
     <motion.div
       ref={setNodeRef}
-      style={style}
+      style={style as MotionStyle}
       initial={{ opacity: 0, y: 12 }}
       animate={isDragging ? undefined : { opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.4) }}

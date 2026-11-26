@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, type MotionStyle } from 'framer-motion';
 import {
   DndContext,
   PointerSensor,
@@ -1352,7 +1352,7 @@ function StaticBoardCard({
   return (
     <motion.div
       ref={ref}
-      style={style}
+      style={style as MotionStyle | undefined}
       initial={isOverlay ? undefined : { opacity: 0, y: 4 }}
       animate={isOverlay ? undefined : { opacity: isDragging ? 0.4 : 1, y: 0 }}
       className={`bg-white rounded-lg p-3 shadow-fluent-2 border border-black/5 hover:shadow-fluent-4 ${
