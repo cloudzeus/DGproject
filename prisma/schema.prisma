@@ -159,6 +159,10 @@ model User {
   image              String?
   role               UserRole @default(member)
   azureAdId          String?  @unique
+  // MCP agents are real User records so existing assignments, comments and
+  // activity relations remain intact. They never represent a human login.
+  isAIAgent          Boolean  @default(false)
+  agentKey           String?  @unique
   // When true, the user signed in with a temporary password issued by an admin
   // and must change it before accessing the rest of the app.
   mustChangePassword Boolean  @default(false)
@@ -213,6 +217,9 @@ model User {
   projectMemberships  ProjectMember[]
   assignedTasks       TaskAssignee[]
   createdTasks        Task[]                   @relation("TaskCreator")
+  activeAITasks       Task[]                   @relation("ActiveAITasks")
+  aiResolutions       TaskResolution[]         @relation("AIResolutionAgent")
+  reviewedResolutions TaskResolution[]         @relation("ResolutionReviewer")
   comments            Comment[]
   attachments         Attachment[]
   activities          Activity[]
@@ -478,19 +485,19 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  owner         User              @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  approver      User?             @relation("ProjectApprover", fields: [approverId], references: [id], onDelete: SetNull)
-  tasks         Task[]
-  attachments   Attachment[]
-  activities    Activity[]
-  members       ProjectMember[]
-  meetings      MeetingNote[]
-  costLines     ProjectCostLine[]
-  emailMessages EmailMessage[]
-  ticketSources TicketSource[]    @relation("SourceDefaultProject")
-  primaryCompany Company?         @relation("ProjectPrimaryCompany", fields: [primaryCompanyId], references: [id], onDelete: SetNull)
-  companies      ProjectCompany[]
+  workspace        Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner            User                 @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  approver         User?                @relation("ProjectApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  tasks            Task[]
+  attachments      Attachment[]
+  activities       Activity[]
+  members          ProjectMember[]
+  meetings         MeetingNote[]
+  costLines        ProjectCostLine[]
+  emailMessages    EmailMessage[]
+  ticketSources    TicketSource[]       @relation("SourceDefaultProject")
+  primaryCompany   Company?             @relation("ProjectPrimaryCompany", fields: [primaryCompanyId], references: [id], onDelete: SetNull)
+  companies        ProjectCompany[]
   proposalAnalyses ProposalAnalysis[]
   requirements     ProjectRequirement[]
 
@@ -522,8 +529,8 @@ model ProjectMember {
   responsibilities  String?  @db.Text
   /// Αν ο πελάτης βλέπει αυτό το μέλος στο portal.
   visibleToCustomer Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -535,12 +542,12 @@ model ProjectMember {
 
 // Tasks & Assignments
 model Task {
-  id             String       @id @default(cuid())
+  id             String         @id @default(cuid())
   projectId      String
   title          String
-  description    String?      @db.Text
-  status         TaskStatus   @default(todo)
-  priority       TaskPriority @default(medium)
+  description    String?        @db.Text
+  status         TaskStatus     @default(todo)
+  priority       TaskPriority   @default(medium)
   /// Αν ο πελάτης βλέπει αυτή την εργασία στο portal. Default `shared`: οι
   /// περισσότερες εργασίες αφορούν τον πελάτη, και οι εσωτερικές σημειώνονται
   /// ρητά από την ομάδα.
@@ -550,13 +557,13 @@ model Task {
   estimatedHours Float?
   completedAt    DateTime?
   parentTaskId   String?
-  order          Int          @default(0)
+  order          Int            @default(0)
   outlookEventId String?
   // Per-task sync preferences chosen at creation time (and overridable on edit).
   // addToCalendar: when true and the task has a due date, sync to the creator's Outlook calendar.
   // addToTeams:    when true and the project has a teamsChannelId, post/update a card in that channel.
-  addToCalendar  Boolean      @default(true)
-  addToTeams     Boolean      @default(false)
+  addToCalendar  Boolean        @default(true)
+  addToTeams     Boolean        @default(false)
   teamsMessageId String?
 
   // ─── AI-generated task provenance ──────────────────────────────────
@@ -588,30 +595,39 @@ model Task {
   inProgressStartedAt     DateTime?
   inProgressAccumulatedMs BigInt    @default(0)
 
+  // ─── MCP AI assignment ─────────────────────────────────────────────
+  // The human operator assigns one active AI agent. Human assignees remain
+  // independent in TaskAssignee. Blockers use the existing in_progress status.
+  activeAIAgentId String?
+  aiBlockedReason String? @db.Text
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdById String
 
-  project              Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  creator              User             @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  generatedFromMeeting MeetingNote?     @relation("MeetingGeneratedTask", fields: [generatedFromMeetingId], references: [id], onDelete: SetNull)
-  assignees            TaskAssignee[]
-  comments             Comment[]
-  attachments          Attachment[]
-  tags                 TaskTag[]
-  activities           Activity[]
-  mentionedUsers       CommentMention[] @relation("MentionedInTasks")
-  questions            TaskQuestion[]
+  project               Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator               User              @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  activeAIAgent         User?             @relation("ActiveAITasks", fields: [activeAIAgentId], references: [id], onDelete: SetNull)
+  generatedFromMeeting  MeetingNote?      @relation("MeetingGeneratedTask", fields: [generatedFromMeetingId], references: [id], onDelete: SetNull)
+  assignees             TaskAssignee[]
+  comments              Comment[]
+  attachments           Attachment[]
+  tags                  TaskTag[]
+  activities            Activity[]
+  resolutions           TaskResolution[]
+  mentionedUsers        CommentMention[]  @relation("MentionedInTasks")
+  questions             TaskQuestion[]
   // Tasks this task depends on (must complete before this can start)
-  dependencies         TaskDependency[] @relation("TaskDependents")
+  dependencies          TaskDependency[]  @relation("TaskDependents")
   // Tasks that depend on this task (this must complete before they can start)
-  dependents           TaskDependency[] @relation("TaskPrerequisites")
-  emailMessages        EmailMessage[]
-  ticket               Ticket?          @relation("TicketTask")
+  dependents            TaskDependency[]  @relation("TaskPrerequisites")
+  emailMessages         EmailMessage[]
+  ticket                Ticket?           @relation("TicketTask")
   generatedFromProposal ProposalAnalysis? @relation("ProposalGeneratedTask", fields: [generatedFromProposalId], references: [id], onDelete: SetNull)
   requirements          TaskRequirement[]
 
   @@index([projectId, visibility])
+  @@index([activeAIAgentId])
   @@index([projectId])
   @@index([status])
   @@index([priority])
@@ -717,20 +733,20 @@ model CommentMention {
 
 // Files & Attachments
 model Attachment {
-  id               String     @id @default(cuid())
+  id               String               @id @default(cuid())
   taskId           String?
   projectId        String?
   name             String
-  title            String?    @db.Text
+  title            String?              @db.Text
   size             Int
   mimeType         String
-  url              String     @db.Text
-  source           FileSource @default(local)
+  url              String               @db.Text
+  source           FileSource           @default(local)
   /// Αν ο πελάτης βλέπει αυτό το αρχείο στο portal.
   visibility       AttachmentVisibility @default(internal)
   sharepointFileId String?
   uploadedById     String
-  createdAt        DateTime   @default(now())
+  createdAt        DateTime             @default(now())
 
   task       Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
   project    Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -833,6 +849,41 @@ model TaskDependency {
   @@unique([taskId, dependsOnId])
   @@index([taskId])
   @@index([dependsOnId])
+}
+
+enum TaskResolutionStatus {
+  submitted
+  changes_requested
+  approved
+}
+
+// Every submission is preserved, including rejected attempts. The Task status
+// remains the canonical workflow state; this table stores the proposed result.
+model TaskResolution {
+  id              String               @id @default(cuid())
+  taskId          String
+  agentId         String
+  summary         String               @db.Text
+  changes         Json
+  commits         Json
+  testResults     Json
+  artifacts       Json
+  remainingIssues String?              @db.Text
+  status          TaskResolutionStatus @default(submitted)
+  reviewFeedback  String?              @db.Text
+  reviewedById    String?
+  reviewedAt      DateTime?
+  submittedAt     DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  task       Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agent      User  @relation("AIResolutionAgent", fields: [agentId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("ResolutionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([taskId, submittedAt])
+  @@index([agentId])
+  @@index([reviewedById])
+  @@index([status])
 }
 
 // Task Q&A — directed questions to a specific assigned user, with optional answer
@@ -976,11 +1027,11 @@ model MeetingNote {
 // το Graph responseStatus (none / notResponded / accepted / tentativelyAccepted /
 // declined / organizer) και ανανεώνεται από το /api/meetings/:id/rsvp.
 model MeetingAttendee {
-  id            String @id @default(cuid())
+  id            String    @id @default(cuid())
   meetingNoteId String
-  email         String @db.VarChar(320)
+  email         String    @db.VarChar(320)
   name          String?
-  response      String @default("none") @db.VarChar(32)
+  response      String    @default("none") @db.VarChar(32)
   respondedAt   DateTime?
 
   createdAt DateTime @default(now())
@@ -1463,17 +1514,17 @@ enum RequirementStatus {
 }
 
 model ProposalAnalysis {
-  id           String @id @default(cuid())
-  projectId    String
+  id            String  @id @default(cuid())
+  projectId     String
   /// Το ανεβασμένο αρχείο στα συνημμένα του έργου. null αν διαγράφηκε.
-  attachmentId String?
-  fileName     String
-  mimeType     String
+  attachmentId  String?
+  fileName      String
+  mimeType      String
   /// Το κείμενο ΟΠΩΣ εξήχθη — αμάσκαρο. Η μάσκα εφαρμόζεται τη στιγμή που
   /// φεύγει προς το μοντέλο, ώστε τα αποσπάσματα να δείχνουν το πρωτότυπο.
-  extractedText String @db.LongText
-  charCount     Int    @default(0)
-  chunkCount    Int    @default(0)
+  extractedText String  @db.LongText
+  charCount     Int     @default(0)
+  chunkCount    Int     @default(0)
 
   // ─── Οπτική αναγνώριση (σαρωμένα αρχεία) ───────────────────────────
   // 0 = το αρχείο είχε επιλέξιμο κείμενο και δεν χρειάστηκε OCR. Πάνω από 0,
@@ -1521,7 +1572,7 @@ model ProposalItem {
   description String? @db.Text
 
   // ── βήματα & ορόσημα ──
-  suggestedDueDate DateTime?
+  suggestedDueDate    DateTime?
   /// Για προτάσεις που λένε «εβδομάδα 3» αντί για ημερομηνία: μέρες από την
   /// έναρξη του έργου. Το UI το μετατρέπει σε πραγματική ημερομηνία.
   suggestedOffsetDays Int?
@@ -1529,7 +1580,7 @@ model ProposalItem {
   priority            TaskPriority?
   /// Ορατότητα της εργασίας που θα προκύψει. Το πλάνο είναι ό,τι συμφωνήθηκε,
   /// οπότε shared — αλλά αλλάζει ανά γραμμή πριν τη μετατροπή.
-  visibility TaskVisibility @default(shared)
+  visibility          TaskVisibility @default(shared)
 
   // ── απαιτήσεις ──
   /// λειτουργική | τεχνική | εμπορική
@@ -1563,7 +1614,7 @@ model ProposalItem {
   updatedAt DateTime @updatedAt
 
   analysis ProposalAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
-  assignee User?           @relation("ProposalItemAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assignee User?            @relation("ProposalItemAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@index([analysisId])
   @@index([analysisId, kind, order])
@@ -1579,7 +1630,7 @@ model ProjectRequirement {
   code      String
 
   title       String
-  description String? @db.Text
+  description String?           @db.Text
   category    String?
   status      RequirementStatus @default(open)
 

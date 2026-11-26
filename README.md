@@ -11,6 +11,10 @@ npm run dev
 
 Open http://localhost:3000 — it redirects to `/dashboard`.
 
+## Project Tasks MCP
+
+Το repository περιλαμβάνει MCP server για ανάθεση πραγματικών PMS tasks σε MCP-compatible AI agents, με progress feed, blockers, resolution history και human approval. Ξεκίνα με `npm run mcp:tasks`. Οι οδηγίες σύνδεσης και τα διαθέσιμα tools βρίσκονται στο `mcp/README.md`.
+
 ## Architecture
 
 This is **Phase 1** of a three-phase build:

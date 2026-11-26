@@ -12,7 +12,10 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy"
+    "db:migrate:deploy": "prisma migrate deploy",
+    "mcp:tasks": "node mcp/index.mjs",
+    "mcp:tasks:test": "node --test --test-concurrency=1 mcp/*.test.mjs",
+    "mcp:tasks:test:db": "MCP_RUN_DB_TESTS=1 node --test --test-concurrency=1 mcp/*.test.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.41.2",
@@ -21,6 +24,7 @@
     "@dnd-kit/sortable": "^8.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@fluentui/react-icons": "^2.0.245",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@prisma/client": "^5.0.0",
     "axios": "^1.7.0",
     "bcryptjs": "^2.4.3",
@@ -28,6 +32,7 @@
     "clsx": "^2.1.0",
     "date-fns": "^3.0.0",
     "docx": "^9.6.1",
+    "dotenv": "^18.0.10",
     "exceljs": "^4.4.0",
     "form-data": "^4.0.0",
     "framer-motion": "^10.0.0",
@@ -42,7 +47,8 @@
     "react-dom": "^18.3.1",
     "recharts": "^3.9.2",
     "tailwind-merge": "^2.0.0",
-    "unpdf": "^1.8.0"
+    "unpdf": "^1.8.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
