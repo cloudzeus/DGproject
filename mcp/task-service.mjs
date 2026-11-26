@@ -32,16 +32,22 @@ const TASK_INCLUDE = {
 };
 
 export class TaskService {
-  constructor(prisma, { operatorUserId = process.env.MCP_OPERATOR_USER_ID, now = () => new Date() } = {}) {
+  constructor(prisma, {
+    operatorUserId = process.env.MCP_OPERATOR_USER_ID,
+    operatorUserEmail = process.env.MCP_OPERATOR_USER_EMAIL,
+    now = () => new Date(),
+  } = {}) {
     this.prisma = prisma;
-    this.operatorUserId = operatorUserId;
+    this.operatorUserId = operatorUserId?.trim() || null;
+    this.operatorUserEmail = operatorUserEmail?.trim() || null;
     this.now = now;
   }
 
   async operator(tx = this.prisma) {
-    assertCondition(this.operatorUserId, "CONFIGURATION_REQUIRED", "Set MCP_OPERATOR_USER_ID for user assignments and reviews.");
-    const user = await tx.user.findUnique({ where: { id: this.operatorUserId } });
-    assertCondition(user && !user.isAIAgent, "OPERATOR_NOT_FOUND", "The configured MCP operator user does not exist or is an AI agent.");
+    assertCondition(this.operatorUserEmail || this.operatorUserId, "CONFIGURATION_REQUIRED", "Set MCP_OPERATOR_USER_EMAIL (recommended) or MCP_OPERATOR_USER_ID for user assignments and reviews.");
+    const where = this.operatorUserEmail ? { email: this.operatorUserEmail } : { id: this.operatorUserId };
+    const user = await tx.user.findUnique({ where });
+    assertCondition(user && !user.isAIAgent, "OPERATOR_NOT_FOUND", "The configured MCP operator user does not exist or is an AI agent. Sign in to the PMS with that Microsoft account first.");
     return user;
   }
 

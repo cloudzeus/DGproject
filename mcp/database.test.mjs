@@ -25,7 +25,7 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
         userType: "employee",
       },
     });
-    const service = new TaskService(prisma, { operatorUserId: operator.id });
+    const service = new TaskService(prisma, { operatorUserEmail: operator.email });
     agent = await service.registerAgent({ agent_key: agentKey, display_name: "Temporary MCP Test Agent" });
 
     const workspace = await prisma.workspace.create({

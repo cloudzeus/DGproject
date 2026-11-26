@@ -17,11 +17,13 @@ MCP server ενσωματωμένος απευθείας στο υπάρχον A
    npx prisma generate
    ```
 
-3. Όρισε στο `.env` το ID του υπάρχοντος **ανθρώπινου** χρήστη που θα εμφανίζεται ως υπεύθυνος ανάθεσης/review:
+3. Όρισε στο `.env` το email του Microsoft account με το οποίο έχεις κάνει login στο PMS:
 
    ```env
-   MCP_OPERATOR_USER_ID=existing-human-user-id
+   MCP_OPERATOR_USER_EMAIL="email@company.gr"
    ```
+
+   Ο server βρίσκει αυτόματα το αντίστοιχο `User.id`. Ο χρήστης πρέπει να είναι **άνθρωπος** και να έχει κάνει τουλάχιστον ένα login. Υποστηρίζεται και το παλιό `MCP_OPERATOR_USER_ID` ως εναλλακτικό· αν συμπληρωθεί το email, έχει προτεραιότητα.
 
    Το `DATABASE_URL` είναι το ίδιο με αυτό της εφαρμογής. Ο MCP server φορτώνει το `.env` από τον ριζικό φάκελο του project ανεξάρτητα από το working directory του AI client.
 
@@ -35,7 +37,7 @@ npm run mcp:tasks
 
 ## Σύνδεση MCP-compatible AI client
 
-Παράδειγμα ρύθμισης, αντικαθιστώντας τα δύο paths και το operator ID:
+Παράδειγμα ρύθμισης, αντικαθιστώντας το path και το Microsoft email σου:
 
 ```json
 {
@@ -46,7 +48,7 @@ npm run mcp:tasks
         "/absolute/path/to/DGproject/mcp/index.mjs"
       ],
       "env": {
-        "MCP_OPERATOR_USER_ID": "existing-human-user-id"
+        "MCP_OPERATOR_USER_EMAIL": "email@company.gr"
       }
     }
   }
