@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { TaskForm, TaskModal, type TaskAssigneeOption, type TaskFormInitial, type TaskStatus } from '@/app/(app)/projects/[id]/task-form';
 import { createTask, updateTask } from '@/app/(app)/projects/[id]/task-actions';
+import { uploadFileWithProgress } from '@/lib/upload-client';
 
 export type BoardProjectOption = {
   id: string;
@@ -39,6 +40,7 @@ export function BoardTaskModal(props: Props) {
 
 function CreateModal({ projects, defaultProjectId, defaultStatus, defaultAssigneeIds, onClose }: CreateProps) {
   const [projectId, setProjectId] = useState<string>(defaultProjectId ?? projects[0]?.id ?? '');
+  const [attachment, setAttachment] = useState<File | null>(null);
 
   const members = useMemo(
     () => projects.find((p) => p.id === projectId)?.members ?? [],
@@ -89,10 +91,21 @@ function CreateModal({ projects, defaultProjectId, defaultStatus, defaultAssigne
         initial={initial}
         submitLabel="Δημιουργία"
         onCancel={onClose}
+        onAttachmentChange={setAttachment}
         onSubmit={async (fd) => {
           if (!projectId) return { ok: false, error: 'Επίλεξε έργο.' };
           const res = await createTask(projectId, fd);
-          if (res.ok) onClose();
+          if (res.ok) {
+            // Upload the attachment picked at create time, now that we have a taskId.
+            if (attachment && res.taskId) {
+              const up = await uploadFileWithProgress<{ ok: boolean; error?: string }>({
+                url: `/api/upload/task-attachment/${res.taskId}`,
+                file: attachment,
+              });
+              if (!up.ok) alert('Η εργασία δημιουργήθηκε, αλλά το συνημμένο απέτυχε να ανέβει.');
+            }
+            onClose();
+          }
           return res;
         }}
       />

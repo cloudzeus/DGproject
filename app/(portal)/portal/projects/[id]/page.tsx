@@ -62,6 +62,7 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
           title: true,
           description: true,
           status: true,
+          priority: true,
           dueDate: true,
           completedAt: true,
           assignees: {
@@ -135,6 +136,7 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
         title: t.title,
         description: t.description,
         status: t.status,
+        priority: t.priority,
         dueDate: t.dueDate?.toISOString() ?? null,
         completedAt: t.completedAt?.toISOString() ?? null,
         assignees: t.assignees.map((a) => ({

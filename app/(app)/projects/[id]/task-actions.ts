@@ -546,11 +546,20 @@ export async function createTask(projectId: string, formData: FormData) {
     await notifyAssignees(created.id, input.assigneeIds, actorId, 'assigned');
     await notifyTaskAssignment(created.id, input.assigneeIds, actorId);
   }
+  // Portal feed: ο πελάτης μαθαίνει ότι προστέθηκε εργασία στο έργο του
+  // (η πύλη visibility='shared' ζει μέσα στον emitter).
+  try {
+    const { notifyCustomerTaskCreated } = await import('@/lib/notifications/customer');
+    await notifyCustomerTaskCreated(created.id);
+  } catch (e) {
+    console.error('[notifications] customer task-created notify failed:', e);
+  }
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/board');
   revalidatePath('/dashboard');
-  return { ok: true };
+  // taskId lets create-forms upload an attachment picked before the task existed.
+  return { ok: true, taskId: created.id };
 }
 
 export async function updateTask(projectId: string, taskId: string, formData: FormData) {
@@ -566,6 +575,8 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
     select: {
       status: true,
       createdById: true,
+      priority: true,
+      dueDate: true,
       inProgressStartedAt: true,
       inProgressAccumulatedMs: true,
       assignees: { select: { userId: true } },
@@ -737,6 +748,43 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
       ownerId: gateProject?.ownerId ?? '',
       assigneeIds: input.assigneeIds,
     });
+  }
+
+  // Material field changes (deadline / priority) notify assignees + creator,
+  // minus the actor. Without this, an editor could move a deadline or raise
+  // priority and the people doing the work would never hear about it.
+  if (previous) {
+    const dueChanged =
+      (previous.dueDate?.getTime() ?? null) !== (input.dueDate?.getTime() ?? null);
+    const priorityChanged = previous.priority !== input.priority;
+    if (dueChanged || priorityChanged) {
+      const PRIORITY_LABEL: Record<string, string> = {
+        low: 'χαμηλή',
+        medium: 'μεσαία',
+        high: 'υψηλή',
+        urgent: 'ΕΠΕΙΓΟΥΣΑ',
+      };
+      const changes: string[] = [];
+      if (priorityChanged) changes.push(`προτεραιότητα → ${PRIORITY_LABEL[input.priority] ?? input.priority}`);
+      if (dueChanged)
+        changes.push(
+          input.dueDate
+            ? `νέα προθεσμία ${new Intl.DateTimeFormat('el-GR', { dateStyle: 'medium', timeStyle: 'short' }).format(input.dueDate)}`
+            : 'η προθεσμία αφαιρέθηκε',
+        );
+      const recipients = new Set<string>([previous.createdById, ...input.assigneeIds]);
+      recipients.delete(actorId);
+      const { createNotifications } = await import('@/lib/notifications');
+      await createNotifications(
+        [...recipients].map((userId) => ({
+          userId,
+          title: 'Ενημέρωση εργασίας',
+          message: `Στην εργασία «${input.title}»: ${changes.join(', ')}.`,
+          type: 'status_change' as const,
+          link: `/board?task=${taskId}`,
+        })),
+      );
+    }
   }
 
   revalidatePath(`/projects/${projectId}`);

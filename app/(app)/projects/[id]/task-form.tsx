@@ -107,6 +107,11 @@ type Props = {
   availableDependencies?: TaskOption[];
   /** When true: task fields render as disabled/read-only. Q&A panel stays interactive. */
   readOnly?: boolean;
+  /**
+   * Create mode only: reports the file the user picked to attach right after
+   * the task is created (the upload endpoint needs the new task's id).
+   */
+  onAttachmentChange?: (file: File | null) => void;
 };
 
 export function TaskForm({
@@ -129,6 +134,7 @@ export function TaskForm({
   isPrivileged,
   availableDependencies = [],
   readOnly = false,
+  onAttachmentChange,
 }: Props) {
   const [assignees, setAssignees] = useState<string[]>(initial?.assigneeIds ?? []);
   const [dependencies, setDependencies] = useState<string[]>(initial?.dependencyIds ?? []);
@@ -414,6 +420,12 @@ export function TaskForm({
           attachments={attachments ?? []}
           readOnly={readOnly}
         />
+      )}
+
+      {/* Create mode: no taskId exists yet — the picked file is handed to the
+          parent, which uploads it right after the task is created. */}
+      {!taskId && !readOnly && (
+        <CreateAttachmentPicker onChange={onAttachmentChange} />
       )}
 
       {projectId && taskId && currentUserId && questionMembers && (
@@ -837,6 +849,62 @@ function AttachmentsPanel({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+function CreateAttachmentPicker({ onChange }: { onChange?: (file: File | null) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+
+  function pick(f: File | null) {
+    setFile(f);
+    onChange?.(f);
+  }
+
+  return (
+    <div className="pt-3 border-t border-black/5">
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs font-medium text-fluent-neutral-70 inline-flex items-center gap-1.5">
+          <Attach20Regular className="h-4 w-4" />
+          Συνημμένο
+          <span className="text-[10px] font-normal text-fluent-neutral-50">(προαιρετικό — επισυνάπτεται με τη δημιουργία)</span>
+        </label>
+        {!file && (
+          <Button type="button" variant="secondary" size="sm" onClick={() => inputRef.current?.click()}>
+            Επιλογή αρχείου
+          </Button>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null;
+            pick(f);
+          }}
+        />
+      </div>
+      {file && (
+        <div className="flex items-center gap-2 text-sm rounded-md border border-fluent-neutral-20 px-2 py-1.5 bg-fluent-neutral-4">
+          <FileIcon mimeType={file.type} />
+          <span className="flex-1 min-w-0 truncate font-medium text-fluent-neutral-90">{file.name}</span>
+          <span className="text-[11px] text-fluent-neutral-60 tabular-nums shrink-0">
+            {formatBytes(file.size)}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              pick(null);
+              if (inputRef.current) inputRef.current.value = '';
+            }}
+            className="h-7 w-7 rounded hover:bg-fluent-accent-red hover:text-white flex items-center justify-center text-fluent-neutral-60"
+            aria-label="Αφαίρεση αρχείου"
+          >
+            <Delete20Regular className="h-4 w-4" />
+          </button>
+        </div>
       )}
     </div>
   );

@@ -232,6 +232,45 @@ export async function deleteCalendarEvent(organizer: string, eventId: string): P
   }
 }
 
+export type EventAttendeeResponse = {
+  email: string;
+  name: string | null;
+  /** Graph responseStatus.response: none | notResponded | accepted | tentativelyAccepted | declined | organizer */
+  response: string;
+};
+
+/**
+ * RSVP παρακολούθηση: διαβάζει τους attendees ενός calendar event μαζί με το
+ * responseStatus τους. Καλείται από το /api/meetings/:id/rsvp για να συγχρονίσει
+ * τα MeetingAttendee rows με την τρέχουσα κατάσταση αποδοχής στο Exchange.
+ */
+export async function getEventAttendees(
+  organizer: string,
+  eventId: string,
+): Promise<EventAttendeeResponse[]> {
+  const res = await graphFetch(
+    `/users/${encodeURIComponent(organizer)}/events/${encodeURIComponent(eventId)}?$select=attendees`,
+    { method: 'GET' },
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new GraphError(`Graph get event attendees failed (${res.status}): ${body}`, res.status);
+  }
+  const data = (await res.json()) as {
+    attendees?: Array<{
+      emailAddress?: { address?: string; name?: string };
+      status?: { response?: string };
+    }>;
+  };
+  return (data.attendees ?? [])
+    .filter((a) => a.emailAddress?.address)
+    .map((a) => ({
+      email: a.emailAddress!.address!,
+      name: a.emailAddress!.name ?? null,
+      response: a.status?.response ?? 'none',
+    }));
+}
+
 /**
  * Microsoft Teams channel post.
  *

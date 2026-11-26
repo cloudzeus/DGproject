@@ -19,7 +19,7 @@ export function BoardColumn({ id, tasks, accent, onTaskClick, onAddTask, canCrea
   const { setNodeRef, isOver } = useDroppable({ id, data: { type: 'column', status: id } });
 
   return (
-    <div className="flex flex-col w-[320px] shrink-0">
+    <div className="flex flex-col w-[320px] shrink-0 max-h-full">
       {/* Column header */}
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2">
@@ -53,7 +53,7 @@ export function BoardColumn({ id, tasks, accent, onTaskClick, onAddTask, canCrea
       <div
         ref={setNodeRef}
         className={cn(
-          'flex-1 min-h-[200px] rounded-xl p-2 space-y-2 transition-all',
+          'flex-1 min-h-[200px] overflow-y-auto overscroll-contain rounded-xl p-2 space-y-2 transition-all',
           isOver ? 'bg-fluent-blue-50 ring-2 ring-fluent-blue-300 ring-inset' : 'bg-black/[0.02]',
         )}
       >

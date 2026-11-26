@@ -98,8 +98,65 @@ export async function notifyCustomerTaskCompleted(taskId: string): Promise<void>
 }
 
 /**
+ * Η εργασία τέθηκε σε εξέλιξη — ο πελάτης βλέπει ότι η δουλειά ξεκίνησε.
+ * Ίδια πύλη ορατότητας με την ολοκλήρωση: μόνο `shared` εργασίες.
+ */
+export async function notifyCustomerTaskStarted(taskId: string): Promise<void> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { title: true, projectId: true, visibility: true },
+  })
+  if (!task || task.visibility !== 'shared') return
+
+  await notifyProjectCustomers(task.projectId, {
+    title: 'Ξεκίνησε εργασία',
+    message: `Η εργασία «${task.title}» τέθηκε σε εξέλιξη.`,
+    type: 'status_change',
+    link: `/portal/projects/${task.projectId}`,
+  })
+}
+
+/**
+ * Η εργασία περιμένει έγκριση — ο πελάτης ξέρει ότι τελείωσε η υλοποίηση και
+ * βρίσκεται στο στάδιο ελέγχου πριν την ολοκλήρωση.
+ */
+export async function notifyCustomerTaskInReview(taskId: string): Promise<void> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { title: true, projectId: true, visibility: true },
+  })
+  if (!task || task.visibility !== 'shared') return
+
+  await notifyProjectCustomers(task.projectId, {
+    title: 'Εργασία προς έλεγχο',
+    message: `Η εργασία «${task.title}» ολοκληρώθηκε υλοποίηση και είναι προς έλεγχο.`,
+    type: 'status_change',
+    link: `/portal/projects/${task.projectId}`,
+  })
+}
+
+/**
+ * Νέα εργασία στο έργο του πελάτη. Χωρίς αυτήν, ο πελάτης έβλεπε εργασίες να
+ * «εμφανίζονται» στο portal χωρίς ποτέ να ενημερωθεί ότι προστέθηκαν.
+ * Πύλη: `visibility === 'shared'` (το default) — εσωτερικές δεν ανακοινώνονται.
+ */
+export async function notifyCustomerTaskCreated(taskId: string): Promise<void> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { title: true, projectId: true, visibility: true },
+  })
+  if (!task || task.visibility !== 'shared') return
+
+  await notifyProjectCustomers(task.projectId, {
+    title: 'Νέα εργασία στο έργο',
+    message: `Η ομάδα πρόσθεσε την εργασία «${task.title}».`,
+    type: 'status_change',
+    link: `/portal/projects/${task.projectId}`,
+  })
+}
+
+/**
  * Κοινοποιήθηκε αρχείο.
- *
  * Πύλη: `visibility === 'shared'` ΚΑΙ ο ανεβάζων είναι της ομάδας. Χωρίς το
  * δεύτερο σκέλος, το αρχείο που ανεβάζει ο ίδιος ο πελάτης θα του γύριζε πίσω ως
  * ειδοποίηση για τον εαυτό του — τα αρχεία πελάτη είναι πάντα `shared`

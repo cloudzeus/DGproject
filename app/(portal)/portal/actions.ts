@@ -206,6 +206,66 @@ export async function answerPortalQuestion(questionId: string, answer: string) {
   return { ok: true as const }
 }
 
+const PORTAL_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
+type PortalPriority = (typeof PORTAL_PRIORITIES)[number]
+
+/**
+ * Ο πελάτης ορίζει την προτεραιότητα μιας εργασίας (π.χ. «επείγουσα»).
+ * Η εργασία πρέπει να είναι ορατή στον πελάτη ΚΑΙ σε έργο του scope — ακριβώς
+ * ο ίδιος κανόνας με τα σχόλια. Σε high/urgent ειδοποιούνται οι ανατεθειμένοι
+ * και ο owner του έργου, γιατί ο πελάτης σηκώνει τη σημαία «καίγομαι».
+ */
+export async function setPortalTaskPriority(taskId: string, priority: string) {
+  const { name, scope } = await requirePortal()
+  if (!PORTAL_PRIORITIES.includes(priority as PortalPriority)) {
+    return { ok: false as const, error: 'Μη έγκυρη προτεραιότητα.' }
+  }
+
+  const task = await prisma.task.findFirst({
+    where: { id: taskId, ...taskVisibilityFilter('customer') },
+    select: {
+      id: true,
+      title: true,
+      priority: true,
+      projectId: true,
+      project: { select: { ownerId: true, name: true } },
+      assignees: { select: { userId: true } },
+    },
+  })
+  if (!task || !scope.projectIds.includes(task.projectId)) {
+    return { ok: false as const, error: 'Δεν βρέθηκε η εργασία.' }
+  }
+  if (task.priority === priority) return { ok: true as const }
+
+  await prisma.task.update({
+    where: { id: task.id },
+    data: { priority: priority as PortalPriority },
+  })
+
+  if (priority === 'high' || priority === 'urgent') {
+    const label = priority === 'urgent' ? 'ΕΠΕΙΓΟΥΣΑ' : 'υψηλή'
+    const recipients = new Set<string>([
+      task.project.ownerId,
+      ...task.assignees.map((a) => a.userId),
+    ])
+    const { createNotifications } = await import('@/lib/notifications')
+    await createNotifications(
+      [...recipients].map((uid) => ({
+        userId: uid,
+        title: 'Ο πελάτης άλλαξε προτεραιότητα',
+        message: `Ο/Η ${name ?? 'πελάτης'} όρισε την εργασία «${task.title}» (${task.project.name}) ως ${label}.`,
+        type: 'assignment' as const,
+        link: `/board?task=${task.id}`,
+      })),
+    )
+  }
+
+  revalidatePath(`/portal/projects/${task.projectId}`)
+  revalidatePath(`/projects/${task.projectId}`)
+  revalidatePath('/board')
+  return { ok: true as const }
+}
+
 /**
  * Επαφές της ΔΙΚΗΣ ΤΟΥ εταιρίας, διαχειριζόμενες από τον πελάτη.
  *

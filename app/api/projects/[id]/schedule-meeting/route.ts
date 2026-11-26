@@ -135,18 +135,27 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       }
     }
 
-    // Step 3: persist as scheduled MeetingNote
+    // Step 3: persist as scheduled MeetingNote, along with the attendee list so
+    // the RSVP poller (/api/meetings/:id/rsvp) can track accept/decline per person.
     const meetingNote = await prisma.meetingNote.create({
       data: {
         projectId,
         organizerId: sessionUser.id,
         teamsMeetingId: onlineMeetingId,
         teamsJoinUrl: scheduled.joinUrl,
+        teamsEventId: scheduled.eventId,
         subject: body.subject,
         startedAt: start,
         endedAt: end,
         durationSec: Math.round((end.getTime() - start.getTime()) / 1000),
         status: 'scheduled',
+        attendees: {
+          create: allAttendees.map((a) => ({
+            email: a.email,
+            name: a.name,
+            response: 'none',
+          })),
+        },
       },
     });
 

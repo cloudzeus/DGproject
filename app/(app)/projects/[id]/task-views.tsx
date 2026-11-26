@@ -32,6 +32,7 @@ import type { TaskQuestionInfo, ProjectMemberOption } from './task-questions-pan
 import type { TaskCommentInfo } from './task-comments-panel';
 import { createTask, updateTask, deleteTask, updateTaskStatus, updateTaskDates } from './task-actions';
 import { Gantt, type GanttTask, type GanttZoom } from '@/components/gantt/gantt';
+import { uploadFileWithProgress } from '@/lib/upload-client';
 import { ChevronLeft20Regular, ChevronRight20Regular } from '@fluentui/react-icons';
 import { SpentTimeBadge } from './spent-time-badge';
 import {
@@ -105,13 +106,23 @@ type ViewProps = {
   isPrivileged: boolean;
 };
 
+/** Uploads the file the user picked in the create form, once the new task id exists. */
+async function uploadCreateAttachment(taskId: string | undefined, file: File | null) {
+  if (!taskId || !file) return;
+  const up = await uploadFileWithProgress<{ ok: boolean; error?: string }>({
+    url: `/api/upload/task-attachment/${taskId}`,
+    file,
+  });
+  if (!up.ok) alert('Η εργασία δημιουργήθηκε, αλλά το συνημμένο απέτυχε να ανέβει.');
+}
+
 function useTaskMutations(projectId: string) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [resolutionPrompt, setResolutionPrompt] = useState<ResolutionPromptInfo | null>(null);
 
   const create = (fd: FormData) =>
-    new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    new Promise<{ ok: boolean; error?: string; taskId?: string }>((resolve) => {
       startTransition(async () => {
         const res = await createTask(projectId, fd);
         router.refresh();
@@ -165,6 +176,7 @@ function useTaskMutations(projectId: string) {
 export function ListView({ projectId, projectCode, tasks, members, canEdit, projectHasCustomer, questionMembers, currentUserId, isPrivileged }: ViewProps) {
   const mutations = useTaskMutations(projectId);
   const [creating, setCreating] = useState(false);
+  const [createAttachment, setCreateAttachment] = useState<File | null>(null);
   // Track only the id; derive `editing` from the live `tasks` array so router.refresh()
   // (e.g. after asking/answering a question) re-feeds the modal with fresh data.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -254,9 +266,13 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, proj
               submitLabel="Δημιουργία"
               availableDependencies={taskOptions}
               onCancel={() => setCreating(false)}
+              onAttachmentChange={setCreateAttachment}
               onSubmit={async (fd) => {
                 const res = await mutations.create(fd);
-                if (res.ok) setCreating(false);
+                if (res.ok) {
+                  await uploadCreateAttachment(res.taskId, createAttachment);
+                  setCreating(false);
+                }
                 return res;
               }}
             />
@@ -317,6 +333,7 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, pro
     [editingId, tasks],
   );
   const setEditing = (t: TaskRow | null) => setEditingId(t?.id ?? null);
+  const [createAttachment, setCreateAttachment] = useState<File | null>(null);
   const taskOptions: TaskOption[] = useMemo(
     () => tasks.map((t) => ({ id: t.id, title: t.title, status: t.status, dueDate: t.dueDate })),
     [tasks],
@@ -400,9 +417,13 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, pro
                 dependencyIds: [],
               }}
               onCancel={() => setCreating(null)}
+              onAttachmentChange={setCreateAttachment}
               onSubmit={async (fd) => {
                 const res = await mutations.create(fd);
-                if (res.ok) setCreating(null);
+                if (res.ok) {
+                  await uploadCreateAttachment(res.taskId, createAttachment);
+                  setCreating(null);
+                }
                 return res;
               }}
             />

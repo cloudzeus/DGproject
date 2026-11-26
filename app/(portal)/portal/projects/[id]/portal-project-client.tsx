@@ -8,6 +8,7 @@ import {
   ChatBubblesQuestion16Regular,
   Comment16Regular,
   CheckmarkCircle16Filled,
+  Flag16Filled,
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,14 @@ import {
   toPortalState,
   type PortalTaskState,
 } from '@/components/portal/task-status';
-import { addPortalComment, answerPortalQuestion } from '../../actions';
+import { addPortalComment, answerPortalQuestion, setPortalTaskPriority } from '../../actions';
+
+const PRIORITY_META: Record<string, { label: string; color: string; bg: string }> = {
+  urgent: { label: 'Επείγουσα', color: '#C50F1F', bg: '#FDE7E9' },
+  high: { label: 'Υψηλή', color: '#D83B01', bg: '#FDEBE0' },
+  medium: { label: 'Μεσαία', color: '#0078D4', bg: '#E5F1FB' },
+  low: { label: 'Χαμηλή', color: '#5B5B5B', bg: '#F0F0F0' },
+};
 
 type Comment = {
   id: string;
@@ -42,6 +50,7 @@ export type PortalTask = {
   title: string;
   description: string | null;
   status: string;
+  priority: string;
   dueDate: string | null;
   completedAt: string | null;
   assignees: { name: string; avatarUrl?: string }[];
@@ -231,6 +240,19 @@ function TaskRow({
           )}
         </span>
 
+        {(task.priority === 'urgent' || task.priority === 'high') && (
+          <span
+            className="shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+            style={{
+              color: PRIORITY_META[task.priority].color,
+              backgroundColor: PRIORITY_META[task.priority].bg,
+            }}
+          >
+            <Flag16Filled className="h-3 w-3" />
+            {PRIORITY_META[task.priority].label}
+          </span>
+        )}
+
         {unanswered > 0 && (
           <span className="shrink-0 rounded-full bg-fluent-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fluent-blue-700">
             {unanswered} {unanswered === 1 ? 'ερώτηση' : 'ερωτήσεις'}
@@ -259,6 +281,8 @@ function TaskRow({
             </p>
           )}
 
+          <PriorityPicker taskId={task.id} current={task.priority} done={state === 'done'} />
+
           {task.questions.length > 0 && (
             <div className="space-y-2.5">
               <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fluent-neutral-60">
@@ -273,6 +297,71 @@ function TaskRow({
 
           <CommentsBlock taskId={task.id} comments={task.comments} />
         </div>
+      )}
+    </div>
+  );
+}
+
+function PriorityPicker({
+  taskId,
+  current,
+  done,
+}: {
+  taskId: string;
+  current: string;
+  done: boolean;
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  if (done) return null;
+
+  return (
+    <div>
+      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fluent-neutral-60">
+        <Flag16Filled className="h-3.5 w-3.5" />
+        Προτεραιότητα για εσάς
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(PRIORITY_META).map(([value, meta]) => {
+          const active = current === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              disabled={pending || active}
+              aria-pressed={active}
+              onClick={() =>
+                startTransition(async () => {
+                  setError(null);
+                  const res = await setPortalTaskPriority(taskId, value);
+                  if (!res.ok) {
+                    setError(res.error);
+                    return;
+                  }
+                  router.refresh();
+                })
+              }
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors duration-150 disabled:cursor-default ${
+                active
+                  ? 'text-white shadow-sm'
+                  : 'bg-white ring-1 ring-fluent-neutral-10 hover:bg-fluent-neutral-4 text-fluent-neutral-80'
+              }`}
+              style={active ? { backgroundColor: meta.color } : undefined}
+            >
+              {value === 'urgent' && <Flag16Filled className="h-3 w-3" />}
+              {meta.label}
+              {active && <span className="text-[10px] opacity-80">✓</span>}
+            </button>
+          );
+        })}
+      </div>
+      {error && <p className="mt-1.5 text-xs text-fluent-accent-red">{error}</p>}
+      {(current === 'urgent' || current === 'high') && (
+        <p className="mt-1.5 text-[11px] text-fluent-neutral-60">
+          Η ομάδα έχει ειδοποιηθεί για την αλλαγή προτεραιότητας.
+        </p>
       )}
     </div>
   );

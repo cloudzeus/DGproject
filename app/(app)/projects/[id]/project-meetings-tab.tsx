@@ -15,6 +15,14 @@ import {
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 
+export type MeetingAttendeeInfo = {
+  id: string;
+  email: string;
+  name: string | null;
+  response: string;
+  respondedAt: Date | null;
+};
+
 export type ProjectMeeting = {
   id: string;
   subject: string;
@@ -33,6 +41,8 @@ export type ProjectMeeting = {
   llmModel: string | null;
   llmDurationMs: number | null;
   teamsJoinUrl: string | null;
+  teamsEventId: string | null;
+  attendees: MeetingAttendeeInfo[];
   hasTranscript: boolean;
   processedAt: Date | null;
   createdAt: Date;
@@ -291,6 +301,12 @@ function MeetingRow({
                 MoM: {momOpened}/{momSent} opened
               </span>
             )}
+            {meeting.attendees.length > 0 && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-fluent-blue-50 text-fluent-blue-700 font-semibold tabular-nums">
+                <Person20Regular className="h-3 w-3" />
+                {meeting.attendees.filter((a) => a.response === 'accepted').length}/{meeting.attendees.length} αποδέχθηκαν
+              </span>
+            )}
           </div>
         </div>
       </button>
@@ -327,6 +343,13 @@ function MeetingRow({
                 tone={openQuestionsCount > 0 ? 'warn' : 'neutral'}
               />
             </div>
+            {(meeting.attendees.length > 0 || meeting.teamsEventId) && (
+              <RsvpPanel
+                meetingId={meeting.id}
+                initialAttendees={meeting.attendees}
+                canRefresh={Boolean(meeting.teamsEventId)}
+              />
+            )}
             <div className="px-4 pb-3 flex items-center justify-end gap-2">
               <Link
                 href={`/projects/${projectId}/meetings/${meeting.id}`}
@@ -350,6 +373,109 @@ function MeetingRow({
         )}
       </AnimatePresence>
     </motion.article>
+  );
+}
+
+const RSVP_META: Record<string, { label: string; cls: string }> = {
+  accepted: { label: 'Αποδέχθηκε', cls: 'bg-fluent-accent-green/10 text-fluent-accent-green' },
+  tentativelyAccepted: { label: 'Με επιφύλαξη', cls: 'bg-fluent-accent-orange/10 text-fluent-accent-orange' },
+  declined: { label: 'Απέρριψε', cls: 'bg-fluent-accent-red/10 text-fluent-accent-red' },
+  notResponded: { label: 'Χωρίς απάντηση', cls: 'bg-fluent-neutral-8 text-fluent-neutral-60' },
+  none: { label: 'Χωρίς απάντηση', cls: 'bg-fluent-neutral-8 text-fluent-neutral-60' },
+  organizer: { label: 'Διοργανωτής', cls: 'bg-fluent-blue-100 text-fluent-blue-700' },
+};
+
+function RsvpPanel({
+  meetingId,
+  initialAttendees,
+  canRefresh,
+}: {
+  meetingId: string;
+  initialAttendees: MeetingAttendeeInfo[];
+  canRefresh: boolean;
+}) {
+  const [attendees, setAttendees] = useState<MeetingAttendeeInfo[]>(initialAttendees);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+
+  async function refresh() {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/rsvp`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Αποτυχία συγχρονισμού.');
+        return;
+      }
+      setAttendees(
+        data.attendees.map((a: MeetingAttendeeInfo & { respondedAt: string | null }) => ({
+          ...a,
+          respondedAt: a.respondedAt ? new Date(a.respondedAt) : null,
+        })),
+      );
+      setLastSync(new Date());
+    } catch {
+      setError('Σφάλμα δικτύου κατά το συγχρονισμό.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const accepted = attendees.filter((a) => a.response === 'accepted').length;
+
+  return (
+    <div className="px-4 pb-3">
+      <div className="rounded-lg border border-fluent-neutral-10 bg-fluent-neutral-4/50 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fluent-neutral-60">
+            <Person20Regular className="h-3.5 w-3.5" />
+            Αποδοχή πρόσκλησης
+            <span className="tabular-nums font-normal">
+              ({accepted}/{attendees.length} αποδέχθηκαν)
+            </span>
+          </p>
+          {canRefresh && (
+            <button
+              type="button"
+              onClick={refresh}
+              disabled={refreshing}
+              className="text-[11px] font-medium text-fluent-blue-700 hover:text-fluent-blue-800 disabled:opacity-50"
+            >
+              {refreshing ? 'Συγχρονισμός…' : 'Ανανέωση από το Teams'}
+            </button>
+          )}
+        </div>
+        {error && <p className="mb-2 text-xs text-fluent-accent-red">{error}</p>}
+        {attendees.length === 0 ? (
+          <p className="text-xs text-fluent-neutral-60">Δεν καταγράφηκαν προσκεκλημένοι.</p>
+        ) : (
+          <ul className="flex flex-wrap gap-1.5">
+            {attendees.map((a) => {
+              const meta = RSVP_META[a.response] ?? RSVP_META.none;
+              return (
+                <li
+                  key={a.id}
+                  title={a.email}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${meta.cls}`}
+                >
+                  {a.response === 'accepted' && <CheckmarkCircle20Filled className="h-3.5 w-3.5" />}
+                  {a.response === 'declined' && <Warning20Regular className="h-3.5 w-3.5" />}
+                  <span className="max-w-[180px] truncate">{a.name ?? a.email}</span>
+                  <span className="opacity-75">· {meta.label}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {lastSync && (
+          <p className="mt-1.5 text-[10px] text-fluent-neutral-50 tabular-nums">
+            Τελευταίος συγχρονισμός {lastSync.toLocaleTimeString('el-GR')}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 

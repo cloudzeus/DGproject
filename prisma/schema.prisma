@@ -904,6 +904,9 @@ model MeetingNote {
   teamsMeetingId    String? @db.VarChar(500)
   teamsJoinUrl      String? @db.Text
   teamsTranscriptId String? @db.Text
+  // Graph calendar-event id — needed to poll attendee RSVP (responseStatus)
+  // after scheduling via /api/projects/:id/schedule-meeting.
+  teamsEventId      String? @db.VarChar(500)
 
   subject     String
   startedAt   DateTime
@@ -956,16 +959,37 @@ model MeetingNote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  organizer      User          @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
-  generatedTasks Task[]        @relation("MeetingGeneratedTask")
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organizer      User              @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
+  generatedTasks Task[]            @relation("MeetingGeneratedTask")
   momDeliveries  MomDelivery[]
+  attendees      MeetingAttendee[]
 
   @@index([projectId])
   @@index([organizerId])
   @@index([status])
   @@index([createdAt])
   @@index([startedAt])
+}
+
+// Προσκεκλημένος σε προγραμματισμένη Teams σύσκεψη. Η `response` αντικατοπτρίζει
+// το Graph responseStatus (none / notResponded / accepted / tentativelyAccepted /
+// declined / organizer) και ανανεώνεται από το /api/meetings/:id/rsvp.
+model MeetingAttendee {
+  id            String @id @default(cuid())
+  meetingNoteId String
+  email         String @db.VarChar(320)
+  name          String?
+  response      String @default("none") @db.VarChar(32)
+  respondedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  meetingNote MeetingNote @relation(fields: [meetingNoteId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingNoteId, email])
+  @@index([meetingNoteId])
 }
 
 // Auto-ingested Teams meetings that have a transcript and/or recording but have

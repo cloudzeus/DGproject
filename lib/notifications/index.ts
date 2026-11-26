@@ -225,13 +225,20 @@ export async function notifyTaskStatusChange(params: {
 
   // 6. Customer portal → the same chokepoint reason as step 5: every path that
   //    changes a status passes through here. The visibility gate lives inside
-  //    notifyCustomerTaskCompleted, not here, so no caller can bypass it.
-  if (to === 'done' && from !== 'done') {
-    try {
-      const { notifyCustomerTaskCompleted } = await import('./customer');
-      await notifyCustomerTaskCompleted(taskId);
-    } catch (e) {
-      console.error('[notifications] customer notify failed:', e);
+  //    each notifyCustomer* function, not here, so no caller can bypass it.
+  //    The customer hears about every meaningful milestone: started, in review,
+  //    completed — otherwise the portal feed looked "incomplete" next to the
+  //    staff feed.
+  try {
+    const customer = await import('./customer');
+    if (to === 'done' && from !== 'done') {
+      await customer.notifyCustomerTaskCompleted(taskId);
+    } else if (to === 'in_progress' && from !== 'in_progress') {
+      await customer.notifyCustomerTaskStarted(taskId);
+    } else if (to === 'review' && from !== 'review') {
+      await customer.notifyCustomerTaskInReview(taskId);
     }
+  } catch (e) {
+    console.error('[notifications] customer notify failed:', e);
   }
 }

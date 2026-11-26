@@ -2,7 +2,14 @@
 
 import { useMemo, useState } from 'react';
 import { PortalStatusBar } from '@/components/portal/status-bar';
-import { countByState, completionPct, totalOf, toPortalState, TASK_STATE_META } from '@/components/portal/task-status';
+import {
+  countByState,
+  completionPct,
+  totalOf,
+  toPortalState,
+  TASK_STATE_META,
+  PORTAL_TASK_STATES,
+} from '@/components/portal/task-status';
 import { PortalProjectClient, type PortalTask } from './portal-project-client';
 import { PortalTeam, type PortalTeamMember } from './portal-team';
 import { PortalFiles, type PortalFile } from './portal-files';
@@ -59,6 +66,17 @@ export function PortalProjectTabs({
   const openQuestions = tasks.flatMap((t) =>
     t.questions.filter((q) => !q.answer).map((q) => ({ q, task: t })),
   );
+
+  // Πρόοδος: momentum τελευταίων 7 ημερών + εκκρεμείς ληξιπρόθεσμες. Αυτά απαντούν
+  // το «προχωράει;» χωρίς να διαβάζει ο πελάτης τη λίστα.
+  const now = Date.now();
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const doneThisWeek = tasks.filter(
+    (t) => t.completedAt && now - new Date(t.completedAt).getTime() < WEEK_MS,
+  ).length;
+  const overdue = tasks.filter(
+    (t) => t.dueDate && toPortalState(t.status) !== 'done' && new Date(t.dueDate).getTime() < now,
+  ).length;
   const upcoming = tasks
     .filter((t) => t.dueDate && toPortalState(t.status) !== 'done')
     .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime())
@@ -139,6 +157,45 @@ export function PortalProjectTabs({
       <div className="pt-6">
         {tab === 'overview' && (
           <div className="space-y-5">
+            {/* ─── Πρόοδος με μια ματιά: καταστάσεις, momentum, καθυστερήσεις ─── */}
+            {total > 0 && (
+              <section className="rounded-xl border border-fluent-neutral-10 bg-white p-4 shadow-fluent-2">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 className="font-display text-sm font-semibold text-fluent-neutral-90">
+                    Η εξέλιξη του έργου
+                  </h2>
+                  <p className="text-[11px] tabular-nums text-fluent-neutral-60">
+                    {doneThisWeek > 0 && (
+                      <span className="mr-2 text-fluent-accent-green">
+                        +{doneThisWeek} αυτή την εβδομάδα
+                      </span>
+                    )}
+                    {overdue > 0 && (
+                      <span className="font-semibold text-fluent-accent-red">
+                        {overdue} σε καθυστέρηση
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {PORTAL_TASK_STATES.map((s) => (
+                    <div
+                      key={s}
+                      className="rounded-lg border border-black/5 px-3 py-2"
+                      style={{ borderLeftWidth: 3, borderLeftColor: TASK_STATE_META[s].color }}
+                    >
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-fluent-neutral-60">
+                        {TASK_STATE_META[s].label}
+                      </div>
+                      <div className="mt-0.5 font-display text-lg font-semibold tabular-nums text-fluent-neutral-90">
+                        {counts[s]}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {openQuestions.length > 0 && (
               <section className="rounded-xl border border-fluent-accent-orange/25 bg-[#fffaf5] p-4">
                 <h2 className="font-display text-sm font-semibold text-fluent-neutral-90">

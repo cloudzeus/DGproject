@@ -435,7 +435,7 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate, fo
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex gap-5 p-6 lg:p-8 min-h-full min-w-max">
+          <div className="flex gap-5 p-6 lg:p-8 h-full min-w-max items-stretch">
             {COLUMNS.map((col) => (
               <BoardColumn
                 key={col.id}
