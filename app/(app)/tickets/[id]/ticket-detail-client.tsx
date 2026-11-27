@@ -29,6 +29,7 @@ type TicketView = {
   aiTitle: string | null
   aiDescription: string | null
   aiCategory: TicketCategory | null
+  priority: TaskPriority | null
   aiPriority: TaskPriority | null
   aiSuggestedProjectId: string | null
   aiSuggestedAssigneeId: string | null
@@ -102,7 +103,7 @@ export function TicketDetailClient({ ticket, attachments, messages, projects, us
   const [title, setTitle] = useState(ticket.aiTitle ?? ticket.subject)
   const [description, setDescription] = useState(ticket.aiDescription ?? ticket.body)
   const [category, setCategory] = useState<TicketCategory>(ticket.aiCategory ?? 'other')
-  const [priority, setPriority] = useState<TaskPriority>(ticket.aiPriority ?? 'medium')
+  const [priority, setPriority] = useState<TaskPriority>(ticket.priority ?? ticket.aiPriority ?? 'medium')
   const [projectId, setProjectId] = useState(ticket.aiSuggestedProjectId ?? '')
   const [assigneeId, setAssigneeId] = useState(ticket.aiSuggestedAssigneeId ?? '')
   const [rejectReason, setRejectReason] = useState('')
@@ -152,6 +153,9 @@ export function TicketDetailClient({ ticket, attachments, messages, projects, us
           <dl className="mt-4 space-y-1 border-t border-black/5 pt-3 text-xs text-fluent-neutral-60">
             <div><dt className="inline font-semibold">Από: </dt><dd className="inline">{ticket.reporterName ? `${ticket.reporterName} · ` : ''}{ticket.reporterEmail}</dd></div>
             <div><dt className="inline font-semibold">Πηγή: </dt><dd className="inline">{ticket.sourceName}</dd></div>
+            {ticket.priority && (
+              <div><dt className="inline font-semibold">Σημαντικότητα πελάτη: </dt><dd className="inline">{PRIORITY_OPTIONS.find((option) => option.value === ticket.priority)?.label}</dd></div>
+            )}
             <div><dt className="inline font-semibold">Σελίδα: </dt><dd className="inline break-all">{ticket.originUrl || '—'}</dd></div>
             <div><dt className="inline font-semibold">Υποβλήθηκε: </dt><dd className="inline">{fmt(ticket.createdAt)}</dd></div>
           </dl>
@@ -164,11 +168,17 @@ export function TicketDetailClient({ ticket, attachments, messages, projects, us
             <div className="flex flex-wrap gap-3">
               {attachments.map((a) => (
                 <a key={a.id} href={a.url} target="_blank" rel="noreferrer" className="group w-24 text-center">
-                  <img
-                    src={a.url}
-                    alt={a.name}
-                    className="h-20 w-20 rounded-md object-cover border border-black/5 mx-auto"
-                  />
+                  {a.mimeType.startsWith('image/') ? (
+                    <img
+                      src={a.url}
+                      alt={a.name}
+                      className="h-20 w-20 rounded-md object-cover border border-black/5 mx-auto"
+                    />
+                  ) : (
+                    <span className="mx-auto flex h-20 w-20 items-center justify-center rounded-md border border-black/5 bg-neutral-50 text-xs font-semibold text-fluent-neutral-70">
+                      PDF
+                    </span>
+                  )}
                   <p className="mt-1 truncate text-[11px] text-fluent-neutral-60 group-hover:underline">{a.name}</p>
                 </a>
               ))}

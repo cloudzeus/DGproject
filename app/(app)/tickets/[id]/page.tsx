@@ -97,6 +97,7 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
           aiTitle: ticket.aiTitle,
           aiDescription: ticket.aiDescription,
           aiCategory: ticket.aiCategory,
+          priority: ticket.priority,
           aiPriority: ticket.aiPriority,
           aiSuggestedProjectId: ticket.aiSuggestedProjectId ?? ticket.source.defaultProjectId,
           aiSuggestedAssigneeId: ticket.aiSuggestedAssigneeId,

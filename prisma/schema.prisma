@@ -1370,6 +1370,8 @@ model Ticket {
   subject       String
   body          String       @db.Text // original user text, never overwritten
   status        TicketStatus @default(new)
+  // Reporter-declared priority; kept separate from the LLM triage output.
+  priority      TaskPriority?
   // Unguessable token for the public status page /t/{token} and email links
   publicToken   String       @unique @default(cuid())
 

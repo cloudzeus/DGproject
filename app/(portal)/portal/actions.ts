@@ -8,6 +8,9 @@ import { taskVisibilityFilter } from '@/lib/tasks/visibility'
 import { nextTicketCode } from '@/lib/tickets/codes'
 import { sendTicketReceivedEmail } from '@/lib/tickets/emails'
 import { checkRateLimit } from '@/lib/tickets/source-auth'
+import { sniffImage } from '@/lib/tickets/image-sniff'
+import { deleteFileFromCDN, uploadFileToCDN } from '@/lib/bunnycdn'
+import { randomUUID } from 'node:crypto'
 
 /**
  * Κάθε write του portal ξεκινά από εδώ. Χωρίς scope, καμία εγγραφή — και το
@@ -31,14 +34,40 @@ async function requirePortal(): Promise<{
   }
 }
 
-export async function createPortalTicket(input: { subject: string; body: string }) {
+const MAX_FILES = 3
+const MAX_FILE_BYTES = 5 * 1024 * 1024
+const MAX_TOTAL_BYTES = 15 * 1024 * 1024
+
+export async function createPortalTicket(input: FormData) {
   // Το scope δεν χρειάζεται εδώ — αρκεί ότι το requirePortal πέτυχε.
   const { email, name } = await requirePortal()
+  const text = (key: string) => {
+    const value = input.get(key)
+    return typeof value === 'string' ? value : ''
+  }
 
-  const subject = input.subject.trim().slice(0, 200)
-  const body = input.body.trim().slice(0, 5000)
+  const subject = text('subject').trim().slice(0, 200)
+  const body = text('body').trim().slice(0, 5000)
+  const rawPriority = text('priority') || 'medium'
   if (subject.length < 3) return { ok: false as const, error: 'Το θέμα είναι πολύ σύντομο.' }
   if (body.length < 10) return { ok: false as const, error: 'Η περιγραφή είναι πολύ σύντομη.' }
+  if (!PORTAL_PRIORITIES.includes(rawPriority as PortalPriority)) {
+    return { ok: false as const, error: 'Μη έγκυρη σημαντικότητα.' }
+  }
+  const priority = rawPriority as PortalPriority
+
+  const files = input
+    .getAll('files')
+    .filter((value): value is File => value instanceof File && value.size > 0)
+  if (files.length > MAX_FILES) {
+    return { ok: false as const, error: 'Μπορείτε να επισυνάψετε έως 3 αρχεία.' }
+  }
+  if (files.some((file) => file.size > MAX_FILE_BYTES)) {
+    return { ok: false as const, error: 'Κάθε αρχείο πρέπει να είναι έως 5 MB.' }
+  }
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_TOTAL_BYTES) {
+    return { ok: false as const, error: 'Τα συνημμένα πρέπει να είναι έως 15 MB συνολικά.' }
+  }
 
   if (!checkRateLimit(`portal:${email}`, 10, 3_600_000)) {
     return { ok: false as const, error: 'Πολλά αιτήματα σε σύντομο διάστημα. Δοκιμάστε αργότερα.' }
@@ -47,6 +76,24 @@ export async function createPortalTicket(input: { subject: string; body: string 
   const source = await prisma.ticketSource.findUnique({ where: { code: 'PORTAL' } })
   if (!source?.active) {
     return { ok: false as const, error: 'Η υποβολή αιτημάτων είναι προσωρινά ανενεργή.' }
+  }
+
+  // Ο έλεγχος γίνεται στα πραγματικά bytes, όχι στο extension ή στο δηλωμένο MIME.
+  const checked: { buffer: Buffer; name: string; mime: string; ext: string; size: number }[] = []
+  for (const file of files) {
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const image = sniffImage(buffer)
+    const pdf = buffer.length >= 5 && buffer.subarray(0, 5).toString('ascii') === '%PDF-'
+    if (!image && !pdf) {
+      return { ok: false as const, error: `Το αρχείο «${file.name.slice(0, 120)}» δεν είναι έγκυρο JPG, PNG, WebP ή PDF.` }
+    }
+    checked.push({
+      buffer,
+      name: file.name.replace(/[^\w.\-]+/g, '_').slice(0, 120) || 'attachment',
+      mime: image?.mime ?? 'application/pdf',
+      ext: image?.ext ?? 'pdf',
+      size: file.size,
+    })
   }
 
   // Ίδιος έλεγχος διπλότυπων με το /api/tickets: ίδιο θέμα, ίδιος αποστολέας, 10'.
@@ -60,31 +107,64 @@ export async function createPortalTicket(input: { subject: string; body: string 
   })
   if (duplicate) return { ok: true as const, id: duplicate.id, duplicate: true }
 
-  // Retry: το nextTicketCode μπορεί να συγκρουστεί στο unique code.
+  const uploaded: ({ path: string; url: string; name: string; size: number; mimeType: string })[] = []
   let ticket: { id: string; code: string; publicToken: string } | null = null
-  for (let attempt = 0; attempt < 3 && !ticket; attempt++) {
-    try {
-      ticket = await prisma.ticket.create({
-        data: {
-          code: await nextTicketCode(),
-          sourceId: source.id,
-          // ΠΟΤΕ από τη φόρμα — μόνο από το session. Δεν υπάρχει πεδίο να πλαστογραφηθεί.
-          reporterEmail: email,
-          reporterName: name,
-          originUrl: 'portal',
-          subject,
-          body,
-          events: { create: { type: 'created', payload: JSON.stringify({ origin: 'portal' }) } },
-        },
-        select: { id: true, code: true, publicToken: true },
+  try {
+    // Ανέβασμα πριν από το ticket: αν αποτύχει, ο πελάτης δεν μένει με αίτημα
+    // που λείπουν τα συνημμένα του. Σε σφάλμα καθαρίζονται και τα προηγούμενα uploads.
+    const batch = randomUUID()
+    for (const file of checked) {
+      const result = await uploadFileToCDN({
+        file: file.buffer,
+        filename: `${randomUUID()}.${file.ext}`,
+        folder: `tickets/portal/${batch}`,
+        contentType: file.mime,
       })
-    } catch (err: unknown) {
-      const isUnique =
-        typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002'
-      if (!isUnique || attempt === 2) throw err
+      uploaded.push({
+        path: result.path,
+        url: result.url,
+        name: file.name,
+        size: file.size,
+        mimeType: file.mime,
+      })
     }
+
+    // Retry: το nextTicketCode μπορεί να συγκρουστεί στο unique code.
+    for (let attempt = 0; attempt < 3 && !ticket; attempt++) {
+      try {
+        ticket = await prisma.ticket.create({
+          data: {
+            code: await nextTicketCode(),
+            sourceId: source.id,
+            // ΠΟΤΕ από τη φόρμα — μόνο από το session. Δεν υπάρχει πεδίο να πλαστογραφηθεί.
+            reporterEmail: email,
+            reporterName: name,
+            originUrl: 'portal',
+            subject,
+            body,
+            priority,
+            attachments: uploaded.length > 0
+              ? { create: uploaded.map(({ path: _path, ...attachment }) => attachment) }
+              : undefined,
+            events: { create: { type: 'created', payload: JSON.stringify({ origin: 'portal' }) } },
+          },
+          select: { id: true, code: true, publicToken: true },
+        })
+      } catch (err: unknown) {
+        const isUnique =
+          typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002'
+        if (!isUnique || attempt === 2) throw err
+      }
+    }
+  } catch (err) {
+    await Promise.allSettled(uploaded.map((file) => deleteFileFromCDN(file.path)))
+    console.error('[portal] ticket creation failed:', err)
+    return { ok: false as const, error: 'Η υποβολή δεν ολοκληρώθηκε. Δοκιμάστε ξανά.' }
   }
-  if (!ticket) return { ok: false as const, error: 'Κάτι πήγε στραβά. Δοκιμάστε ξανά.' }
+  if (!ticket) {
+    await Promise.allSettled(uploaded.map((file) => deleteFileFromCDN(file.path)))
+    return { ok: false as const, error: 'Κάτι πήγε στραβά. Δοκιμάστε ξανά.' }
+  }
 
   // Fire-and-forget, όπως το /api/tickets: κανένα από τα δύο δεν μπλοκάρει την απάντηση.
   void sendTicketReceivedEmail({

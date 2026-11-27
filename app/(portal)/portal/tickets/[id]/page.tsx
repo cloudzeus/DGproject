@@ -22,6 +22,8 @@ export default async function PortalTicket({ params }: { params: Promise<{ id: s
       subject: true,
       body: true,
       status: true,
+      priority: true,
+      aiPriority: true,
       createdAt: true,
       reporterEmail: true,
       resolutionSummary: true,
@@ -33,7 +35,7 @@ export default async function PortalTicket({ params }: { params: Promise<{ id: s
         orderBy: { createdAt: 'asc' },
         select: { id: true, direction: true, body: true, createdAt: true },
       },
-      attachments: { select: { id: true, name: true, url: true } },
+      attachments: { select: { id: true, name: true, url: true, mimeType: true } },
     },
   });
   // Ticket εκτός scope → 404, χωρίς να αποκαλύπτεται η ύπαρξή του.
@@ -55,6 +57,13 @@ export default async function PortalTicket({ params }: { params: Promise<{ id: s
     .filter((e): e is { id: string; label: string; at: Date } => e !== null);
 
   const canReply = !['closed', 'rejected', 'merged'].includes(ticket.status);
+  const priorityLabels = {
+    low: 'Χαμηλή',
+    medium: 'Μεσαία',
+    high: 'Υψηλή',
+    urgent: 'Επείγουσα',
+  } as const;
+  const selectedPriority = ticket.priority ?? ticket.aiPriority;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -62,11 +71,16 @@ export default async function PortalTicket({ params }: { params: Promise<{ id: s
         ← Αιτήματα
       </Link>
       <h1 className="mt-1 text-xl font-semibold text-fluent-neutral-90">{ticket.subject}</h1>
-      <div className="mt-2 flex items-center gap-3">
+      <div className="mt-2 flex flex-wrap items-center gap-3">
         <span className="font-mono text-sm text-fluent-neutral-60">{ticket.code}</span>
         <span className="rounded-full bg-fluent-blue-600 px-3 py-0.5 text-xs font-semibold text-white">
           {TICKET_PUBLIC_STATUS_LABEL[ticket.status]}
         </span>
+        {selectedPriority && (
+          <span className="rounded-full bg-fluent-neutral-8 px-3 py-0.5 text-xs font-semibold text-fluent-neutral-80">
+            Σημαντικότητα: {priorityLabels[selectedPriority]}
+          </span>
+        )}
         <span className="text-xs text-fluent-neutral-60">{fmt.format(ticket.createdAt)}</span>
       </div>
 
@@ -74,15 +88,15 @@ export default async function PortalTicket({ params }: { params: Promise<{ id: s
         <p className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-50">
           Το αίτημα
         </p>
-        <p className="mt-1 text-sm text-fluent-neutral-80 whitespace-pre-wrap">{ticket.body}</p>
+        <p className="mt-1 whitespace-pre-wrap text-sm text-fluent-neutral-80">{ticket.body}</p>
       </div>
 
       {ticket.attachments.length > 0 && (
         <div className="mt-4 rounded-xl border border-fluent-neutral-20 bg-white p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-fluent-neutral-50 mb-2">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-fluent-neutral-50">
             Συνημμένα
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3">
             {ticket.attachments.map((a) => (
               <a
                 key={a.id}
@@ -90,13 +104,24 @@ export default async function PortalTicket({ params }: { params: Promise<{ id: s
                 target="_blank"
                 rel="noopener noreferrer"
                 title={a.name}
+                className="group max-w-40 rounded-lg focus:outline-none focus:ring-2 focus:ring-fluent-blue-500"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={a.url}
-                  alt={a.name}
-                  className="h-20 w-20 rounded-lg object-cover border border-fluent-neutral-20"
-                />
+                {a.mimeType.startsWith('image/') ? (
+                  // Τα URLs προέρχονται από το δικό μας ticket attachment store.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={a.url}
+                    alt={a.name}
+                    className="h-20 w-32 rounded-lg border border-fluent-neutral-20 object-cover"
+                  />
+                ) : (
+                  <span className="flex h-20 w-32 items-center justify-center rounded-lg border border-fluent-neutral-20 bg-fluent-neutral-5 text-sm font-semibold text-fluent-neutral-70">
+                    PDF
+                  </span>
+                )}
+                <span className="mt-1 block truncate text-xs text-fluent-neutral-70 group-hover:underline">
+                  {a.name}
+                </span>
               </a>
             ))}
           </div>

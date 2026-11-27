@@ -256,7 +256,7 @@ export async function assignTicketEngineer(input: { ticketId: string; userId: st
   const ticket = await prisma.ticket.findUnique({
     where: { id: input.ticketId },
     select: {
-      id: true, status: true, taskId: true, subject: true,
+      id: true, status: true, taskId: true, subject: true, priority: true,
       aiTitle: true, aiDescription: true, aiPriority: true, aiSuggestedProjectId: true,
       source: { select: { defaultProjectId: true } },
     },
@@ -288,7 +288,7 @@ export async function assignTicketEngineer(input: { ticketId: string; userId: st
     assigneeId: input.userId,
     title: ticket.aiTitle ?? ticket.subject,
     description: ticket.aiDescription ?? '',
-    priority: ticket.aiPriority ?? 'medium',
+    priority: ticket.priority ?? ticket.aiPriority ?? 'medium',
   })
 }
 
