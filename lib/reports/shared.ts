@@ -140,6 +140,16 @@ export function hoursBetween(a: Date, b: Date): number {
   return Math.round(((b.getTime() - a.getTime()) / 3_600_000) * 10) / 10
 }
 
+export const LABOR_HOURLY_RATE_EUR = 80
+
+/** Κόστος εργασίας από πραγματικές καταχωρισμένες ώρες, όχι από εκτίμηση. */
+export function laborCostEur(trackedHours: number): number {
+  if (!Number.isFinite(trackedHours) || trackedHours < 0) {
+    throw new Error('Οι πραγματικές ώρες πρέπει να είναι μη αρνητικός finite αριθμός.')
+  }
+  return Math.round((trackedHours * LABOR_HOURLY_RATE_EUR + Number.EPSILON) * 100) / 100
+}
+
 /** % μεταβολή vs προηγούμενη περίοδο. null όταν prev=0 (δεν ορίζεται ποσοστό). */
 export function pctDelta(cur: number, prev: number): number | null {
   if (prev === 0) return null

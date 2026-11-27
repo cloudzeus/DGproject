@@ -52,6 +52,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         // default recipient for the "Νέο email" mailto launcher.
         // customerUserId can be null for internal projects.
         tasks: {
+          where: { mergedIntoId: null },
           orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
           include: {
             assignees: { include: { user: true } },
@@ -854,6 +855,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               id: project.id,
               name: project.name,
               description: project.description,
+              technologyStack: project.technologyStack,
               color: project.color,
               status: project.status,
               dueDate: project.dueDate,

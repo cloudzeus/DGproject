@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { STATUS_LABELS_EL } from '@/lib/reports/shared';
 import type { ProjectsReport, ProjectReportRow } from '@/lib/reports/projects';
 
-type SortKey = 'name' | 'completedInPeriod' | 'velocityPerWeek' | 'netFlow' | 'trackedHours' | 'avgCycleHours' | 'overdue' | 'completionPct';
+type SortKey = 'name' | 'completedInPeriod' | 'velocityPerWeek' | 'netFlow' | 'trackedHours' | 'laborCost' | 'avgCycleHours' | 'overdue' | 'completionPct';
 
 const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
   { key: 'name', label: 'Έργο' },
@@ -15,6 +15,7 @@ const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
   { key: 'velocityPerWeek', label: 'Velocity/εβδ.' },
   { key: 'netFlow', label: 'Net flow', title: 'Νέα tasks μείον ολοκληρώσεις στην περίοδο' },
   { key: 'trackedHours', label: 'Ώρες (πραγμ./εκτ.)' },
+  { key: 'laborCost', label: 'Κόστος (80 €/h)', title: 'Πραγματικές καταχωρισμένες ώρες × 80 €/ώρα' },
   { key: 'avgCycleHours', label: 'Μ.ό. cycle' },
   { key: 'overdue', label: 'Εκπρόθεσμα' },
 ];
@@ -87,6 +88,9 @@ function Row({ p }: { p: ProjectReportRow }) {
       </td>
       <td className="px-4 py-3 tabular-nums whitespace-nowrap">
         {p.trackedHours}h <span className="text-fluent-neutral-50">/ {p.estimatedHours}h</span>
+      </td>
+      <td className="px-4 py-3 tabular-nums whitespace-nowrap">
+        {p.laborCost.toLocaleString('el-GR', { style: 'currency', currency: 'EUR' })}
       </td>
       <td className="px-4 py-3 tabular-nums">
         {p.avgCycleHours === null ? '—' : `${p.avgCycleHours}h`}

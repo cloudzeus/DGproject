@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { type ReportScope, hoursBetween, mean, trackedMs, msToHours } from './shared'
+import { type ReportScope, hoursBetween, laborCostEur, mean, trackedMs, msToHours } from './shared'
 
 export type ProjectReportRow = {
   id: string
@@ -20,6 +20,7 @@ export type ProjectReportRow = {
   netFlow: number // createdInPeriod - completedInPeriod (θετικό = συσσώρευση)
   velocityPerWeek: number
   trackedHours: number
+  laborCost: number
   estimatedHours: number
   avgCycleHours: number | null
   cycleN: number
@@ -40,6 +41,7 @@ export async function buildProjectsReport(scope: ReportScope): Promise<ProjectsR
       owner: { select: { name: true, email: true } },
       members: { select: { userId: true } },
       tasks: {
+        where: { mergedIntoId: null },
         select: {
           status: true, dueDate: true, createdAt: true, completedAt: true,
           estimatedHours: true, inProgressAccumulatedMs: true, inProgressStartedAt: true,
@@ -76,6 +78,7 @@ export async function buildProjectsReport(scope: ReportScope): Promise<ProjectsR
       netFlow: createdInPeriod - completedInPeriod.length,
       velocityPerWeek: Math.round((completedInPeriod.length / weeks) * 10) / 10,
       trackedHours: msToHours(p.tasks.reduce((a, t) => a + trackedMs(t, now), 0)),
+      laborCost: laborCostEur(msToHours(p.tasks.reduce((a, t) => a + trackedMs(t, now), 0))),
       estimatedHours: Math.round(p.tasks.reduce((a, t) => a + (t.estimatedHours ?? 0), 0) * 10) / 10,
       avgCycleHours: avgCycle === null ? null : Math.round(avgCycle * 10) / 10,
       cycleN: cycles.length,

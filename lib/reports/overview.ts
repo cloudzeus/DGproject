@@ -19,8 +19,11 @@ export async function buildOverviewReport(scope: ReportScope): Promise<OverviewR
   const { range, prev, userId, isPrivileged } = scope
   const now = new Date()
   const projectWhere = isPrivileged
-    ? {}
-    : { project: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] } }
+    ? { mergedIntoId: null }
+    : {
+        mergedIntoId: null,
+        project: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
+      }
 
   const [doneCur, donePrev, ticketsCur, ticketsPrev, resolvedCur, resolvedPrev, overdueNow] = await Promise.all([
     prisma.task.findMany({

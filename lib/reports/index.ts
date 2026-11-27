@@ -64,7 +64,10 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
       include: {
         owner: { select: { id: true, name: true, email: true } },
         members: { select: { userId: true } },
-        tasks: { select: { id: true, status: true, dueDate: true, priority: true } },
+        tasks: {
+          where: { mergedIntoId: null },
+          select: { id: true, status: true, dueDate: true, priority: true },
+        },
       },
     }),
     prisma.user.findMany({
@@ -75,13 +78,14 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
         image: true,
         role: true,
         assignedTasks: {
+          where: { task: { mergedIntoId: null } },
           select: { task: { select: { id: true, status: true, dueDate: true, priority: true } } },
         },
       },
       orderBy: { name: 'asc' },
     }),
-    prisma.task.groupBy({ by: ['status'], _count: { _all: true } }),
-    prisma.task.groupBy({ by: ['priority'], _count: { _all: true } }),
+    prisma.task.groupBy({ by: ['status'], where: { mergedIntoId: null }, _count: { _all: true } }),
+    prisma.task.groupBy({ by: ['priority'], where: { mergedIntoId: null }, _count: { _all: true } }),
   ]);
 
   const projectReport: ReportProjectRow[] = projects.map((p) => {

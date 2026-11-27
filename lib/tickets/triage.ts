@@ -102,16 +102,17 @@ function maskPii(text: string): string {
 }
 
 const SYSTEM_PROMPT = `Είσαι ο τεχνικός αναλυτής του helpdesk της DGsmart, ελληνικής εταιρείας custom λογισμικού.
-Δραστηριότητες της DGsmart: ανάπτυξη custom εφαρμογών (Next.js/React, Prisma/MySQL), διασυνδέσεις με το ERP SoftOne (Soft1 Web Services, oncloud.gr), ηλεκτρονικά καταστήματα WooCommerce, εργαλεία συμμόρφωσης GDPR, συστήματα project management, ενσωματώσεις Microsoft 365 (Outlook, Teams, SharePoint).
-
-Θα λάβεις ένα ticket υποστήριξης από πελάτη, μαζί με: τα ενεργά έργα, παρόμοια παλαιότερα tasks, σχετικές εγγραφές από τη γνωσιακή βάση, και τον τρέχοντα φόρτο των μελών της ομάδας.
+Θα λάβεις ticket, το project προέλευσής του, το δηλωμένο τεχνολογικό stack, προηγούμενα tasks του ίδιου project, ενεργά projects, παρόμοια tasks, γνωσιακή βάση και φόρτο ομάδας.
 
 Καθήκοντά σου:
-1. Ξαναγράψε το αίτημα ΤΕΧΝΙΚΑ στα Ελληνικά: σαφής τίτλος (title) και τεχνική περιγραφή (description) με πιθανή αιτία, βήματα αναπαραγωγής αν προκύπτουν, και προτεινόμενη κατεύθυνση διερεύνησης.
-2. Κατηγοριοποίησε: category ∈ bug|feature|support|question|billing|other, priority ∈ low|medium|high|urgent.
-3. Πρότεινε το καταλληλότερο έργο (suggestedProjectCode από τη λίστα, αλλιώς null) — προτίμησε το προεπιλεγμένο έργο της πηγής αν ταιριάζει.
-4. Πρότεινε χρέωση (suggestedAssigneeId από τη λίστα, αλλιώς null): προτίμησε όποιον έχει δουλέψει σε παρόμοια tasks ΚΑΙ έχει τον μικρότερο φόρτο.
-5. Εξήγησε σύντομα το σκεπτικό (reasoning) και δώσε confidence 0..1.
+1. Ξαναγράψε το αίτημα ΤΕΧΝΙΚΑ στα Ελληνικά με σαφή title και description.
+2. Η description ΠΡΕΠΕΙ να ξεκινά με «Έργο προέλευσης: ΚΩΔΙΚΑΣ — ΟΝΟΜΑ» όταν δίνεται project προέλευσης. Αν δεν δίνεται, γράψε «Έργο προέλευσης: μη τεκμηριωμένο».
+3. Χρησιμοποίησε το stack και τα προηγούμενα tasks ΜΟΝΟ του project προέλευσης ως τεκμηρίωση. Μην υποθέτεις WooCommerce, WordPress, Soft1/SoftOne, Next.js, PHP, SMTP plugin ή οποιαδήποτε άλλη τεχνολογία επειδή αναφέρεται σε γενικό context ή σε άλλο project. Τεχνολογία που δεν τεκμηριώνεται από ticket, stack ή προηγούμενα tasks χαρακτηρίζεται ρητά «μη τεκμηριωμένη υπόθεση» και δεν παρουσιάζεται ως γεγονός.
+4. Διάκρινε τα ΑΝΕΞΑΡΤΗΤΑ ζητήματα του ticket. Χρησιμοποίησε ξεχωριστές ενότητες «Ζήτημα 1 — …», «Ζήτημα 2 — …» κ.ο.κ. Για κάθε ζήτημα γράψε ξεχωριστά: σύμπτωμα, πιθανές αιτίες ως υποθέσεις, βήματα αναπαραγωγής και προτεινόμενους ελέγχους/κατεύθυνση. Π.χ. μη συνεχής αρίθμηση παραγγελιών και διπλό confirmation email είναι ΔΥΟ ανεξάρτητα ζητήματα με δικούς τους ελέγχους, όχι μία κοινή αιτία. Μην τα ενοποιείς ούτε υποθέτεις ότι το ένα προκαλεί το άλλο.
+5. Κατηγοριοποίησε: category ∈ bug|feature|support|question|billing|other, priority ∈ low|medium|high|urgent.
+6. Πρότεινε project με suggestedProjectCode από τα ΕΝΕΡΓΑ ΕΡΓΑ, αλλιώς null. Προτίμησε το project προέλευσης αν ταιριάζει.
+7. Πρότεινε suggestedAssigneeId από την ΟΜΑΔΑ, αλλιώς null, με βάση σχετική εμπειρία και μικρότερο φόρτο.
+8. Δώσε σύντομο reasoning και confidence 0..1. Χαμήλωσε το confidence όταν λείπει project, stack ή τεχνική τεκμηρίωση.
 
 Απάντησε ΑΥΣΤΗΡΑ με JSON:
 {"title": string, "description": string, "category": string, "priority": string, "suggestedProjectCode": string|null, "suggestedAssigneeId": string|null, "reasoning": string, "confidence": number}`
@@ -127,11 +128,18 @@ async function runLlmTriage(ticket: {
   const apiUrl = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions'
   if (!apiKey) throw new Error('DEEPSEEK_API_KEY not set')
 
-  // Context: projects, similar tasks, KB, user load
-  const [projects, employees] = await Promise.all([
+  const projectContextSelect = {
+    id: true,
+    projectCode: true,
+    name: true,
+    description: true,
+    technologyStack: true,
+  } as const
+
+  const [projects, employees, sourceProject] = await Promise.all([
     prisma.project.findMany({
       where: { status: { in: ['planning', 'active'] } },
-      select: { id: true, projectCode: true, name: true, description: true },
+      select: projectContextSelect,
       orderBy: { updatedAt: 'desc' },
       take: 40,
     }),
@@ -139,32 +147,57 @@ async function runLlmTriage(ticket: {
       where: { userType: 'employee', role: { in: ['admin', 'manager', 'member'] } },
       select: { id: true, name: true },
     }),
+    ticket.source.defaultProjectId
+      ? prisma.project.findUnique({ where: { id: ticket.source.defaultProjectId }, select: projectContextSelect })
+      : Promise.resolve(null),
   ])
   const searchText = `${ticket.subject}\n${ticket.body}`
-  const [similarTasks, kbEntries, loads] = await Promise.all([
+  const [similarTasks, kbEntries, loads, previousProjectTasks] = await Promise.all([
     findSimilarTasks(searchText),
     findKnowledgeEntries(searchText),
     getUserLoads(employees.map((e) => e.id)),
+    ticket.source.defaultProjectId
+      ? prisma.task.findMany({
+          where: { projectId: ticket.source.defaultProjectId, mergedIntoId: null },
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            tags: { select: { name: true }, take: 12 },
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 25,
+        })
+      : Promise.resolve([]),
   ])
   const loadByUser = new Map(loads.map((l) => [l.userId, l]))
-  const defaultProject = projects.find((p) => p.id === ticket.source.defaultProjectId)
+  const sourceProjectText = sourceProject
+    ? `${sourceProject.projectCode ?? sourceProject.id} — ${maskPii(sourceProject.name)}
+Περιγραφή: ${sourceProject.description ? maskPii(sourceProject.description).slice(0, 1200) : 'μη τεκμηριωμένη'}
+Δηλωμένο stack: ${sourceProject.technologyStack ? maskPii(sourceProject.technologyStack).slice(0, 2500) : 'μη τεκμηριωμένο'}`
+    : 'Δεν έχει οριστεί project προέλευσης — project και stack είναι μη τεκμηριωμένα.'
 
   const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 16).replace('T', ' ') : 'άμεσα')
-  const userMsg = `TICKET (πηγή: ${ticket.source.name}, σελίδα: ${maskPii(ticket.originUrl)}):
+  const userMsg = `TICKET (πηγή: ${maskPii(ticket.source.name)}, σελίδα: ${maskPii(ticket.originUrl)}):
 Θέμα: ${maskPii(ticket.subject)}
 Κείμενο:
 ${maskPii(ticket.body).slice(0, 4000)}
 
-ΠΡΟΕΠΙΛΕΓΜΕΝΟ ΕΡΓΟ ΠΗΓΗΣ: ${defaultProject ? `${defaultProject.projectCode ?? defaultProject.id} — ${defaultProject.name}` : '(κανένα)'}
+PROJECT ΠΡΟΕΛΕΥΣΗΣ TICKET:
+${sourceProjectText}
+
+ΠΡΟΗΓΟΥΜΕΝΑ TASKS ΤΟΥ ΙΔΙΟΥ PROJECT:
+${previousProjectTasks.map((t) => `- "${maskPii(t.title)}" (status=${t.status}, tags=${t.tags.map((tag) => maskPii(tag.name)).join(', ') || 'κανένα'})\n  ${t.description ? maskPii(t.description).slice(0, 800) : 'Χωρίς περιγραφή'}`).join('\n') || '(κανένα καταχωρισμένο προηγούμενο task)'}
 
 ΕΝΕΡΓΑ ΕΡΓΑ:
-${projects.map((p) => `- ${p.projectCode ?? p.id}: ${p.name}${p.description ? ` — ${p.description.slice(0, 120)}` : ''}`).join('\n') || '(κανένα)'}
+${projects.map((p) => `- ${p.projectCode ?? p.id}: ${maskPii(p.name)}${p.description ? ` — ${maskPii(p.description).slice(0, 120)}` : ''}${p.technologyStack ? ` — stack: ${maskPii(p.technologyStack).slice(0, 250)}` : ''}`).join('\n') || '(κανένα)'}
 
-ΠΑΡΟΜΟΙΑ TASKS:
-${similarTasks.map((t) => `- [${t.projectName}] "${t.title}" (status=${t.status}, assignees=${t.assignees.map((a) => `${a.name ?? '?'}#${a.userId}`).join(', ') || 'κανείς'})`).join('\n') || '(κανένα)'}
+ΠΑΡΟΜΟΙΑ TASKS ΑΠΟ ΟΛΑ ΤΑ PROJECT (όχι τεκμηρίωση stack για το project προέλευσης):
+${similarTasks.map((t) => `- [${maskPii(t.projectName)}] "${maskPii(t.title)}" (status=${t.status}, assignees=${t.assignees.map((a) => `${a.name ?? '?'}#${a.userId}`).join(', ') || 'κανείς'})`).join('\n') || '(κανένα)'}
 
 ΓΝΩΣΙΑΚΗ ΒΑΣΗ:
-${kbEntries.map((k) => `- ${k.title}: ${k.problem.slice(0, 150)} → ${k.solution.slice(0, 150)}`).join('\n') || '(κενή)'}
+${kbEntries.map((k) => `- ${maskPii(k.title)}: ${maskPii(k.problem).slice(0, 150)} → ${maskPii(k.solution).slice(0, 150)}`).join('\n') || '(κενή)'}
 
 ΟΜΑΔΑ (id, όνομα, ανοιχτά tasks, ώρες επόμενου 5ημέρου, πρώτο ελεύθερο slot):
 ${employees.map((e) => {
@@ -172,7 +205,7 @@ ${employees.map((e) => {
   return `- ${e.id}: ${e.name ?? '(χωρίς όνομα)'} — ${l?.openTasks ?? 0} ανοιχτά, ${l?.busyHoursNext5Days ?? 0}h, ελεύθερος ${fmtDate(l?.nextFreeSlot ?? null)}`
 }).join('\n')}
 
-Απάντησε με το JSON.`
+Απάντησε με το JSON. Τήρησε υποχρεωτικά την αναφορά στο project προέλευσης και τον διαχωρισμό ανεξάρτητων ζητημάτων.`
 
   const res = await fetch(apiUrl, {
     method: 'POST',
@@ -205,10 +238,17 @@ ${employees.map((e) => {
   const assigneeIdRaw = typeof parsed.suggestedAssigneeId === 'string' ? parsed.suggestedAssigneeId : null
   const assignee = assigneeIdRaw ? employees.find((e) => e.id === assigneeIdRaw) : undefined
   const confidence = typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5
+  const rawDescription = String(parsed.description ?? ticket.body).trim()
+  const sourceLabel = sourceProject
+    ? `${sourceProject.projectCode ?? sourceProject.id} — ${sourceProject.name}`
+    : 'μη τεκμηριωμένο'
+  const description = rawDescription.includes('Έργο προέλευσης:')
+    ? rawDescription
+    : `Έργο προέλευσης: ${sourceLabel}\n\n${rawDescription}`
 
   return {
     title: String(parsed.title ?? ticket.subject).slice(0, 200),
-    description: String(parsed.description ?? ticket.body).slice(0, 8000),
+    description: description.slice(0, 8000),
     category,
     priority,
     projectId: project?.id ?? ticket.source.defaultProjectId ?? null,

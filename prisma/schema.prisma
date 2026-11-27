@@ -239,6 +239,8 @@ model User {
   proposalItems       ProposalItem[]           @relation("ProposalItemAssignee")
   mailConnection      UserMailConnection?
   emailMessages       EmailMessage[]           @relation("EmailMessageUser")
+  createdMergeProposals  TaskMergeProposal[]   @relation("MergeProposalCreator")
+  reviewedMergeProposals TaskMergeProposal[]   @relation("MergeProposalReviewer")
 
   @@index([email])
   @@index([role])
@@ -442,6 +444,8 @@ model Project {
   workspaceId       String
   name              String
   description       String?       @db.Text
+  /// Declared implementation stack used as factual context in AI ticket proposals.
+  technologyStack   String?       @db.Text
   status            ProjectStatus @default(planning)
   color             String
   icon              String
@@ -500,6 +504,7 @@ model Project {
   companies        ProjectCompany[]
   proposalAnalyses ProposalAnalysis[]
   requirements     ProjectRequirement[]
+  mergeProposals   TaskMergeProposal[]
 
   @@index([workspaceId])
   @@index([ownerId])
@@ -601,6 +606,10 @@ model Task {
   activeAIAgentId String?
   aiBlockedReason String? @db.Text
 
+  // ─── AI-assisted merge history ───────────────────────────────────────
+  // Secondary tasks remain for audit, but are hidden from active work and reports.
+  mergedIntoId String?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdById String
@@ -625,7 +634,11 @@ model Task {
   ticket                Ticket?           @relation("TicketTask")
   generatedFromProposal ProposalAnalysis? @relation("ProposalGeneratedTask", fields: [generatedFromProposalId], references: [id], onDelete: SetNull)
   requirements          TaskRequirement[]
+  mergedInto            Task?                @relation("TaskMerges", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedTasks           Task[]               @relation("TaskMerges")
+  mergeProposalsAsPrimary TaskMergeProposal[]
 
+  @@index([mergedIntoId])
   @@index([projectId, visibility])
   @@index([activeAIAgentId])
   @@index([projectId])
@@ -1677,4 +1690,57 @@ model TaskRequirement {
 
   @@id([taskId, requirementId])
   @@index([requirementId])
+}
+
+
+// ───────────────────── AI task/question merge review ─────────────────────
+enum TaskMergeProposalStatus {
+  pending
+  approved
+  rejected
+  superseded
+}
+
+model TaskMergeProposal {
+  id                   String   @id @default(cuid())
+  projectId            String
+  primaryTaskId        String
+  /// Ordered source task ids, including primaryTaskId.
+  taskIds              Json
+  /// Small immutable snapshot for review and audit after the merge.
+  taskSnapshots        Json
+  suggestedTitle       String
+  suggestedDescription String   @db.Text
+  rationale            String   @db.Text
+  confidence           Float
+  status               TaskMergeProposalStatus @default(pending)
+
+  /// Generated only after the authorized approver accepts the proposal.
+  explanation          String?  @db.LongText
+  recipients           Json?
+  emailSentTo          Json?
+  emailSentAt          DateTime?
+  emailError           String?  @db.Text
+
+  provider             String?
+  model                String?
+  inputTokens          Int      @default(0)
+  outputTokens         Int      @default(0)
+
+  createdById          String
+  reviewedById         String?
+  reviewedAt           DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  primaryTask          Task     @relation(fields: [primaryTaskId], references: [id], onDelete: Cascade)
+  createdBy            User     @relation("MergeProposalCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  reviewedBy           User?    @relation("MergeProposalReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([primaryTaskId])
+  @@index([createdById])
+  @@index([reviewedById])
+  @@index([createdAt])
 }

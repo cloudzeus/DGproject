@@ -428,8 +428,8 @@ export async function GET(req: NextRequest) {
       const d = await buildProjectsReport(scope);
       return csvResponse(
         `projects-report-${stampForCsv}.csv`,
-        ['Έργο', 'Κατάσταση', 'Ολοκλ. περιόδου', 'Velocity/εβδ', 'Net flow', 'Ώρες tracked', 'Ώρες εκτίμηση', 'Μ.ό. cycle (h)', 'Εκπρόθεσμα'],
-        d.rows.map((p) => [p.name, p.status, p.completedInPeriod, p.velocityPerWeek, p.netFlow, p.trackedHours, p.estimatedHours, p.avgCycleHours, p.overdue]),
+        ['Έργο', 'Κατάσταση', 'Ολοκλ. περιόδου', 'Velocity/εβδ', 'Net flow', 'Ώρες tracked', 'Κόστος εργασίας (EUR)', 'Ωριαία τιμή (EUR)', 'Ώρες εκτίμηση', 'Μ.ό. cycle (h)', 'Εκπρόθεσμα'],
+        d.rows.map((p) => [p.name, p.status, p.completedInPeriod, p.velocityPerWeek, p.netFlow, p.trackedHours, p.laborCost, 80, p.estimatedHours, p.avgCycleHours, p.overdue]),
       );
     }
     if (rawTab === 'users') {
@@ -437,8 +437,8 @@ export async function GET(req: NextRequest) {
       const d = await buildUsersReport(scope);
       return csvResponse(
         `users-report-${stampForCsv}.csv`,
-        ['Χρήστης', 'Email', 'Ολοκλ. περιόδου', 'Δ%', 'Ώρες tracked', 'Μ.ό. cycle (h)', 'Εντός προθεσμίας %', 'Ενεργός φόρτος', 'Εκπρόθεσμα', 'Tickets'],
-        d.rows.map((u) => [u.name, u.email, u.completedInPeriod, u.completedDelta, u.trackedHours, u.avgCycleHours, u.onTimePct, u.activeLoad, u.overdue, u.ticketsResolved]),
+        ['Χρήστης', 'Email', 'Ολοκλ. περιόδου', 'Δ%', 'Ώρες tracked', 'Κόστος εργασίας (EUR)', 'Ωριαία τιμή (EUR)', 'Μ.ό. cycle (h)', 'Εντός προθεσμίας %', 'Ενεργός φόρτος', 'Εκπρόθεσμα', 'Tickets'],
+        d.rows.map((u) => [u.name, u.email, u.completedInPeriod, u.completedDelta, u.trackedHours, u.laborCost, 80, u.avgCycleHours, u.onTimePct, u.activeLoad, u.overdue, u.ticketsResolved]),
       );
     }
     // rawTab === 'overview' (και οτιδήποτε άλλο) — default CSV

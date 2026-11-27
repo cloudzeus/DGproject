@@ -29,6 +29,7 @@ async function requireProjectEditor(projectId: string) {
 function parseFormData(formData: FormData) {
   const name = String(formData.get('name') ?? '').trim();
   const description = String(formData.get('description') ?? '').trim() || null;
+  const technologyStack = String(formData.get('technologyStack') ?? '').trim().slice(0, 8000) || null;
   const color = String(formData.get('color') ?? '#0078D4').trim();
   const statusRaw = String(formData.get('status') ?? 'planning') as Status;
   const status: Status = STATUSES.includes(statusRaw) ? statusRaw : 'planning';
@@ -36,7 +37,7 @@ function parseFormData(formData: FormData) {
   const dueDate = dueRaw ? new Date(dueRaw) : null;
   const ownerId = String(formData.get('ownerId') ?? '').trim();
   const memberIds = formData.getAll('memberIds').map((v) => String(v)).filter(Boolean);
-  return { name, description, color, status, dueDate, ownerId, memberIds };
+  return { name, description, technologyStack, color, status, dueDate, ownerId, memberIds };
 }
 
 export async function createProject(formData: FormData) {
@@ -74,6 +75,7 @@ export async function createProject(formData: FormData) {
     data: {
       name: input.name,
       description: input.description,
+      technologyStack: input.technologyStack,
       color: input.color,
       icon: input.name.slice(0, 1).toUpperCase(),
       status: input.status,
@@ -117,6 +119,7 @@ export async function updateProject(id: string, formData: FormData) {
   const data: {
     name: string;
     description: string | null;
+    technologyStack: string | null;
     color: string;
     status: Status;
     dueDate: Date | null;
@@ -130,6 +133,7 @@ export async function updateProject(id: string, formData: FormData) {
   } = {
     name: input.name,
     description: input.description,
+    technologyStack: input.technologyStack,
     color: input.color,
     status: input.status,
     dueDate: input.dueDate,

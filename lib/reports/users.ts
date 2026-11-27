@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { type ReportScope, hoursBetween, mean, msToHours, pctDelta, trackedMs, bucketByWeek } from './shared'
+import { type ReportScope, hoursBetween, laborCostEur, mean, msToHours, pctDelta, trackedMs, bucketByWeek } from './shared'
 
 export type UserReportRow = {
   id: string
@@ -10,6 +10,7 @@ export type UserReportRow = {
   completedInPeriod: number
   completedDelta: number | null
   trackedHours: number
+  laborCost: number
   avgCycleHours: number | null
   cycleN: number
   onTimePct: number | null
@@ -33,6 +34,7 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
     select: {
       id: true, name: true, email: true, image: true, role: true,
       assignedTasks: {
+        where: { task: { mergedIntoId: null } },
         select: {
           task: {
             select: {
@@ -65,6 +67,7 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
       completedInPeriod: completedCur.length,
       completedDelta: pctDelta(completedCur.length, completedPrev.length),
       trackedHours: msToHours(completedCur.reduce((a, t) => a + trackedMs(t, now), 0)),
+      laborCost: laborCostEur(msToHours(completedCur.reduce((a, t) => a + trackedMs(t, now), 0))),
       avgCycleHours: avgCycle === null ? null : Math.round(avgCycle * 10) / 10,
       cycleN: cycles.length,
       onTimePct: withDue.length === 0 ? null : Math.round((onTime.length / withDue.length) * 100),

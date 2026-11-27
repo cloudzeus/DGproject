@@ -23,6 +23,7 @@ export function UsersTab({ data }: { data: UsersReport }) {
             <th className="px-4 py-2.5">Χρήστης</th>
             <th className="px-4 py-2.5">Ολοκλ. στην περίοδο</th>
             <th className="px-4 py-2.5">Ώρες tracked</th>
+            <th className="px-4 py-2.5" title="Πραγματικές ώρες αναθετημένων tasks × 80 €/ώρα">Κόστος (80 €/h)</th>
             <th className="px-4 py-2.5">Μ.ό. cycle</th>
             <th className="px-4 py-2.5">Εντός προθεσμίας</th>
             <th className="px-4 py-2.5">Ενεργός φόρτος</th>
@@ -62,6 +63,9 @@ export function UsersTab({ data }: { data: UsersReport }) {
                   )}
                 </td>
                 <td className="px-4 py-3 tabular-nums">{u.trackedHours}h</td>
+                <td className="px-4 py-3 tabular-nums whitespace-nowrap">
+                  {u.laborCost.toLocaleString('el-GR', { style: 'currency', currency: 'EUR' })}
+                </td>
                 <td className="px-4 py-3 tabular-nums">
                   {u.avgCycleHours === null ? '—' : `${u.avgCycleHours}h`}
                   {u.cycleN > 0 && u.cycleN < 5 && <span className="text-[10px] text-fluent-neutral-50 ml-1">n={u.cycleN}</span>}
@@ -74,7 +78,7 @@ export function UsersTab({ data }: { data: UsersReport }) {
               {open === u.id && (
                 <tr className="border-b border-black/[0.03] bg-fluent-neutral-4/30">
                   <td />
-                  <td colSpan={8} className="px-4 py-4">
+                  <td colSpan={9} className="px-4 py-4">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                       <div>
                         <p className="text-[11px] font-semibold text-fluent-neutral-60 uppercase tracking-wider mb-2">Ολοκληρώσεις ανά εβδομάδα</p>

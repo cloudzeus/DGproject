@@ -16,6 +16,7 @@ type Props = {
     id: string;
     name: string;
     description: string | null;
+    technologyStack: string | null;
     color: string;
     status: Status;
     dueDate: Date | null;
@@ -85,6 +86,7 @@ export function ProjectActionsBar({ project, users, canEdit, sessionEmail }: Pro
               initial={{
                 name: project.name,
                 description: project.description,
+                technologyStack: project.technologyStack,
                 color: project.color,
                 status: project.status,
                 dueDate: project.dueDate,

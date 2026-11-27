@@ -165,7 +165,7 @@ export const authConfig: NextAuthConfig = {
         return auth?.user?.role === "admin";
       }
 
-      if (pathname.startsWith("/settings")) {
+      if (pathname.startsWith("/settings") || pathname.startsWith("/ai-merges")) {
         return ["admin", "manager"].includes(auth?.user?.role || "");
       }
 

@@ -21,6 +21,7 @@ import {
   TicketDiagonal24Regular, TicketDiagonal24Filled,
   BookOpen24Regular, BookOpen24Filled,
   Wrench24Regular, Wrench24Filled,
+  Bot24Regular, Bot24Filled,
   ChevronRight16Regular,
   Add16Regular,
 } from '@fluentui/react-icons';
@@ -33,6 +34,7 @@ const nav = [
   { href: '/teams-meetings', label: 'Teams Συσκέψεις', Regular: Video24Regular, Filled: Video24Filled, badgeKey: undefined },
   { href: '/questions', label: 'Ερωτήσεις', Regular: ChatBubblesQuestion24Regular, Filled: ChatBubblesQuestion24Filled, badgeKey: 'questions' as const },
   { href: '/tickets', label: 'Tickets', Regular: TicketDiagonal24Regular, Filled: TicketDiagonal24Filled, badgeKey: 'tickets' as const },
+  { href: '/ai-merges', label: 'AI Συγχωνεύσεις', Regular: Bot24Regular, Filled: Bot24Filled, badgeKey: undefined },
   { href: '/knowledge', label: 'Γνωσιακή βάση', Regular: BookOpen24Regular, Filled: BookOpen24Filled, badgeKey: undefined },
   { href: '/timeline', label: 'Χρονοδιάγραμμα', Regular: CalendarLtr24Regular, Filled: CalendarLtr24Filled, badgeKey: undefined },
   { href: '/calendar', label: 'Ημερολόγιο', Regular: Calendar24Regular, Filled: Calendar24Filled, badgeKey: undefined },
@@ -76,8 +78,8 @@ export function Sidebar({
   const isAdmin = userRole === 'admin';
   const isManagerOrAdmin = userRole === 'admin' || userRole === 'manager';
   const isCustomer = userType === 'customer';
-  // Tickets triage is an admin/manager surface only.
-  const roleNav = isManagerOrAdmin ? nav : nav.filter((n) => n.href !== '/tickets');
+  // Tickets triage and AI merge review are admin/manager surfaces only.
+  const roleNav = isManagerOrAdmin ? nav : nav.filter((n) => n.href !== '/tickets' && n.href !== '/ai-merges');
   const visibleNav = isCustomer ? roleNav.filter((n) => !CUSTOMER_HIDDEN_HREFS.has(n.href)) : roleNav;
 
   return (

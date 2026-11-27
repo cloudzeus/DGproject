@@ -26,6 +26,7 @@ type SoftOneSyncStatus = 'unsynced' | 'syncing' | 'synced' | 'conflict' | 'error
 export type ProjectFormInitial = {
   name: string;
   description: string | null;
+  technologyStack?: string | null;
   color: string;
   status: Status;
   dueDate: Date | null;
@@ -106,6 +107,21 @@ export function ProjectForm({ users, initial, onSubmit, onCancel, submitLabel }:
           rows={3}
           className="w-full px-3 py-2 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
         />
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Τεχνολογικό stack</label>
+        <textarea
+          name="technologyStack"
+          defaultValue={initial?.technologyStack ?? ''}
+          rows={3}
+          maxLength={8000}
+          placeholder="π.χ. WooCommerce/WordPress, PHP, Soft1 Web Services, SMTP plugin…"
+          className="w-full px-3 py-2 rounded-md border border-fluent-neutral-20 text-sm focus:border-fluent-blue-500 focus:outline-none"
+        />
+        <p className="mt-1 text-[11px] text-fluent-neutral-60">
+          Χρησιμοποιείται ως τεκμηριωμένο context στις AI προτάσεις tickets. Καταχωρήστε μόνο τεχνολογίες και integrations που υπάρχουν πραγματικά στο έργο.
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

@@ -15,13 +15,16 @@ export default async function BoardPage({
   const userId = session?.user?.id ?? '';
   const isPrivileged = role === 'admin' || role === 'manager';
 
-  const taskWhere = isPrivileged
-    ? {}
-    : {
-        project: {
-          OR: [{ ownerId: userId }, { members: { some: { userId } } }],
-        },
-      };
+  const taskWhere = {
+    mergedIntoId: null,
+    ...(isPrivileged
+      ? {}
+      : {
+          project: {
+            OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+          },
+        }),
+  };
 
   const projectWhere = isPrivileged
     ? {}
