@@ -78,7 +78,7 @@ export async function buildProjectsReport(scope: ReportScope): Promise<ProjectsR
       netFlow: createdInPeriod - completedInPeriod.length,
       velocityPerWeek: Math.round((completedInPeriod.length / weeks) * 10) / 10,
       trackedHours: msToHours(p.tasks.reduce((a, t) => a + trackedMs(t, now), 0)),
-      laborCost: laborCostEur(msToHours(p.tasks.reduce((a, t) => a + trackedMs(t, now), 0))),
+      laborCost: laborCostEur(Number(p.tasks.reduce((a, t) => a + trackedMs(t, now), 0)) / 3_600_000),
       estimatedHours: Math.round(p.tasks.reduce((a, t) => a + (t.estimatedHours ?? 0), 0) * 10) / 10,
       avgCycleHours: avgCycle === null ? null : Math.round(avgCycle * 10) / 10,
       cycleN: cycles.length,

@@ -67,7 +67,7 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
       completedInPeriod: completedCur.length,
       completedDelta: pctDelta(completedCur.length, completedPrev.length),
       trackedHours: msToHours(completedCur.reduce((a, t) => a + trackedMs(t, now), 0)),
-      laborCost: laborCostEur(msToHours(completedCur.reduce((a, t) => a + trackedMs(t, now), 0))),
+      laborCost: laborCostEur(Number(completedCur.reduce((a, t) => a + trackedMs(t, now), 0)) / 3_600_000),
       avgCycleHours: avgCycle === null ? null : Math.round(avgCycle * 10) / 10,
       cycleN: cycles.length,
       onTimePct: withDue.length === 0 ? null : Math.round((onTime.length / withDue.length) * 100),
