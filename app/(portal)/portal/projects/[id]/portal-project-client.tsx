@@ -37,13 +37,16 @@ type Comment = {
   fromUs: boolean;
 };
 
-type Question = {
+export type PortalQuestion = {
   id: string;
   question: string;
   answer: string | null;
   createdAt: string;
+  answeredAt: string | null;
   askedByName: string;
 };
+
+type Question = PortalQuestion;
 
 export type PortalTask = {
   id: string;
@@ -51,9 +54,12 @@ export type PortalTask = {
   description: string | null;
   status: string;
   priority: string;
+  startDate: string | null;
   dueDate: string | null;
   completedAt: string | null;
-  assignees: { name: string; avatarUrl?: string }[];
+  estimatedHours: number | null;
+  assignees: { id: string; name: string; avatarUrl?: string }[];
+  dependencyIds: string[];
   comments: Comment[];
   questions: Question[];
 };

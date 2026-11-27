@@ -260,11 +260,14 @@ export function Gantt({ rows, canEdit, zoom = 'month', anchorDate, onReschedule,
                           {formatTaskRange(t)} · {STATUS_LABEL[t.status] ?? t.status}
                         </div>
                       </div>
-                      {t.assignees[0] && (
-                        <Avatar
-                          user={{ name: t.assignees[0].name, avatarUrl: t.assignees[0].avatarUrl }}
-                          size="xs"
-                        />
+                      {t.assignees.length > 0 && (
+                        <span className="flex shrink-0 -space-x-1.5" aria-label="Μέλη που εμπλέκονται">
+                          {t.assignees.slice(0, 3).map((a) => (
+                            <span key={a.id} title={a.name}>
+                              <Avatar user={{ name: a.name, avatarUrl: a.avatarUrl }} size="xs" />
+                            </span>
+                          ))}
+                        </span>
                       )}
                     </button>
                   ))}
@@ -765,9 +768,12 @@ function GanttBar({
   return (
     <div
       ref={barRef}
+      role={onClickTask ? 'button' : undefined}
+      tabIndex={onClickTask ? 0 : undefined}
+      aria-label={onClickTask ? `${task.title} — λεπτομέρειες εργασίας` : undefined}
       className={`absolute rounded-md shadow-fluent-2 flex items-center gap-1.5 px-2 overflow-hidden select-none transition-shadow ${
         hover || drag ? 'shadow-fluent-8 ring-2 ring-white' : ''
-      } ${canEdit && onReschedule ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
+      } ${canEdit && onReschedule ? 'cursor-grab active:cursor-grabbing' : onClickTask ? 'cursor-pointer' : 'cursor-default'}`}
       style={{
         left,
         width,
@@ -780,6 +786,12 @@ function GanttBar({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (onClickTask && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onClickTask(task);
+        }
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -792,7 +804,7 @@ function GanttBar({
 
       <div className="flex items-center gap-1 shrink-0">
         {task.assignees.slice(0, 3).map((a) => (
-          <div key={a.id} className="-ml-1 first:ml-0">
+          <div key={a.id} className="-ml-1 first:ml-0" title={a.name}>
             <Avatar user={a} size="xs" />
           </div>
         ))}

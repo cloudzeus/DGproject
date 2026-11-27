@@ -63,10 +63,17 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
           description: true,
           status: true,
           priority: true,
+          startDate: true,
           dueDate: true,
           completedAt: true,
+          estimatedHours: true,
           assignees: {
-            select: { user: { select: { name: true, email: true, image: true } } },
+            select: { user: { select: { id: true, name: true, email: true, image: true } } },
+          },
+          // Δεν στέλνουμε στον πελάτη συνδέσμους προς εσωτερικές εργασίες.
+          dependencies: {
+            where: { dependsOn: taskVisibilityFilter('customer') },
+            select: { dependsOnId: true },
           },
           // Ο κανόνας έρχεται από το lib/comments/visibility.ts — μία μόνο
           // υλοποίηση, ώστε staff και portal να μη μπορούν να διαφωνήσουν.
@@ -89,6 +96,7 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
               question: true,
               answer: true,
               createdAt: true,
+              answeredAt: true,
               askedBy: { select: { name: true, email: true } },
             },
           },
@@ -114,6 +122,7 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
   return (
     <PortalProjectTabs
       meetings={meetings}
+      projectId={project.id}
       projectName={project.name}
       projectCode={project.projectCode}
       statusLabel={PROJECT_STATUS_LABEL[project.status] ?? project.status}
@@ -137,12 +146,16 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
         description: t.description,
         status: t.status,
         priority: t.priority,
+        startDate: t.startDate?.toISOString() ?? null,
         dueDate: t.dueDate?.toISOString() ?? null,
         completedAt: t.completedAt?.toISOString() ?? null,
+        estimatedHours: t.estimatedHours,
         assignees: t.assignees.map((a) => ({
+          id: a.user.id,
           name: a.user.name ?? a.user.email,
           avatarUrl: a.user.image ?? undefined,
         })),
+        dependencyIds: t.dependencies.map((dependency) => dependency.dependsOnId),
         comments: t.comments.map((c) => ({
           id: c.id,
           content: c.content,
@@ -156,6 +169,7 @@ export default async function PortalProject({ params }: { params: Promise<{ id: 
           question: q.question,
           answer: q.answer,
           createdAt: q.createdAt.toISOString(),
+          answeredAt: q.answeredAt?.toISOString() ?? null,
           askedByName: q.askedBy.name ?? q.askedBy.email,
         })),
       }))}

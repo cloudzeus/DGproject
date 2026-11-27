@@ -11,12 +11,14 @@ import {
   PORTAL_TASK_STATES,
 } from '@/components/portal/task-status';
 import { PortalProjectClient, type PortalTask } from './portal-project-client';
+import { PortalQuestionsBoard } from './portal-questions-board';
+import { PortalGantt } from './portal-gantt';
 import { PortalTeam, type PortalTeamMember } from './portal-team';
 import { PortalFiles, type PortalFile } from './portal-files';
 import { PortalMeetingCard } from '@/components/portal/meeting-card';
 import type { PortalMeetingSummary } from '@/lib/portal/meetings';
 
-type Tab = 'overview' | 'tasks' | 'team' | 'files' | 'meetings';
+type Tab = 'overview' | 'questions' | 'tasks' | 'gantt' | 'files' | 'meetings' | 'team';
 
 const fmtDay = new Intl.DateTimeFormat('el-GR', { day: 'numeric', month: 'short' });
 
@@ -39,6 +41,7 @@ export function PortalProjectTabs({
   team,
   files,
   meetings,
+  projectId,
   projectName,
   projectCode,
   statusLabel,
@@ -49,6 +52,7 @@ export function PortalProjectTabs({
   team: PortalTeamMember[];
   files: PortalFile[];
   meetings: PortalMeetingSummary[];
+  projectId: string;
   projectName: string;
   projectCode: string | null;
   statusLabel: string;
@@ -66,6 +70,7 @@ export function PortalProjectTabs({
   const openQuestions = tasks.flatMap((t) =>
     t.questions.filter((q) => !q.answer).map((q) => ({ q, task: t })),
   );
+  const questionCount = tasks.reduce((sum, task) => sum + task.questions.length, 0);
 
   // Πρόοδος: momentum τελευταίων 7 ημερών + εκκρεμείς ληξιπρόθεσμες. Αυτά απαντούν
   // το «προχωράει;» χωρίς να διαβάζει ο πελάτης τη λίστα.
@@ -88,10 +93,12 @@ export function PortalProjectTabs({
 
   const TABS: { key: Tab; label: string; count?: number }[] = [
     { key: 'overview', label: 'Επισκόπηση' },
+    { key: 'questions', label: 'Ερωτήσεις', count: questionCount },
     { key: 'tasks', label: 'Εργασίες', count: total },
-    { key: 'team', label: 'Ομάδα', count: team.length },
+    { key: 'gantt', label: 'Gantt' },
     { key: 'files', label: 'Αρχεία', count: files.length },
     { key: 'meetings', label: 'Συσκέψεις', count: meetings.length },
+    { key: 'team', label: 'Ομάδα', count: team.length },
   ];
 
   return (
@@ -206,7 +213,7 @@ export function PortalProjectTabs({
                     <button
                       key={q.id}
                       type="button"
-                      onClick={() => setTab('tasks')}
+                      onClick={() => setTab('questions')}
                       className="block w-full rounded-lg bg-white/70 px-3 py-2 text-left transition-colors hover:bg-white"
                     >
                       <p className="text-[11px] text-fluent-neutral-60">{task.title}</p>
@@ -244,9 +251,13 @@ export function PortalProjectTabs({
           </div>
         )}
 
+        {tab === 'questions' && <PortalQuestionsBoard tasks={tasks} />}
         {tab === 'tasks' && <PortalProjectClient tasks={tasks} />}
-        {tab === 'team' && <PortalTeam members={team} projectCode={projectCode} projectName={projectName} />}
+        {tab === 'gantt' && (
+          <PortalGantt projectId={projectId} projectName={projectName} color={color} tasks={tasks} />
+        )}
         {tab === 'files' && <PortalFiles files={files} />}
+        {tab === 'team' && <PortalTeam members={team} projectCode={projectCode} projectName={projectName} />}
         {tab === 'meetings' && (
           <section>
             <h2 className="mb-2 font-display text-base font-semibold text-fluent-neutral-90">
