@@ -5,6 +5,7 @@
 // `UserMailConnection` and rotated transparently here.
 
 import { prisma } from '@/lib/prisma';
+import { getAppToken } from '@/lib/microsoft-graph';
 
 const TENANT_ID = process.env.TENANT_ID ?? 'common';
 const CLIENT_ID = process.env.APPLICATION_ID ?? '';
@@ -129,6 +130,57 @@ export async function getMailAccessToken(userId: string): Promise<string> {
 
 // ─── Graph API wrappers ───────────────────────────────────────────────────
 
+export function isApplicationMailMode(): boolean {
+  return process.env.MICROSOFT_MAIL_SEND_MODE?.trim().toLowerCase() === 'application';
+}
+
+export function isApplicationMailReadMode(): boolean {
+  return process.env.MICROSOFT_MAIL_READ_MODE?.trim().toLowerCase() === 'application';
+}
+
+function getApplicationMailbox(): string {
+  const mailbox = process.env.SHARED_MAILBOX_ADDRESS?.trim();
+  if (!mailbox) {
+    throw new Error('SHARED_MAILBOX_ADDRESS is required when MICROSOFT_MAIL_SEND_MODE=application.');
+  }
+  return mailbox;
+}
+
+function getProjectReadMailbox(): string {
+  const mailbox = process.env.MICROSOFT_PROJECT_MAILBOX_ADDRESS?.trim();
+  if (!mailbox) {
+    throw new Error('MICROSOFT_PROJECT_MAILBOX_ADDRESS is required when MICROSOFT_MAIL_READ_MODE=application.');
+  }
+  return mailbox;
+}
+
+// The address persisted in EmailMessage must be the mailbox Graph actually uses.
+export function getMailFromAddress(userAddress: string): string {
+  return isApplicationMailMode() ? getApplicationMailbox() : userAddress;
+}
+
+async function getMailSendContext(userId: string): Promise<{ token: string; basePath: string }> {
+  if (isApplicationMailMode()) {
+    const mailbox = getApplicationMailbox();
+    return {
+      token: await getAppToken(),
+      basePath: `/users/${encodeURIComponent(mailbox)}`,
+    };
+  }
+  return { token: await getMailAccessToken(userId), basePath: '/me' };
+}
+
+async function getMailReadContext(userId: string): Promise<{ token: string; basePath: string }> {
+  if (isApplicationMailReadMode()) {
+    const mailbox = getProjectReadMailbox();
+    return {
+      token: await getAppToken(),
+      basePath: `/users/${encodeURIComponent(mailbox)}`,
+    };
+  }
+  return { token: await getMailAccessToken(userId), basePath: '/me' };
+}
+
 export type GraphMessage = {
   id: string;
   conversationId: string;
@@ -160,15 +212,14 @@ async function graphFetch(token: string, path: string, init?: RequestInit) {
   return res.json();
 }
 
-// Search the user's mailbox for messages containing `query` (typically the
-// project tag prefix). Graph's $search returns relevance-ranked results — for
-// our use case we re-sort client-side by receivedDateTime.
+// Search the connected user's mailbox or the dedicated project mailbox for
+// messages containing `query` (typically the project tag prefix).
 export async function searchMessages(
   userId: string,
   query: string,
   opts: { top?: number } = {},
 ): Promise<GraphMessage[]> {
-  const token = await getMailAccessToken(userId);
+  const { token, basePath } = await getMailReadContext(userId);
   const top = Math.min(opts.top ?? 50, 100);
   const params = new URLSearchParams({
     $search: `"${query}"`,
@@ -176,17 +227,17 @@ export async function searchMessages(
     $select:
       'id,conversationId,internetMessageId,subject,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime',
   });
-  const data = await graphFetch(token, `/me/messages?${params}`);
+  const data = await graphFetch(token, `${basePath}/messages?${params}`);
   return (data?.value ?? []) as GraphMessage[];
 }
 
 export async function getMessage(userId: string, messageId: string): Promise<GraphMessage> {
-  const token = await getMailAccessToken(userId);
-  return (await graphFetch(token, `/me/messages/${messageId}`)) as GraphMessage;
+  const { token, basePath } = await getMailReadContext(userId);
+  return (await graphFetch(token, `${basePath}/messages/${encodeURIComponent(messageId)}`)) as GraphMessage;
 }
 
-// Sends an HTML email from the user's mailbox via Graph. Always saves a copy
-// to Sent Items so the user has a normal Outlook record of what we sent.
+// Sends through either the connected user's mailbox (/me) or the explicitly
+// configured tenant mailbox (/users/{mailbox}). Always saves to Sent Items.
 export async function sendMail(
   userId: string,
   msg: {
@@ -196,8 +247,8 @@ export async function sendMail(
     cc?: string[];
   },
 ): Promise<void> {
-  const token = await getMailAccessToken(userId);
-  await graphFetch(token, '/me/sendMail', {
+  const { token, basePath } = await getMailSendContext(userId);
+  await graphFetch(token, `${basePath}/sendMail`, {
     method: 'POST',
     body: JSON.stringify({
       message: {
@@ -219,7 +270,7 @@ export type MailAttachment = {
 };
 
 // Send with attachments via the draft flow: create draft → attach each file →
-// send. The direct /me/sendMail payload caps around 4MB total, while a draft
+// send. The direct /sendMail payload caps around 4MB total, while a draft
 // accepts one POSTed fileAttachment of up to ~3MB per request — so the draft
 // path covers "many medium files" (the caller enforces per-file/total limits).
 // The sent message lands in Sent Items like any Outlook mail.
@@ -233,8 +284,8 @@ export async function sendMailWithAttachments(
   },
   attachments: MailAttachment[],
 ): Promise<void> {
-  const token = await getMailAccessToken(userId);
-  const draft = (await graphFetch(token, '/me/messages', {
+  const { token, basePath } = await getMailSendContext(userId);
+  const draft = (await graphFetch(token, `${basePath}/messages`, {
     method: 'POST',
     body: JSON.stringify({
       subject: msg.subject,
@@ -246,7 +297,7 @@ export async function sendMailWithAttachments(
 
   try {
     for (const a of attachments) {
-      await graphFetch(token, `/me/messages/${draft.id}/attachments`, {
+      await graphFetch(token, `${basePath}/messages/${draft.id}/attachments`, {
         method: 'POST',
         body: JSON.stringify({
           '@odata.type': '#microsoft.graph.fileAttachment',
@@ -256,10 +307,10 @@ export async function sendMailWithAttachments(
         }),
       });
     }
-    await graphFetch(token, `/me/messages/${draft.id}/send`, { method: 'POST' });
+    await graphFetch(token, `${basePath}/messages/${draft.id}/send`, { method: 'POST' });
   } catch (err) {
-    // Best effort: don't leave half-built drafts in the user's mailbox.
-    await graphFetch(token, `/me/messages/${draft.id}`, { method: 'DELETE' }).catch(() => {});
+    // Best effort: don't leave half-built drafts in the sender's mailbox.
+    await graphFetch(token, `${basePath}/messages/${draft.id}`, { method: 'DELETE' }).catch(() => {});
     throw err;
   }
 }

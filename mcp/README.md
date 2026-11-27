@@ -27,6 +27,8 @@ MCP server ενσωματωμένος απευθείας στο υπάρχον A
 
    Το `DATABASE_URL` είναι το ίδιο με αυτό της εφαρμογής. Ο MCP server φορτώνει το `.env` από τον ριζικό φάκελο του project ανεξάρτητα από το working directory του AI client.
 
+   Για το `send_task_resolution_email`, η προεπιλογή `MICROSOFT_MAIL_SEND_MODE=delegated` απαιτεί σύνδεση mailbox του operator από το `/profile`. Με `MICROSOFT_MAIL_SEND_MODE=application` η αποστολή γίνεται από το `SHARED_MAILBOX_ADDRESS` μέσω client credentials και απαιτεί Microsoft Graph **Application `Mail.Send`** με admin consent, χωρίς προσωπικό refresh token. Και στις δύο περιπτώσεις χρησιμοποιείται `saveToSentItems=true`. Αν αποτύχει το Graph, το tool επιστρέφει σφάλμα και καταγράφει `failed`, χωρίς fallback σε άλλο mailbox ή Mailgun.
+
 ## Εκκίνηση
 
 ```bash
@@ -76,6 +78,9 @@ Then list the available PMS projects.
 8. `upload_file` → ανέβασμα αποτελεσμάτων, logs ή screenshots στο task· διαθέσιμο και για project-level αρχεία.
 9. `submit_resolution` → το task μεταβαίνει σε `review`.
 10. Ο χρήστης καλεί είτε `request_changes` είτε `approve_resolution`.
+11. Μόνο αφού ο χρήστης επιβεβαιώσει παραλήπτες, `send_task_resolution_email` στέλνει την τελευταία submitted/approved απάντηση από το configured Outlook mailbox και την καταγράφει στο project Email history με τον πραγματικό αποστολέα.
+
+Κάθε MCP αλλαγή status περνά από το ίδιο `notifyTaskStatusChange` με το UI, ώστε να εκτελούνται και οι υπάρχουσες ειδοποιήσεις PMS/portal/ticket. Η αποθήκευση resolution **δεν ισοδυναμεί από μόνη της με αποστολή email**.
 
 Παράδειγμα εντολής προς AI:
 
@@ -119,6 +124,7 @@ Then list the available PMS projects.
 | `submit_resolution` | Νέα resolution attempt και μετάβαση σε `review` |
 | `request_changes` | Απόρριψη attempt με feedback και επιστροφή στον agent |
 | `approve_resolution` | Έγκριση από operator και μετάβαση σε `done` |
+| `send_task_resolution_email` | Πραγματική αποστολή resolution μέσω Outlook με επιβεβαιωμένους παραλήπτες, audit και duplicate protection |
 
 ## Αρχεία και screenshots
 

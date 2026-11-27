@@ -3,7 +3,13 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { sendMail, sendMailWithAttachments, type MailAttachment } from '@/lib/graph-mail';
+import {
+  getMailFromAddress,
+  isApplicationMailMode,
+  sendMail,
+  sendMailWithAttachments,
+  type MailAttachment,
+} from '@/lib/graph-mail';
 import { buildHiddenTagFooter } from '@/lib/email-tag';
 
 export type SendProjectEmailAttachment = {
@@ -33,13 +39,13 @@ function base64Bytes(b64: string): number {
   return Math.floor((b64.length * 3) / 4);
 }
 
-// Sends an email from the current user's Microsoft mailbox on behalf of a
-// project (and optionally a specific task or question thread), then persists
-// an EmailMessage row so the project history shows the outbound message. The
-// hidden routing tag is appended to the body so replies route themselves back.
+// Sends an email from the current user's mailbox or the configured tenant
+// mailbox on behalf of a project (and optionally a task/question thread), then
+// persists an EmailMessage row with the actual sender. The hidden routing tag
+// lets replies route themselves back to the project.
 //
-// Gated to non-customer users with a connected mailbox — customers and
-// credential-only users hit the validation guards.
+// Delegated mode requires a connected mailbox. Application mode uses Graph
+// client credentials instead; both modes remain gated to non-customer users.
 export async function sendProjectEmail(input: SendProjectEmailInput): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, error: 'Δεν είσαι συνδεδεμένος.' };
@@ -70,12 +76,14 @@ export async function sendProjectEmail(input: SendProjectEmailInput): Promise<{ 
     return { ok: false, error: 'Δεν έχεις πρόσβαση σε αυτό το έργο.' };
   }
 
-  const conn = await prisma.userMailConnection.findUnique({ where: { userId: session.user.id } });
-  if (!conn) {
-    return {
-      ok: false,
-      error: 'Δεν έχει συνδεθεί mailbox. Σύνδεσε το από το /profile.',
-    };
+  if (!isApplicationMailMode()) {
+    const conn = await prisma.userMailConnection.findUnique({ where: { userId: session.user.id } });
+    if (!conn) {
+      return {
+        ok: false,
+        error: 'Δεν έχει συνδεθεί mailbox. Σύνδεσε το από το /profile.',
+      };
+    }
   }
 
   // Validate recipients server-side — clients can be coerced.
@@ -115,8 +123,10 @@ export async function sendProjectEmail(input: SendProjectEmailInput): Promise<{ 
   }
 
   const bodyWithTag = `${input.bodyHtml}\n${buildHiddenTagFooter(project.projectCode, input.taskId ?? null)}`;
+  let fromAddress = session.user.email;
 
   try {
+    fromAddress = getMailFromAddress(session.user.email);
     if (attachments.length > 0) {
       await sendMailWithAttachments(session.user.id, { subject, bodyHtml: bodyWithTag, to, cc }, attachments);
     } else {
@@ -133,7 +143,7 @@ export async function sendProjectEmail(input: SendProjectEmailInput): Promise<{ 
         taskId: input.taskId ?? null,
         userId: session.user.id,
         subject,
-        fromAddress: session.user.email,
+        fromAddress,
         toAddresses: to.join(', '),
         ccAddresses: cc.length > 0 ? cc.join(', ') : null,
         bodyHtml: bodyWithTag,
@@ -153,7 +163,7 @@ export async function sendProjectEmail(input: SendProjectEmailInput): Promise<{ 
       taskId: input.taskId ?? null,
       userId: session.user.id,
       subject,
-      fromAddress: session.user.email,
+      fromAddress,
       toAddresses: to.join(', '),
       ccAddresses: cc.length > 0 ? cc.join(', ') : null,
       bodyHtml: bodyWithTag,

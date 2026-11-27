@@ -163,5 +163,13 @@ export function createMcpServer(service) {
     task_id: z.string().min(1),
   }, (args) => service.approveResolution(args));
 
+  register("send_task_resolution_email", "Send the latest submitted or approved resolution as a real Outlook email from the configured operator. Use only with user-confirmed recipients. Records success/failure in project email history and prevents duplicate sends of the same resolution.", {
+    task_id: z.string().min(1),
+    agent_key: agentKey,
+    to: z.array(z.string().trim().email()).min(1).max(20),
+    cc: z.array(z.string().trim().email()).max(20).default([]),
+    subject: z.string().trim().min(1).max(500).optional(),
+  }, (args) => service.sendTaskResolutionEmail(args));
+
   return server;
 }

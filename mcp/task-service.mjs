@@ -41,11 +41,15 @@ export class TaskService {
     operatorUserId = process.env.MCP_OPERATOR_USER_ID,
     operatorUserEmail = process.env.MCP_OPERATOR_USER_EMAIL,
     now = () => new Date(),
+    onStatusChange = null,
+    resolutionEmail = null,
   } = {}) {
     this.prisma = prisma;
     this.operatorUserId = operatorUserId?.trim() || null;
     this.operatorUserEmail = operatorUserEmail?.trim() || null;
     this.now = now;
+    this.onStatusChange = onStatusChange;
+    this.resolutionEmail = resolutionEmail;
   }
 
   async operator(tx = this.prisma) {
@@ -384,7 +388,7 @@ export class TaskService {
   }
 
   async startTask({ task_id, agent_key }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, agent_key)]);
       const task = await this.requireAssignedTask(tx, task_id, agent.id);
       assertCondition(!["review", "done"].includes(task.status), "INVALID_STATE", `A ${task.status} task cannot be started.`);
@@ -402,12 +406,14 @@ export class TaskService {
         include: TASK_INCLUDE,
       });
       await this.logActivity(tx, { task, actorId: operator.id, action: "moved", metadata: { source: "mcp", from: task.status, to: "in_progress", resumed: Boolean(task.aiBlockedReason) } });
-      return updated;
+      return { task: updated, from: task.status, actorId: operator.id };
     });
+    await this.emitStatusChange(result);
+    return result.task;
   }
 
   async releaseTask({ task_id, agent_key }) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, agent_key)]);
       const task = await this.requireAssignedTask(tx, task_id, agent.id);
       assertCondition(!["review", "done"].includes(task.status), "INVALID_STATE", `A ${task.status} task cannot be released.`);
@@ -424,8 +430,10 @@ export class TaskService {
       });
       await tx.taskAssignee.deleteMany({ where: { taskId, userId: operator.id } });
       await this.logActivity(tx, { task, actorId: operator.id, action: "updated", metadata: { source: "mcp", event: "assignment_released", from: task.status, to: "todo" } });
-      return updated;
+      return { task: updated, from: task.status, actorId: operator.id };
     });
+    await this.emitStatusChange(result);
+    return result.task;
   }
 
   async reportProgress({ task_id, agent_key, message }) {
@@ -460,7 +468,7 @@ export class TaskService {
   }
 
   async submitResolution(input) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, input.agent_key)]);
       const task = await this.requireAssignedTask(tx, input.task_id, agent.id);
       assertCondition(task.status === "in_progress", "INVALID_STATE", "Only an in-progress task can submit a resolution.");
@@ -487,13 +495,15 @@ export class TaskService {
         include: TASK_INCLUDE,
       });
       await this.logActivity(tx, { task, actorId: operator.id, action: "moved", metadata: { source: "mcp", from: task.status, to: "review", resolutionId: resolution.id } });
-      return { task: updated, resolution };
+      return { task: updated, resolution, from: task.status, actorId: operator.id };
     });
+    await this.emitStatusChange(result);
+    return { task: result.task, resolution: result.resolution };
   }
 
   async requestChanges({ task_id, feedback }) {
     const operator = await this.operator();
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const task = await tx.task.findUnique({ where: { id: task_id }, include: { project: true, resolutions: { orderBy: { submittedAt: "desc" }, take: 1 } } });
       assertCondition(task, "TASK_NOT_FOUND", `Task '${task_id}' was not found.`);
       assertCondition(task.status === "review" && task.resolutions[0]?.status === "submitted", "INVALID_STATE", "The task has no submitted resolution awaiting review.");
@@ -513,13 +523,15 @@ export class TaskService {
       });
       await tx.comment.create({ data: { taskId: task_id, authorId: operator.id, content: `[CHANGES REQUESTED] ${feedback}`, visibility: "internal" } });
       await this.logActivity(tx, { task, actorId: operator.id, action: "moved", metadata: { source: "mcp", from: "review", to: "in_progress", resolutionId: resolution.id, feedback } });
-      return { task: updated, resolution };
+      return { task: updated, resolution, from: "review", actorId: operator.id };
     });
+    await this.emitStatusChange(result);
+    return { task: result.task, resolution: result.resolution };
   }
 
   async approveResolution({ task_id }) {
     const operator = await this.operator();
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const task = await tx.task.findUnique({ where: { id: task_id }, include: { project: true, resolutions: { orderBy: { submittedAt: "desc" }, take: 1 } } });
       assertCondition(task, "TASK_NOT_FOUND", `Task '${task_id}' was not found.`);
       assertCondition(task.status === "review" && task.resolutions[0]?.status === "submitted", "INVALID_STATE", "The task has no submitted resolution awaiting review.");
@@ -539,8 +551,91 @@ export class TaskService {
         include: TASK_INCLUDE,
       });
       await this.logActivity(tx, { task, actorId: operator.id, action: "completed", metadata: { source: "mcp", resolutionId: resolution.id } });
-      return { task: updated, resolution };
+      return { task: updated, resolution, from: "review", actorId: operator.id };
     });
+    await this.emitStatusChange(result);
+    return { task: result.task, resolution: result.resolution };
+  }
+
+  async sendTaskResolutionEmail(input) {
+    assertCondition(this.resolutionEmail?.sendMail && this.resolutionEmail?.render, "EMAIL_NOT_CONFIGURED", "The MCP resolution email integration is not configured.");
+    const [operator, agent] = await Promise.all([this.operator(), this.agent(this.prisma, input.agent_key)]);
+    const task = await this.requireAssignedTask(this.prisma, input.task_id, agent.id);
+    const resolution = task.resolutions[0];
+    assertCondition(resolution && ["submitted", "approved"].includes(resolution.status), "INVALID_STATE", "The task has no submitted or approved resolution to email.");
+
+    const normalize = (items) => [...new Set(items.map((item) => item.trim().toLowerCase()).filter(Boolean))];
+    const to = normalize(input.to);
+    const cc = normalize(input.cc ?? []).filter((item) => !to.includes(item));
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    assertCondition(to.length > 0 && to.every((item) => emailPattern.test(item)), "INVALID_RECIPIENT", "Provide at least one valid To recipient.");
+    assertCondition(cc.every((item) => emailPattern.test(item)), "INVALID_RECIPIENT", "One or more Cc recipients are invalid.");
+
+    const rendered = this.resolutionEmail.render({ task, resolution, subject: input.subject });
+    const auditKey = `mcp_resolution:${resolution.id}`;
+    const existing = await this.prisma.emailMessage.findFirst({
+      where: { taskId: task.id, direction: "outbound", appliedNote: { contains: auditKey } },
+      orderBy: { ingestedAt: "desc" },
+    });
+    if (existing?.status === "sent") return { already_sent: true, email: existing };
+    assertCondition(existing?.status !== "pending", "EMAIL_SEND_UNKNOWN", "A previous send attempt has an unknown outcome. Check the project email history and Outlook before retrying.");
+
+    const data = {
+      direction: "outbound",
+      status: "pending",
+      projectId: task.projectId,
+      taskId: task.id,
+      userId: operator.id,
+      subject: rendered.subject,
+      fromAddress: this.resolutionEmail.getFromAddress?.(operator.email) ?? operator.email,
+      toAddresses: to.join(", "),
+      ccAddresses: cc.length > 0 ? cc.join(", ") : null,
+      bodyHtml: rendered.html,
+      bodyPreview: resolution.summary.replace(/<[^>]+>/g, "").slice(0, 280),
+      sentAt: null,
+      appliedNote: auditKey,
+    };
+    const message = existing
+      ? await this.prisma.emailMessage.update({ where: { id: existing.id }, data })
+      : await this.prisma.emailMessage.create({ data });
+
+    try {
+      await this.resolutionEmail.sendMail(operator.id, { subject: rendered.subject, bodyHtml: rendered.html, to, cc });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      await this.prisma.emailMessage.update({
+        where: { id: message.id },
+        data: { status: "failed", appliedNote: `${auditKey}; send_failed: ${detail.slice(0, 220)}` },
+      });
+      throw new McpServiceError("EMAIL_SEND_FAILED", `Outlook send failed: ${detail}`);
+    }
+
+    const sent = await this.prisma.emailMessage.update({
+      where: { id: message.id },
+      data: { status: "sent", sentAt: this.now(), appliedNote: auditKey },
+    });
+    return { already_sent: false, email: sent };
+  }
+
+  async emitStatusChange({ task, from, actorId }) {
+    if (!this.onStatusChange || from === task.status) return;
+    try {
+      await this.onStatusChange({
+        taskId: task.id,
+        projectId: task.projectId,
+        actorId,
+        from,
+        to: task.status,
+        approverId: task.project.approverId,
+        taskTitle: task.title,
+        projectName: task.project.name,
+        createdById: task.createdById,
+        ownerId: task.project.ownerId,
+        assigneeIds: task.assignees.map((assignee) => assignee.userId),
+      });
+    } catch (error) {
+      console.error(`[mcp:notifications] Status ${from} -> ${task.status} for task ${task.id}:`, error);
+    }
   }
 
   async requireAssignedTask(tx, taskId, agentId) {

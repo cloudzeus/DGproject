@@ -106,7 +106,7 @@ export function TenantUsersPanel() {
                 {state.tenant?.displayName ?? 'Συνδεδεμένος tenant'}
               </p>
               <p className="text-xs text-fluent-neutral-60 truncate">
-                {state.tenant?.defaultDomain ?? 'Azure AD'} · {state.users.length} χρήστες
+                {state.tenant?.domains.join(', ') || state.tenant?.defaultDomain || 'Azure AD'} · {state.users.length} χρήστες
               </p>
             </div>
             <CheckmarkCircle16Filled className="text-fluent-accent-green h-5 w-5" />

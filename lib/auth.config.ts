@@ -4,6 +4,7 @@ import Azure from "next-auth/providers/azure-ad";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcryptjs from "bcryptjs";
 import { prisma } from "./prisma";
+import { isMicrosoftEmailIncluded } from "./microsoft-domains";
 
 // Extend the Session interface to include role
 declare module "next-auth" {
@@ -135,6 +136,7 @@ export const authConfig: NextAuthConfig = {
         const oid = (profile as { oid?: string } | undefined)?.oid;
         const azureAdId = oid ?? account.providerAccountId;
         if (user.email) {
+          if (!isMicrosoftEmailIncluded(user.email)) return false;
           await prisma.user.upsert({
             where: { email: user.email },
             update: {

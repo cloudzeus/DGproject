@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { searchMessages } from '@/lib/graph-mail';
+import { isApplicationMailReadMode, searchMessages } from '@/lib/graph-mail';
 import { parseEmailTag } from '@/lib/email-tag';
 
 // Diagnostic endpoint — verifies the mailbox OAuth handshake worked and the
@@ -17,11 +17,14 @@ export async function GET(request: Request) {
   if (!session?.user?.id) return new NextResponse('Unauthorized', { status: 401 });
   if (session.user.userType === 'customer') return new NextResponse('Forbidden', { status: 403 });
 
-  const conn = await prisma.userMailConnection.findUnique({
-    where: { userId: session.user.id },
-    select: { scopes: true, expiresAt: true, createdAt: true },
-  });
-  if (!conn) {
+  const applicationRead = isApplicationMailReadMode();
+  const conn = applicationRead
+    ? null
+    : await prisma.userMailConnection.findUnique({
+        where: { userId: session.user.id },
+        select: { scopes: true, expiresAt: true, createdAt: true },
+      });
+  if (!applicationRead && !conn) {
     return NextResponse.json(
       { error: 'mailbox_not_connected', hint: 'Visit /profile and click "Σύνδεση mailbox".' },
       { status: 400 },
@@ -48,11 +51,13 @@ export async function GET(request: Request) {
     return NextResponse.json({
       query: q,
       count: items.length,
-      connection: {
-        connectedAt: conn.createdAt,
-        accessTokenExpiresAt: conn.expiresAt,
-        scopes: conn.scopes,
-      },
+      connection: applicationRead
+        ? { mode: 'application' }
+        : {
+            connectedAt: conn!.createdAt,
+            accessTokenExpiresAt: conn!.expiresAt,
+            scopes: conn!.scopes,
+          },
       messages: items,
     });
   } catch (err) {

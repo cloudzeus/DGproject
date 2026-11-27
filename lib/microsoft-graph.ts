@@ -1,3 +1,5 @@
+import { isMicrosoftDomainIncluded, isMicrosoftEmailIncluded } from '@/lib/microsoft-domains';
+
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
@@ -23,7 +25,7 @@ export function graphIsConfigured(): boolean {
   );
 }
 
-async function getAppToken(): Promise<string> {
+export async function getAppToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.token;
 
   const tenantId = process.env.TENANT_ID;
@@ -55,7 +57,11 @@ async function getAppToken(): Promise<string> {
   return data.access_token;
 }
 
-export async function getTenantInfo(): Promise<{ displayName: string; defaultDomain: string | null } | null> {
+export async function getTenantInfo(): Promise<{
+  displayName: string;
+  defaultDomain: string | null;
+  domains: string[];
+} | null> {
   try {
     const token = await getAppToken();
     const res = await fetch(`${GRAPH}/organization?$select=displayName,verifiedDomains`, {
@@ -68,8 +74,10 @@ export async function getTenantInfo(): Promise<{ displayName: string; defaultDom
     };
     const org = data.value?.[0];
     if (!org) return null;
-    const def = org.verifiedDomains?.find((d) => d.isDefault)?.name ?? org.verifiedDomains?.[0]?.name ?? null;
-    return { displayName: org.displayName, defaultDomain: def };
+    const verifiedDomains = (org.verifiedDomains ?? []).filter((d) => isMicrosoftDomainIncluded(d.name));
+    const domains = verifiedDomains.map((d) => d.name.toLowerCase());
+    const def = verifiedDomains.find((d) => d.isDefault)?.name.toLowerCase() ?? domains[0] ?? null;
+    return { displayName: org.displayName, defaultDomain: def, domains };
   } catch {
     return null;
   }
@@ -116,7 +124,7 @@ export async function listTenantUsers(): Promise<TenantUser[]> {
     for (const u of data.value) {
       if (u.accountEnabled === false) continue;
       const email = (u.mail ?? u.userPrincipalName ?? '').toLowerCase();
-      if (!email) continue;
+      if (!isMicrosoftEmailIncluded(email)) continue;
       users.push({
         id: u.id,
         displayName: u.displayName ?? email,

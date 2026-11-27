@@ -3,7 +3,12 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { getMessage, searchMessages } from '@/lib/graph-mail';
+import {
+  getMessage,
+  isApplicationMailReadMode,
+  searchMessages,
+  type GraphMessage,
+} from '@/lib/graph-mail';
 import { buildEmailTag, parseEmailTag } from '@/lib/email-tag';
 import { analyzeProjectEmail, type EmailAnalysisResult } from '@/lib/llm/email-analysis';
 
@@ -43,7 +48,15 @@ export type InboxCandidate = {
   alreadyIngested: boolean;
 };
 
-// Searches the user's mailbox for messages tagged with this project's code
+function messageBelongsToProject(message: GraphMessage, projectCode: string): boolean {
+  const tag =
+    parseEmailTag(message.subject) ??
+    parseEmailTag(message.bodyPreview) ??
+    parseEmailTag(message.body?.content ?? '');
+  return tag?.projectCode === projectCode;
+}
+
+// Searches the user's mailbox or the dedicated project mailbox for messages tagged with this project's code
 // (plus its conversation fallback) and returns candidates the user can pick
 // for ingest. Messages we've already stored are flagged but still listed.
 export async function searchProjectInbox(projectId: string): Promise<{
@@ -58,11 +71,13 @@ export async function searchProjectInbox(projectId: string): Promise<{
     return { ok: false, error: err instanceof Error ? err.message : 'access' };
   }
   if (!project.projectCode) return { ok: false, error: 'Το έργο δεν έχει project code.' };
-  const conn = await prisma.userMailConnection.findUnique({
-    where: { userId: session.user.id },
-    select: { id: true },
-  });
-  if (!conn) return { ok: false, error: 'Δεν έχει συνδεθεί mailbox.' };
+  if (!isApplicationMailReadMode()) {
+    const conn = await prisma.userMailConnection.findUnique({
+      where: { userId: session.user.id },
+      select: { id: true },
+    });
+    if (!conn) return { ok: false, error: 'Δεν έχει συνδεθεί mailbox.' };
+  }
 
   // Two passes: tag match + conversationId fallback for replies that stripped
   // the tag. We dedupe by internetMessageId.
@@ -82,7 +97,7 @@ export async function searchProjectInbox(projectId: string): Promise<{
     distinct: ['conversationId'],
     take: 20,
   });
-  // (Graph $search doesn't filter by conversationId; we'd need /me/messages?
+  // (Graph $search doesn't filter by conversationId; we'd need a messages?
   // $filter=conversationId eq '...' per id. Skip for now — tag match is the
   // primary path. Listed here as a TODO for the next iteration.)
   void knownConvIds;
@@ -94,12 +109,7 @@ export async function searchProjectInbox(projectId: string): Promise<{
   const existingSet = new Set(existing.map((e) => e.internetMessageId));
 
   const candidates: InboxCandidate[] = messages
-    .filter((m) => {
-      // Only include messages whose parsed tag matches THIS project (in case
-      // search returns near-matches like FPM:p=PRJ-2026-001X).
-      const tag = parseEmailTag(m.subject) ?? parseEmailTag(m.bodyPreview);
-      return tag?.projectCode === project.projectCode;
-    })
+    .filter((m) => messageBelongsToProject(m, project.projectCode!))
     .map((m) => ({
       graphMessageId: m.id,
       conversationId: m.conversationId,
@@ -159,6 +169,9 @@ export async function analyzePicked(
   for (const messageId of graphMessageIds) {
     try {
       const msg = await getMessage(session.user.id, messageId);
+      if (!project.projectCode || !messageBelongsToProject(msg, project.projectCode)) {
+        throw new Error('Το email δεν φέρει το tag αυτού του project.');
+      }
       const bodyText =
         msg.body?.content?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ??
         msg.bodyPreview ??
@@ -250,6 +263,9 @@ export async function applyIngest(
     let msg;
     try {
       msg = await getMessage(session.user.id, d.graphMessageId);
+      if (!project.projectCode || !messageBelongsToProject(msg, project.projectCode)) {
+        throw new Error('Το email δεν φέρει το tag αυτού του project.');
+      }
     } catch (err) {
       console.error('applyIngest fetch failed', err);
       continue;
@@ -327,11 +343,13 @@ export async function applyIngest(
     });
   }
 
-  // Re-stamp the user's lastSyncedAt so the next inbox scan only needs deltas.
-  await prisma.userMailConnection.update({
-    where: { userId: session.user.id },
-    data: { lastSyncedAt: new Date() },
-  });
+  // Delegated sync state belongs to the user; application mode uses the shared mailbox.
+  if (!isApplicationMailReadMode()) {
+    await prisma.userMailConnection.update({
+      where: { userId: session.user.id },
+      data: { lastSyncedAt: new Date() },
+    });
+  }
 
   revalidatePath(`/projects/${projectId}`);
   // Surface the tag we used so the UI can render a confirmation toast.

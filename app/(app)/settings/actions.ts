@@ -26,7 +26,7 @@ export type FetchTenantResult =
   | {
       ok: true;
       configured: true;
-      tenant: { displayName: string; defaultDomain: string | null } | null;
+      tenant: { displayName: string; defaultDomain: string | null; domains: string[] } | null;
       users: TenantRow[];
     }
   | { ok: false; configured: false; error?: string }
