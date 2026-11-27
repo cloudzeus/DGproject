@@ -92,6 +92,16 @@ export function createMcpServer(service) {
     visibility: z.enum(["internal", "shared"]).default("internal"),
   }, (args) => service.uploadFile(args));
 
+  register("upload_task_attachment", "Upload a local file up to 10 MiB to an assigned PMS task. The MCP server reads file_path directly from disk; no base64 is required. PNG and JPEG MIME types are detected automatically.", {
+    task_id: z.string().min(1),
+    agent_key: agentKey,
+    file_path: z.string().min(1).max(4096),
+    file_name: z.string().min(1).max(255).optional(),
+    title: z.string().max(500).optional(),
+    mime_type: z.string().max(150).optional(),
+    visibility: z.enum(["internal", "shared"]).default("internal"),
+  }, (args) => service.uploadTaskAttachment(args));
+
   register("create_task", "Create a task in the real PMS as the configured human operator. Acceptance criteria and related files are added to its description.", {
     project_id: z.string().min(1),
     title: z.string().min(1).max(500),
@@ -104,6 +114,16 @@ export function createMcpServer(service) {
     due_date: z.string().datetime().optional(),
     estimated_hours: z.number().positive().max(100000).optional(),
   }, (args) => service.createTask(args));
+
+  register("update_task", "Update estimated hours and dependencies on an existing assigned PMS task. Omitted fields remain unchanged; dependencies are added or removed without replacing the rest.", {
+    task_id: z.string().min(1),
+    agent_key: agentKey,
+    hours: z.number().min(0).max(100000).optional(),
+    dependencies: z.object({
+      add: z.array(z.string().min(1)).max(100).default([]),
+      remove: z.array(z.string().min(1)).max(100).default([]),
+    }).optional(),
+  }, (args) => service.updateTask(args));
 
   register("assign_tasks", "Assign selected PMS tasks to an AI agent on behalf of the human operator. Existing agents are protected unless force=true.", {
     task_ids: z.array(z.string().min(1)).min(1).max(50),
@@ -127,10 +147,11 @@ export function createMcpServer(service) {
     message: z.string().min(1).max(5000),
   }, (args) => service.reportProgress(args));
 
-  register("add_task_comment", "Add an internal AI comment to the PMS task feed.", {
+  register("add_task_comment", "Add an AI comment to the PMS task feed. Use visibility=shared to make it visible in the customer portal; the default remains internal.", {
     task_id: z.string().min(1),
     agent_key: agentKey,
     comment: z.string().min(1).max(5000),
+    visibility: z.enum(["internal", "shared"]).default("internal"),
   }, (args) => service.addTaskComment(args));
 
   register("report_blocker", "Mark an in-progress AI task as blocked and record the reason in the PMS feed.", {

@@ -17,8 +17,8 @@ test("MCP protocol exposes the PMS workflow and serializes results", async () =>
   try {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 22);
-    for (const name of ["list_projects", "create_project", "assign_tasks", "report_progress", "submit_resolution", "approve_resolution", "send_task_resolution_email", "list_files", "read_file", "upload_file"]) {
+    assert.equal(tools.length, 24);
+    for (const name of ["list_projects", "create_project", "update_task", "assign_tasks", "report_progress", "submit_resolution", "approve_resolution", "send_task_resolution_email", "list_files", "read_file", "upload_file", "upload_task_attachment"]) {
       assert.ok(tools.some((tool) => tool.name === name), `Missing MCP tool: ${name}`);
     }
 

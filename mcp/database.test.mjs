@@ -1,6 +1,8 @@
 import "dotenv/config";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { TaskService } from "./task-service.mjs";
 import { deleteBunnyObject } from "./attachments.mjs";
@@ -13,6 +15,7 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const agentKey = `test-agent-${suffix}`;
   const uploadedStoragePaths = [];
+  const temporaryDirectory = await mkdtemp(join(process.cwd(), ".mcp-db-test-"));
   let operator;
   let agent;
 
@@ -58,6 +61,26 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
       assert.ok(task.assignees.every((assignee) => assignee.user.isAIAgent === false));
     }
 
+    const withoutDependency = await service.updateTask({
+      task_id: dependent.id,
+      agent_key: agentKey,
+      hours: 4,
+      dependencies: { remove: [prerequisite.id] },
+    });
+    assert.equal(withoutDependency.estimatedHours, 4);
+    assert.deepEqual(withoutDependency.dependencies, []);
+    const withDependency = await service.updateTask({
+      task_id: dependent.id,
+      agent_key: agentKey,
+      dependencies: { add: [prerequisite.id] },
+    });
+    assert.equal(withDependency.estimatedHours, 4);
+    assert.deepEqual(withDependency.dependencies.map((dependency) => dependency.dependsOnId), [prerequisite.id]);
+    await assert.rejects(
+      service.updateTask({ task_id: prerequisite.id, agent_key: agentKey, dependencies: { add: [dependent.id] } }),
+      (error) => error.code === "DEPENDENCY_CYCLE",
+    );
+
     const projectFile = await service.uploadFile({
       project_id: project.id,
       agent_key: agentKey,
@@ -68,13 +91,15 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
     assert.equal(projectFile.uploadedById, operator.id);
     assert.equal(projectFile.uploadedBy.email, operator.email);
     uploadedStoragePaths.push(new URL(projectFile.url).pathname.slice(1));
-    const taskScreenshot = await service.uploadFile({
+    const screenshotPath = join(temporaryDirectory, "screenshot.png");
+    await writeFile(screenshotPath, Buffer.from(PNG_BASE64, "base64"));
+    const taskScreenshot = await service.uploadTaskAttachment({
       task_id: prerequisite.id,
       agent_key: agentKey,
-      file_name: "screenshot.png",
-      content_base64: PNG_BASE64,
-      mime_type: "image/png",
+      file_path: screenshotPath,
     });
+    assert.equal(taskScreenshot.name, "screenshot.png");
+    assert.equal(taskScreenshot.mimeType, "image/png");
     uploadedStoragePaths.push(new URL(taskScreenshot.url).pathname.slice(1));
 
     const downloadedText = await service.readFile({ attachment_id: projectFile.id });
@@ -95,6 +120,13 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
     );
 
     await service.startTask({ task_id: prerequisite.id, agent_key: agentKey });
+    const sharedComment = await service.addTaskComment({
+      task_id: prerequisite.id,
+      agent_key: agentKey,
+      comment: "Shared MCP integration comment",
+      visibility: "shared",
+    });
+    assert.equal(sharedComment.visibility, "shared");
     await service.reportProgress({ task_id: prerequisite.id, agent_key: agentKey, message: "Implementation complete; running checks." });
     await service.reportBlocker({ task_id: prerequisite.id, agent_key: agentKey, reason: "Waiting for a test fixture." });
     assert.equal((await service.getTask({ task_id: prerequisite.id })).aiBlockedReason, "Waiting for a test fixture.");
@@ -148,5 +180,6 @@ test("real Prisma/MySQL assignment, files, feed, resolution and dependency workf
     await prisma.user.deleteMany({ where: { id: { in: [operator?.id, agent?.id].filter(Boolean) } } });
     await prisma.user.deleteMany({ where: { agentKey } });
     await prisma.$disconnect();
+    await rm(temporaryDirectory, { recursive: true, force: true });
   }
 });

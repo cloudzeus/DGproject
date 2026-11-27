@@ -34,6 +34,31 @@ export function unfinishedDependencies(task) {
     .map(({ id, title, status }) => ({ id, title, status }));
 }
 
+export function hasDependencyCycle(edges, taskId, dependencyIds) {
+  const adjacency = new Map();
+  for (const edge of edges) {
+    if (edge.taskId === taskId) continue;
+    if (!adjacency.has(edge.taskId)) adjacency.set(edge.taskId, new Set());
+    adjacency.get(edge.taskId).add(edge.dependsOnId);
+  }
+  adjacency.set(taskId, new Set(dependencyIds));
+
+  const visiting = new Set();
+  const visited = new Set();
+  function visit(id) {
+    if (visiting.has(id)) return true;
+    if (visited.has(id)) return false;
+    visiting.add(id);
+    for (const next of adjacency.get(id) ?? []) {
+      if (visit(next)) return true;
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return false;
+  }
+  return visit(taskId);
+}
+
 export function canApprove({ project, user }) {
   if (user.role === "admin" || project.ownerId === user.id) return true;
   return project.approverId != null && project.approverId === user.id;

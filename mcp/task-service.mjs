@@ -3,6 +3,7 @@ import {
   assertCanApprove,
   assertCondition,
   buildTaskDescription,
+  hasDependencyCycle,
   timerUpdate,
   unfinishedDependencies,
 } from "./workflow.mjs";
@@ -11,6 +12,7 @@ import {
   deleteBunnyObject,
   downloadAttachment,
   MAX_ATTACHMENT_BYTES,
+  readAttachmentFromPath,
   safeFileName,
   uploadAttachmentToBunny,
 } from "./attachments.mjs";
@@ -255,7 +257,16 @@ export class TaskService {
     return downloadAttachment(attachment);
   }
 
-  async uploadFile(input) {
+  async uploadTaskAttachment(input) {
+    const file = await readAttachmentFromPath(input.file_path);
+    return this.uploadFile({
+      ...input,
+      file_name: input.file_name ?? file.fileName,
+      mime_type: input.mime_type ?? file.mimeType,
+    }, file.buffer);
+  }
+
+  async uploadFile(input, fileBuffer = null) {
     assertCondition(Boolean(input.task_id) !== Boolean(input.project_id), "INVALID_PARENT", "Provide exactly one of task_id or project_id.");
     const [operator, agent] = await Promise.all([this.operator(), this.agent(this.prisma, input.agent_key)]);
     const task = input.task_id
@@ -269,7 +280,7 @@ export class TaskService {
       assertCondition(task.activeAIAgentId === agent.id, "NOT_ASSIGNED", "Only the assigned AI agent can upload files to this task.");
     }
 
-    const buffer = decodeFileContent(input);
+    const buffer = fileBuffer ?? decodeFileContent(input);
     assertCondition(buffer.length > 0, "EMPTY_FILE", "Empty files cannot be uploaded.");
     assertCondition(buffer.length <= MAX_ATTACHMENT_BYTES, "FILE_TOO_LARGE", `Files cannot exceed ${MAX_ATTACHMENT_BYTES} bytes.`);
     const fileName = safeFileName(input.file_name);
@@ -348,6 +359,74 @@ export class TaskService {
       });
       await this.logActivity(tx, { task, actorId: operator.id, action: "created", metadata: { source: "mcp" } });
       return task;
+    });
+  }
+
+  async updateTask(input) {
+    const hasHours = input.hours !== undefined;
+    const add = [...new Set(input.dependencies?.add ?? [])];
+    const remove = [...new Set(input.dependencies?.remove ?? [])];
+    assertCondition(hasHours || add.length > 0 || remove.length > 0, "NO_CHANGES", "Provide hours or at least one dependency to add or remove.");
+    assertCondition(!add.some((id) => remove.includes(id)), "INVALID_DEPENDENCY", "The same dependency cannot be added and removed in one update.");
+    assertCondition(!add.includes(input.task_id), "DEPENDENCY_CYCLE", "A task cannot depend on itself.");
+
+    return this.prisma.$transaction(async (tx) => {
+      const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, input.agent_key)]);
+      const task = await this.requireAssignedTask(tx, input.task_id, agent.id);
+      const requestedIds = [...new Set([...add, ...remove])];
+      if (requestedIds.length > 0) {
+        const dependencyTasks = await tx.task.findMany({
+          where: { id: { in: requestedIds } },
+          select: { id: true, projectId: true },
+        });
+        assertCondition(dependencyTasks.length === requestedIds.length, "INVALID_DEPENDENCY", "One or more dependency tasks do not exist.");
+        assertCondition(dependencyTasks.every((item) => item.projectId === task.projectId), "INVALID_DEPENDENCY", "Dependencies must belong to the same project.");
+      }
+
+      const existing = new Set((task.dependencies ?? []).map((dependency) => dependency.dependsOnId));
+      const finalDependencyIds = new Set([...existing].filter((id) => !remove.includes(id)));
+      for (const id of add) finalDependencyIds.add(id);
+      if (add.length > 0) {
+        const edges = await tx.taskDependency.findMany({
+          where: { task: { projectId: task.projectId } },
+          select: { taskId: true, dependsOnId: true },
+        });
+        assertCondition(
+          !hasDependencyCycle(edges, input.task_id, [...finalDependencyIds]),
+          "DEPENDENCY_CYCLE",
+          "The requested dependencies would create a dependency cycle.",
+        );
+      }
+
+      if (remove.length > 0) {
+        await tx.taskDependency.deleteMany({ where: { taskId: input.task_id, dependsOnId: { in: remove } } });
+      }
+      for (const dependsOnId of add) {
+        await tx.taskDependency.upsert({
+          where: { taskId_dependsOnId: { taskId: input.task_id, dependsOnId } },
+          create: { taskId: input.task_id, dependsOnId },
+          update: {},
+        });
+      }
+
+      const updated = await tx.task.update({
+        where: { id: input.task_id },
+        data: hasHours ? { estimatedHours: input.hours } : {},
+        include: TASK_INCLUDE,
+      });
+      await this.logActivity(tx, {
+        task,
+        actorId: operator.id,
+        action: "updated",
+        metadata: {
+          source: "mcp",
+          event: "task_details_updated",
+          estimatedHours: hasHours ? input.hours : null,
+          addedDependencies: add,
+          removedDependencies: remove,
+        },
+      });
+      return updated;
     });
   }
 
@@ -440,17 +519,17 @@ export class TaskService {
     return this.addAgentComment({ task_id, agent_key, content: message, event: "progress" });
   }
 
-  async addTaskComment({ task_id, agent_key, comment }) {
-    return this.addAgentComment({ task_id, agent_key, content: comment, event: "comment" });
+  async addTaskComment({ task_id, agent_key, comment, visibility = "internal" }) {
+    return this.addAgentComment({ task_id, agent_key, content: comment, event: "comment", visibility });
   }
 
-  async addAgentComment({ task_id, agent_key, content, event }) {
+  async addAgentComment({ task_id, agent_key, content, event, visibility = "internal" }) {
     return this.prisma.$transaction(async (tx) => {
       const [operator, agent] = await Promise.all([this.operator(tx), this.agent(tx, agent_key)]);
       const task = await this.requireAssignedTask(tx, task_id, agent.id);
       assertCondition(task.status === "in_progress", "INVALID_STATE", "Start the task before adding progress or comments.");
-      const comment = await tx.comment.create({ data: { taskId: task_id, authorId: operator.id, content, visibility: "internal" } });
-      await this.logActivity(tx, { task, actorId: operator.id, action: "commented", metadata: { source: "mcp", event, commentId: comment.id } });
+      const comment = await tx.comment.create({ data: { taskId: task_id, authorId: operator.id, content, visibility } });
+      await this.logActivity(tx, { task, actorId: operator.id, action: "commented", metadata: { source: "mcp", event, commentId: comment.id, visibility } });
       return comment;
     });
   }

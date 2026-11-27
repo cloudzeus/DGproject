@@ -113,13 +113,15 @@ Then list the available PMS projects.
 | `get_task_feed` | Ενιαίο feed comments, activities και resolutions |
 | `list_files` | Attachments ενός task ή όλων των tasks/ενός project |
 | `read_file` | Κείμενο inline, screenshot ως MCP image και λοιπά binary ως embedded resource |
-| `upload_file` | Upload έως 10 MiB σε project ή assigned task, στο υπάρχον Bunny CDN |
+| `upload_file` | Upload έως 10 MiB σε project ή assigned task, με text ή base64, στο υπάρχον Bunny CDN |
+| `upload_task_attachment` | Upload τοπικού αρχείου έως 10 MiB σε assigned task με `file_path`, χωρίς base64 |
 | `create_task` | Νέο PMS task με acceptance criteria, related files και dependencies |
+| `update_task` | Ενημέρωση `estimatedHours` και προσθαφαίρεση dependencies σε υπάρχον assigned task |
 | `assign_tasks` | Ορατή ανάθεση στον operator και εσωτερικό active assignment στον agent |
 | `start_task` | Έναρξη ή resume με dependency checks |
 | `release_task` | Απελευθέρωση ανάθεσης και επιστροφή σε `todo` |
 | `report_progress` | Internal progress comment |
-| `add_task_comment` | Internal comment με συγγραφέα τον operator |
+| `add_task_comment` | Internal ή shared comment με συγγραφέα τον operator |
 | `report_blocker` | Καταγραφή blocker στο task και στο feed |
 | `submit_resolution` | Νέα resolution attempt και μετάβαση σε `review` |
 | `request_changes` | Απόρριψη attempt με feedback και επιστροφή στον agent |
@@ -129,11 +131,17 @@ Then list the available PMS projects.
 ## Αρχεία και screenshots
 
 - Στο `upload_file` δίνεται ακριβώς ένα από `task_id`/`project_id` και ακριβώς ένα από `text_content`/`content_base64`.
+- Στο `upload_task_attachment` δίνονται `task_id`, `agent_key` και απόλυτο `file_path` προσβάσιμο από τη διεργασία του MCP server. Το αρχείο διαβάζεται απευθείας από τον δίσκο, χωρίς base64 στο request ή στο response. Τα `file_name` και `mime_type` είναι προαιρετικά· ανιχνεύονται από το αρχείο.
 - Για task απαιτείται ενεργή ανάθεση στον agent. Σε project μπορεί να ανεβάσει registered agent.
 - Τα uploads είναι `internal` από default και καταγράφονται ως PMS `Attachment` και `Activity` με uploader/actor τον operator.
 - Το `read_file` επιτρέπει HTTPS downloads μόνο από το configured Bunny CDN hostname. Επιπλέον hosts ορίζονται, χωρισμένοι με κόμμα, στο `MCP_ATTACHMENT_ALLOWED_HOSTS`.
 - OneDrive/SharePoint links χρειάζονται δημόσια προσβάσιμο περιεχόμενο και ρητή προσθήκη του host στην allowlist· το MVP δεν εκτελεί Microsoft Graph OAuth.
 - Το όριο upload/download είναι 10 MiB. SVG αντιμετωπίζεται ως κείμενο και όχι ως ενσωματωμένη εικόνα.
+
+## Ενημερώσεις task και σχόλια
+
+- Το `add_task_comment` δέχεται `visibility: "internal" | "shared"` με default `internal`. Η τιμή `shared` αποθηκεύεται στο πραγματικό `Comment.visibility` και εμφανίζει το σχόλιο στο customer portal.
+- Το `update_task` απαιτεί `task_id`, `agent_key` και τουλάχιστον `hours` ή μια αλλαγή στα `dependencies.add`/`dependencies.remove`. Το `hours` γράφει στο `Task.estimatedHours`. Οι εξαρτήσεις πρέπει να ανήκουν στο ίδιο project· απορρίπτονται αυτοαναφορές και κύκλοι, ενώ επαναληπτική προσθήκη δεν δημιουργεί διπλότυπα.
 
 ## Αντιστοίχιση με το υπάρχον PMS
 

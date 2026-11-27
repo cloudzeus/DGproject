@@ -116,3 +116,36 @@ test("MCP status changes reuse the full PMS notification payload", async () => {
     assigneeIds: ["assignee-1"],
   }]);
 });
+
+test("task comments default to internal and persist shared visibility", async () => {
+  const operator = { id: "operator-1", email: "operator@example.com", isAIAgent: false };
+  const agent = { id: "agent-1", agentKey: "test-agent", isAIAgent: true };
+  const task = {
+    id: "task-1",
+    projectId: "project-1",
+    status: "in_progress",
+    activeAIAgentId: agent.id,
+    project: { workspaceId: "workspace-1" },
+  };
+  const comments = [];
+  const activities = [];
+  const tx = {
+    user: { findUnique: async ({ where }) => where.agentKey ? agent : operator },
+    task: { findUnique: async () => task },
+    comment: {
+      create: async ({ data }) => {
+        const comment = { id: `comment-${comments.length + 1}`, ...data };
+        comments.push(comment);
+        return comment;
+      },
+    },
+    activity: { create: async ({ data }) => { activities.push(data); return data; } },
+  };
+  const service = new TaskService({ ...tx, $transaction: async (callback) => callback(tx) }, { operatorUserEmail: operator.email });
+
+  await service.addTaskComment({ task_id: task.id, agent_key: agent.agentKey, comment: "Internal update" });
+  await service.addTaskComment({ task_id: task.id, agent_key: agent.agentKey, comment: "Customer update", visibility: "shared" });
+
+  assert.deepEqual(comments.map((comment) => comment.visibility), ["internal", "shared"]);
+  assert.deepEqual(activities.map((activity) => activity.metadata.visibility), ["internal", "shared"]);
+});

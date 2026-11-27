@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
+import { basename, extname, isAbsolute } from "node:path";
 import { McpServiceError, assertCondition } from "./workflow.mjs";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -29,6 +31,60 @@ export function safeFileName(value) {
   const cleaned = baseName.replace(/[\0-\x1F\x7F]/g, "-").replace(/^\.+/, "").trim();
   assertCondition(cleaned.length > 0 && cleaned !== "." && cleaned !== "..", "INVALID_FILE_NAME", "A valid file name is required.");
   return cleaned.slice(0, 180);
+}
+
+const FILE_EXTENSION_MIME_TYPES = new Map(Object.entries({
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".json": "application/json",
+  ".csv": "text/csv",
+  ".svg": "image/svg+xml",
+  ".xml": "application/xml",
+  ".zip": "application/zip",
+}));
+
+export function detectAttachmentMimeType(filePath) {
+  return FILE_EXTENSION_MIME_TYPES.get(extname(filePath).toLowerCase()) ?? "application/octet-stream";
+}
+
+function localFileError(error) {
+  const code = error?.code === "ENOENT"
+    ? "FILE_NOT_FOUND"
+    : ["EACCES", "EPERM"].includes(error?.code)
+      ? "FILE_PERMISSION_DENIED"
+      : "FILE_READ_FAILED";
+  return new McpServiceError(code, `Unable to read the local attachment: ${error.message}`);
+}
+
+export async function readAttachmentFromPath(filePath) {
+  assertCondition(isAbsolute(filePath), "INVALID_FILE_PATH", "file_path must be an absolute path accessible to the MCP server.");
+  let fileStats;
+  try {
+    fileStats = await stat(filePath);
+  } catch (error) {
+    throw localFileError(error);
+  }
+  assertCondition(fileStats.isFile(), "INVALID_FILE_PATH", "file_path must point to a regular file.");
+  assertCondition(fileStats.size > 0, "EMPTY_FILE", "Empty files cannot be uploaded.");
+  assertCondition(fileStats.size <= MAX_ATTACHMENT_BYTES, "FILE_TOO_LARGE", `Files cannot exceed ${MAX_ATTACHMENT_BYTES} bytes.`);
+
+  let buffer;
+  try {
+    buffer = await readFile(filePath);
+  } catch (error) {
+    throw localFileError(error);
+  }
+  return {
+    buffer,
+    fileName: safeFileName(basename(filePath)),
+    mimeType: detectAttachmentMimeType(filePath),
+  };
 }
 
 export function decodeFileContent({ content_base64, text_content }) {
