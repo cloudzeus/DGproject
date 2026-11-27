@@ -1,3 +1,4 @@
--- AlterTable
-ALTER TABLE `MeetingNote` MODIFY `status` ENUM('scheduled', 'pending', 'processing', 'ready', 'failed') NOT NULL DEFAULT 'pending';
-
+-- Compatibility no-op for fresh databases.
+-- This migration originally altered MeetingNote before that table was created.
+-- The final status enum now lives in 20260511_softone_user_types_and_meetings.
+-- Databases that already applied this migration require no further schema change.

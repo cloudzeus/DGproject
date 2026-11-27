@@ -29,13 +29,16 @@ ALTER TABLE `User` ADD COLUMN `companyAfm` VARCHAR(191) NULL,
     ADD COLUMN `userType` ENUM('employee', 'customer', 'supplier') NOT NULL DEFAULT 'employee';
 
 -- CreateTable
+-- Includes the later same-day MeetingNote migrations so a fresh deploy does not
+-- try to alter this table before it exists. Those earlier-named migration files
+-- are intentional compatibility no-ops; already-migrated databases stay unchanged.
 CREATE TABLE `MeetingNote` (
     `id` VARCHAR(191) NOT NULL,
     `projectId` VARCHAR(191) NOT NULL,
     `organizerId` VARCHAR(191) NOT NULL,
-    `teamsMeetingId` VARCHAR(191) NULL,
+    `teamsMeetingId` VARCHAR(500) NULL,
     `teamsJoinUrl` TEXT NULL,
-    `teamsTranscriptId` VARCHAR(191) NULL,
+    `teamsTranscriptId` TEXT NULL,
     `subject` VARCHAR(191) NOT NULL,
     `startedAt` DATETIME(3) NOT NULL,
     `endedAt` DATETIME(3) NOT NULL,
@@ -53,7 +56,7 @@ CREATE TABLE `MeetingNote` (
     `llmDurationMs` INTEGER NULL,
     `autoTasksCreated` INTEGER NOT NULL DEFAULT 0,
     `autoTasksNeedReview` INTEGER NOT NULL DEFAULT 0,
-    `status` ENUM('pending', 'processing', 'ready', 'failed') NOT NULL DEFAULT 'pending',
+    `status` ENUM('scheduled', 'pending', 'processing', 'ready', 'failed') NOT NULL DEFAULT 'pending',
     `errorMessage` TEXT NULL,
     `processedAt` DATETIME(3) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -64,7 +67,6 @@ CREATE TABLE `MeetingNote` (
     INDEX `MeetingNote_status_idx`(`status`),
     INDEX `MeetingNote_createdAt_idx`(`createdAt`),
     INDEX `MeetingNote_startedAt_idx`(`startedAt`),
-    INDEX `MeetingNote_teamsMeetingId_idx`(`teamsMeetingId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -124,4 +126,33 @@ ALTER TABLE `MeetingNote` ADD CONSTRAINT `MeetingNote_projectId_fkey` FOREIGN KE
 
 -- AddForeignKey
 ALTER TABLE `MeetingNote` ADD CONSTRAINT `MeetingNote_organizerId_fkey` FOREIGN KEY (`organizerId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- CreateTable (formerly 20260511_mom_delivery, which ran before MeetingNote existed)
+CREATE TABLE `MomDelivery` (
+    `id` VARCHAR(191) NOT NULL,
+    `meetingNoteId` VARCHAR(191) NOT NULL,
+    `recipientEmail` VARCHAR(191) NOT NULL,
+    `recipientName` VARCHAR(191) NULL,
+    `subject` TEXT NOT NULL,
+    `mailgunMessageId` VARCHAR(500) NULL,
+    `status` ENUM('queued', 'sent', 'delivered', 'opened', 'failed') NOT NULL DEFAULT 'queued',
+    `sentAt` DATETIME(3) NULL,
+    `deliveredAt` DATETIME(3) NULL,
+    `openedAt` DATETIME(3) NULL,
+    `openCount` INTEGER NOT NULL DEFAULT 0,
+    `lastOpenedAt` DATETIME(3) NULL,
+    `errorMessage` TEXT NULL,
+    `lastEventAt` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `MomDelivery_meetingNoteId_idx`(`meetingNoteId`),
+    INDEX `MomDelivery_recipientEmail_idx`(`recipientEmail`),
+    INDEX `MomDelivery_status_idx`(`status`),
+    INDEX `MomDelivery_createdAt_idx`(`createdAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- AddForeignKey
+ALTER TABLE `MomDelivery` ADD CONSTRAINT `MomDelivery_meetingNoteId_fkey` FOREIGN KEY (`meetingNoteId`) REFERENCES `MeetingNote`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 

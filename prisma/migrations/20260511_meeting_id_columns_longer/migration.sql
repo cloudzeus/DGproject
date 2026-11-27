@@ -1,3 +1,4 @@
--- AlterTable
-ALTER TABLE `MeetingNote` MODIFY `teamsMeetingId` VARCHAR(500) NULL,
-    MODIFY `teamsTranscriptId` TEXT NULL;
+-- Compatibility no-op for fresh databases.
+-- This migration originally altered MeetingNote before that table was created.
+-- The final column definitions now live in 20260511_softone_user_types_and_meetings.
+-- Databases that already applied this migration require no further schema change.
