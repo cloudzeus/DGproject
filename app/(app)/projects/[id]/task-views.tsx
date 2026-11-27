@@ -41,6 +41,7 @@ import {
   type ResolutionPromptInfo,
 } from '@/components/tickets/resolution-dialog';
 import { computeSpentMs, formatSpent } from '@/lib/task-in-progress-timer';
+import { EmailTrackingBadge, type EmailTrackingInfo } from '@/components/email/email-tracking-badge';
 
 export type TaskAttachment = {
   id: string;
@@ -67,6 +68,7 @@ export type TaskRow = {
   attachments: TaskAttachment[];
   questions: TaskQuestionInfo[];
   comments: TaskCommentInfo[];
+  emailTracking?: EmailTrackingInfo | null;
   addToCalendar: boolean;
   addToTeams: boolean;
   dependencyIds: string[];
@@ -216,6 +218,7 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, proj
             <Badge variant={t.status === 'done' ? 'green' : 'blue'}>{statusLabel(t.status)}</Badge>
             <Badge variant={PRIORITY_VARIANT[t.priority]}>{PRIORITY_LABEL[t.priority]}</Badge>
             <span className="flex-1 text-sm font-medium text-fluent-neutral-90 truncate">{t.title}</span>
+            <EmailTrackingBadge tracking={t.emailTracking} />
             <SpentTimeBadge
               status={t.status}
               inProgressStartedAt={t.inProgressStartedAt}
@@ -1401,7 +1404,8 @@ function StaticBoardCard({
         </div>
         <AvatarStack users={task.assignees} max={2} size="xs" />
       </div>
-      <div className="mt-2">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <EmailTrackingBadge tracking={task.emailTracking} />
         <SpentTimeBadge
           status={task.status}
           inProgressStartedAt={task.inProgressStartedAt}

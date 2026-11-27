@@ -114,6 +114,7 @@ test("MCP status changes reuse the full PMS notification payload", async () => {
     createdById: "creator-1",
     ownerId: "owner-1",
     assigneeIds: ["assignee-1"],
+    source: "mcp",
   }]);
 });
 

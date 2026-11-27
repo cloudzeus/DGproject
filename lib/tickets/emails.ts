@@ -12,6 +12,8 @@ type TicketEmailInput = {
   publicToken: string
 }
 
+export const TASK_REPLY_INSTRUCTIONS = 'Μπορείτε να απαντήσετε απευθείας σε αυτό το email: πατήστε «Απάντηση», γράψτε το μήνυμά σας και στείλτε το χωρίς να αλλάξετε το θέμα. Η απάντησή σας θα καταχωριστεί αυτόματα στη συγκεκριμένη εργασία και θα τη δει η ομάδα μας. Δεν χρειάζεται να συνδεθείτε στην πλατφόρμα ή να δημιουργήσετε νέο αίτημα.'
+
 function statusUrl(publicToken: string): string {
   return appUrl(`/t/${publicToken}`)
 }
@@ -61,6 +63,7 @@ export async function sendTicketStatusEmail(
       ${input.detail ? quote({ body: input.detail, tone: 'info' }) : ''}
       ${input.resolutionTime ? metaTable([{ label: 'Χρόνος επίλυσης', value: input.resolutionTime }]) : ''}`,
     actions: [{ label: 'Προβολή εξέλιξης', url }],
+    footerNote: TASK_REPLY_INSTRUCTIONS,
   })
   return safeSend(input.to, `[${input.code}] ${input.statusLabel}`, html)
 }
@@ -81,7 +84,7 @@ export async function sendTicketResolvedEmail(
       ${input.solution ? quote({ body: input.solution, tone: 'success', caption: 'Η λύση' }) : ''}
       ${input.resolutionTime ? metaTable([{ label: 'Χρόνος επίλυσης', value: input.resolutionTime }]) : ''}`,
     actions: [{ label: 'Προβολή αιτήματος', url }],
-    footerNote: 'Ευχαριστούμε για την επικοινωνία.',
+    footerNote: TASK_REPLY_INSTRUCTIONS,
   })
   return safeSend(input.to, `[${input.code}] Το αίτημά σας ολοκληρώθηκε`, html)
 }

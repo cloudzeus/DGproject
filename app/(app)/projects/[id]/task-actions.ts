@@ -25,7 +25,7 @@ import {
   BUSINESS_START_HOUR,
   BUSINESS_START_MINUTE,
 } from '@/lib/business-hours';
-import { sendEmail } from '@/lib/mailgun';
+import { sendTrackedEmail } from '@/lib/email-tracking';
 import { notifyTaskAssignment, notifyApprover, notifyTaskStatusChange } from '@/lib/notifications';
 import { canApprove, isApprovalGatedTransition } from '@/lib/approval';
 import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
@@ -210,7 +210,16 @@ async function notifyAssignees(
         footerNote: 'Αν δεν χρειάζεται να βλέπεις αυτές τις ειδοποιήσεις, ενημέρωσε τον διαχειριστή.',
       });
 
-      await sendEmail({ to: r.email, subject, html });
+      await sendTrackedEmail({
+        to: r.email,
+        subject,
+        html,
+        projectId: task.project.id,
+        taskId,
+        userId: actorId,
+        note: `task_assignment_${reason}`,
+        bodyPreview: `${task.title} — ${reason === 'assigned' ? 'Νέα ανάθεση' : 'Προσθήκη στην εργασία'}`,
+      });
     }
   } catch (e) {
     console.warn('[task notify] failed', e);

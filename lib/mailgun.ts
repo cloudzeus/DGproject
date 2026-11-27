@@ -33,6 +33,11 @@ async function getClient(): Promise<{ client: Cached['client']; domain: string; 
   return cached;
 }
 
+/** Resolve the configured sender for audit rows written around sendEmail. */
+export async function getMailgunFromAddress(): Promise<string> {
+  return (await getClient()).from;
+}
+
 /** Call after persisting Mailgun settings so the next sendEmail rebuilds the client. */
 export function invalidateMailgunCache(): void {
   cached = null;

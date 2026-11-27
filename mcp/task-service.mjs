@@ -711,6 +711,7 @@ export class TaskService {
         createdById: task.createdById,
         ownerId: task.project.ownerId,
         assigneeIds: task.assignees.map((assignee) => assignee.userId),
+        source: "mcp",
       });
     } catch (error) {
       console.error(`[mcp:notifications] Status ${from} -> ${task.status} for task ${task.id}:`, error);

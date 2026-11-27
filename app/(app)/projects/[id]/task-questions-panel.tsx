@@ -21,6 +21,8 @@ import {
 } from '@fluentui/react-icons';
 import { Avatar } from '@/components/ui/avatar';
 import { SendEmailButton } from '@/components/email/send-email-button';
+import { EmailTrackingBadge, type EmailTrackingInfo } from '@/components/email/email-tracking-badge';
+import { AttachmentPreviewLink } from '@/components/attachments/attachment-preview-link';
 import { Button } from '@/components/ui/button';
 import {
   askTaskQuestion,
@@ -51,6 +53,8 @@ export type TaskQuestionInfo = {
   askedBy: { id: string; name: string; email: string; avatarUrl?: string };
   askedTo: { id: string; name: string; email: string; avatarUrl?: string };
   attachments: QuestionAttachmentInfo[];
+  questionEmail?: EmailTrackingInfo | null;
+  answerEmail?: EmailTrackingInfo | null;
 };
 
 export type ProjectMemberOption = {
@@ -699,6 +703,7 @@ export function QuestionCard({
               <span className="text-fluent-neutral-50">·</span>
               <span className="text-fluent-neutral-60">{formatRelative(question.createdAt)}</span>
               <StatusPill answered={!!question.answer} />
+              <EmailTrackingBadge tracking={question.questionEmail} />
             </div>
             <p className="mt-1.5 text-sm text-fluent-neutral-90 whitespace-pre-wrap break-words">
               {question.question}
@@ -746,6 +751,7 @@ export function QuestionCard({
                 <span className="text-fluent-neutral-60">
                   {question.answeredAt ? formatRelative(question.answeredAt) : ''}
                 </span>
+                <EmailTrackingBadge tracking={question.answerEmail} />
               </div>
               <p className="mt-1.5 text-sm text-fluent-neutral-90 whitespace-pre-wrap break-words">
                 {question.answer}
@@ -1145,16 +1151,7 @@ function AttachmentList({
             key={a.id}
             className="inline-flex items-center gap-2 text-xs rounded-md border border-fluent-neutral-20 bg-white px-2 py-1 mr-1.5 max-w-full"
           >
-            <FileIcon mimeType={a.mimeType} />
-            <a
-              href={a.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="truncate text-fluent-blue-700 hover:underline font-medium max-w-[180px]"
-              title={a.title ?? a.name}
-            >
-              {a.title || a.name}
-            </a>
+            <AttachmentPreviewLink attachment={a} compact />
             <span className="text-[10px] text-fluent-neutral-60 tabular-nums">
               {formatBytes(a.size)}
             </span>

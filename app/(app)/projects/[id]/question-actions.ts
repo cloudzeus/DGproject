@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { uploadFileToCDN, deleteFileFromCDN } from '@/lib/bunnycdn';
-import { sendEmail } from '@/lib/mailgun';
+import { sendTrackedEmail } from '@/lib/email-tracking';
 import { buildEmailTag, buildHiddenTagFooter } from '@/lib/email-tag';
 import { createNotifications } from '@/lib/notifications';
 import {
@@ -162,10 +162,16 @@ async function notifyQuestionCreated(params: {
     : html;
 
   try {
-    await sendEmail({
+    await sendTrackedEmail({
       to: askedTo.email,
       subject,
       html: htmlWithTag,
+      projectId: params.projectId,
+      taskId,
+      questionId: params.questionId,
+      userId: askedBy.id,
+      note: 'question',
+      bodyPreview: body,
     });
   } catch (e) {
     console.warn('[question email] failed', e);
@@ -173,6 +179,7 @@ async function notifyQuestionCreated(params: {
 }
 
 async function notifyAnswerCreated(params: {
+  questionId: string;
   taskId: string;
   projectId: string;
   projectName: string;
@@ -275,11 +282,17 @@ async function notifyAnswerCreated(params: {
   const htmlWithTag = projectCode ? `${html}${buildHiddenTagFooter(projectCode, taskId)}` : html;
 
   try {
-    await sendEmail({
+    await sendTrackedEmail({
       to: asker.email,
       cc: answeredBy.email && answeredBy.email !== asker.email ? [answeredBy.email] : undefined,
       subject,
       html: htmlWithTag,
+      projectId: params.projectId,
+      taskId,
+      questionId: params.questionId,
+      userId: answeredBy.id,
+      note: 'answer',
+      bodyPreview: answer,
     });
   } catch (e) {
     console.warn('[answer email] failed', e);
@@ -430,6 +443,7 @@ export async function answerTaskQuestion(
     .map((a) => ({ name: a.name, title: a.title, url: a.url }));
 
   await notifyAnswerCreated({
+    questionId,
     taskId: existing.task.id,
     projectId,
     projectName: existing.task.project.name,

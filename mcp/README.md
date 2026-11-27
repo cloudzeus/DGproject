@@ -80,7 +80,7 @@ Then list the available PMS projects.
 10. Ο χρήστης καλεί είτε `request_changes` είτε `approve_resolution`.
 11. Μόνο αφού ο χρήστης επιβεβαιώσει παραλήπτες, `send_task_resolution_email` στέλνει την τελευταία submitted/approved απάντηση από το configured Outlook mailbox και την καταγράφει στο project Email history με τον πραγματικό αποστολέα.
 
-Κάθε MCP αλλαγή status περνά από το ίδιο `notifyTaskStatusChange` με το UI, ώστε να εκτελούνται και οι υπάρχουσες ειδοποιήσεις PMS/portal/ticket. Η αποθήκευση resolution **δεν ισοδυναμεί από μόνη της με αποστολή email**.
+Κάθε MCP αλλαγή status περνά από το ίδιο `notifyTaskStatusChange` με το UI, ώστε να εκτελούνται και οι υπάρχουσες ειδοποιήσεις PMS/portal/ticket. Επιπλέον, μόνο για MCP αλλαγές αποστέλλεται Mailgun email με delivery/open tracking στον operator και στους human creator/owner/approver/assignees, με deduplication. Η αποθήκευση resolution **δεν ισοδυναμεί από μόνη της με αποστολή email**.
 
 Παράδειγμα εντολής προς AI:
 

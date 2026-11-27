@@ -27,6 +27,7 @@ import {
   type TaskTemplateOption,
 } from './template-actions';
 import { Modal } from '@/components/ui/modal';
+import { AttachmentPreviewLink } from '@/components/attachments/attachment-preview-link';
 
 export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
@@ -818,21 +819,7 @@ function AttachmentsPanel({
               key={a.id}
               className="flex items-center gap-2 text-sm rounded-md border border-fluent-neutral-20 px-2 py-1.5"
             >
-              <FileIcon mimeType={a.mimeType} />
-              <div className="flex-1 min-w-0">
-                <a
-                  href={a.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block truncate text-fluent-blue-700 hover:underline font-medium"
-                  title={a.title ?? a.name}
-                >
-                  {a.title || a.name}
-                </a>
-                {a.title && (
-                  <span className="block text-[11px] text-fluent-neutral-60 truncate">{a.name}</span>
-                )}
-              </div>
+              <AttachmentPreviewLink attachment={a} showOriginalName />
               <span className="text-[11px] text-fluent-neutral-60 tabular-nums shrink-0">
                 {formatBytes(a.size)}
               </span>

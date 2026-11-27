@@ -132,13 +132,7 @@ export async function notifyApprover(
   ]);
 }
 
-/**
- * Emit all approver/creator/assignee notifications for a single task status
- * change, with EXACTLY-ONCE delivery to the approver. Call from every path that
- * changes a task's status (both updateTaskStatus actions and the edit form).
- * Caller passes preloaded data to avoid extra queries. Does nothing if from===to.
- */
-export async function notifyTaskStatusChange(params: {
+export type TaskStatusChangeParams = {
   taskId: string;
   projectId: string;
   actorId: string;
@@ -150,7 +144,25 @@ export async function notifyTaskStatusChange(params: {
   createdById: string;
   ownerId: string;
   assigneeIds: string[];
-}): Promise<void> {
+  /** Staff Mailgun confirmations are deliberately limited to machine-driven MCP changes. */
+  source?: 'ui' | 'mcp';
+};
+
+type StatusNotificationDependencies = {
+  sendMcpStatusEmails?: (params: TaskStatusChangeParams) => Promise<unknown>;
+  propagateTicketStatus?: (taskId: string, status: string) => Promise<unknown>;
+};
+
+/**
+ * Emit all approver/creator/assignee notifications for a single task status
+ * change, with EXACTLY-ONCE delivery to the approver. Call from every path that
+ * changes a task's status (both updateTaskStatus actions and the edit form).
+ * Caller passes preloaded data to avoid extra queries. Does nothing if from===to.
+ */
+export async function notifyTaskStatusChange(
+  params: TaskStatusChangeParams,
+  dependencies: StatusNotificationDependencies = {},
+): Promise<void> {
   const { taskId, projectId, actorId, from, to, approverId, taskTitle, projectName, createdById, ownerId, assigneeIds } = params;
   if (from === to) return;
 
@@ -217,8 +229,9 @@ export async function notifyTaskStatusChange(params: {
   //    mutation paths funnel through this function, so this is the single hook
   //    point. Dynamic import keeps the ticket module out of non-ticket flows.
   try {
-    const { propagateTicketStatus } = await import('@/lib/tickets/propagate');
-    await propagateTicketStatus(taskId, to);
+    const propagate = dependencies.propagateTicketStatus
+      ?? (await import('@/lib/tickets/propagate')).propagateTicketStatus;
+    await propagate(taskId, to);
   } catch (e) {
     console.error('[notifications] ticket propagation failed:', e);
   }
@@ -240,5 +253,17 @@ export async function notifyTaskStatusChange(params: {
     }
   } catch (e) {
     console.error('[notifications] customer notify failed:', e);
+  }
+
+  // 7. MCP-only staff confirmation. Unlike UI actions, the operator did not
+  // perform the transition personally, so include the operator in recipients.
+  if (params.source === 'mcp') {
+    try {
+      const send = dependencies.sendMcpStatusEmails
+        ?? (await import('./status-email')).sendMcpTaskStatusEmails;
+      await send(params);
+    } catch (e) {
+      console.error('[notifications] MCP status email failed:', e);
+    }
   }
 }

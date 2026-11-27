@@ -9,6 +9,7 @@ import {
 } from '@fluentui/react-icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { EmailTrackingBadge, type EmailTrackingInfo } from '@/components/email/email-tracking-badge';
 import { EmailImportModal } from './email-import-modal';
 
 export type ProjectEmail = {
@@ -25,6 +26,7 @@ export type ProjectEmail = {
   llmAction: string | null;
   taskId: string | null;
   taskTitle: string | null;
+  tracking: EmailTrackingInfo | null;
 };
 
 type Props = {
@@ -116,6 +118,7 @@ function ThreadBlock({ messages }: { messages: ProjectEmail[] }) {
           <div className="flex items-center gap-2">
             <Mail20Regular className="h-4 w-4 text-fluent-neutral-60 shrink-0" />
             <div className="font-medium text-sm text-fluent-neutral-95 truncate">{last.subject}</div>
+            <EmailTrackingBadge tracking={last.tracking} />
             {messages.length > 1 && (
               <span className="text-[10px] text-fluent-neutral-60 bg-fluent-neutral-8 px-1.5 py-0.5 rounded">
                 {messages.length}
@@ -156,7 +159,8 @@ function ThreadBlock({ messages }: { messages: ProjectEmail[] }) {
                       : 'Αρχείο'}
                   </Badge>
                 )}
-                {m.status === 'failed' && <Badge variant="red">Αποτυχία</Badge>}
+                <EmailTrackingBadge tracking={m.tracking} />
+                {m.status === 'failed' && !m.tracking && <Badge variant="red">Αποτυχία</Badge>}
               </div>
               {m.taskTitle && m.taskId && (
                 <div className="text-xs text-fluent-blue-700 mb-1.5">→ Task: {m.taskTitle}</div>

@@ -9,6 +9,28 @@ import { ProjectCompaniesManager } from './project-companies-manager';
 import type { ProjectFileItem } from './project-files';
 import type { ProjectEmail } from './project-emails-tab';
 import type { HistoryEntry } from './project-history-tab';
+import type { EmailTrackingInfo } from '@/components/email/email-tracking-badge';
+import { refreshProjectEmailTracking } from '@/lib/email-tracking';
+
+function trackingInfo(email: {
+  status: string;
+  mailgunMessageId: string | null;
+  deliveredAt: Date | null;
+  openedAt: Date | null;
+  openCount: number;
+  deliveryError: string | null;
+}): EmailTrackingInfo | null {
+  if (!email.mailgunMessageId && !email.deliveryError) return null;
+  return {
+    status: email.status === 'failed'
+      ? 'failed'
+      : email.openedAt ? 'opened' : email.deliveredAt ? 'delivered' : 'sent',
+    deliveredAt: email.deliveredAt,
+    openedAt: email.openedAt,
+    openCount: email.openCount,
+    error: email.deliveryError,
+  };
+}
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -173,6 +195,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const sessionUserId = session?.user?.id ?? '';
   const isPrivileged = role === 'admin' || role === 'manager';
   const isCustomer = session?.user?.userType === 'customer';
+
+  if (!isCustomer) {
+    try {
+      await refreshProjectEmailTracking(id);
+    } catch (error) {
+      console.warn('[email tracking] project refresh failed:', error);
+    }
+  }
 
   // Όλη η ομάδα, για την ανάθεση βημάτων της πρότασης: ο ανάδοχος δεν
   // περιορίζεται στα μέλη του έργου — στη μετατροπή, όποιος λείπει προστίθεται.
@@ -648,7 +678,49 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     llmAction: e.llmAction,
     taskId: e.taskId,
     taskTitle: e.task?.title ?? null,
+    tracking: trackingInfo(e),
   }));
+
+  const latestTaskTracking = new Map<string, EmailTrackingInfo>();
+  const latestQuestionTracking = new Map<
+    string,
+    { question: EmailTrackingInfo | null; answer: EmailTrackingInfo | null }
+  >();
+
+  for (const email of emailRows) {
+    const tracking = trackingInfo(email);
+    if (!tracking) continue;
+
+    if (email.taskId && !latestTaskTracking.has(email.taskId)) {
+      latestTaskTracking.set(email.taskId, tracking);
+    }
+
+    if (
+      email.questionId &&
+      (email.appliedNote === 'question' || email.appliedNote === 'answer')
+    ) {
+      const current = latestQuestionTracking.get(email.questionId)
+        ?? { question: null, answer: null };
+      if (!current[email.appliedNote]) current[email.appliedNote] = tracking;
+      latestQuestionTracking.set(email.questionId, current);
+    }
+  }
+
+  const normalizedWithTracking = {
+    ...normalized,
+    tasks: normalized.tasks.map((task) => ({
+      ...task,
+      emailTracking: latestTaskTracking.get(task.id) ?? null,
+      questions: task.questions.map((question) => {
+        const tracking = latestQuestionTracking.get(question.id);
+        return {
+          ...question,
+          questionEmail: tracking?.question ?? null,
+          answerEmail: tracking?.answer ?? null,
+        };
+      }),
+    })),
+  };
 
   // Unified activity timeline. Builds one HistoryEntry per source row so the
   // tab can render a single sorted/grouped list. Order matters less than the
@@ -756,7 +828,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   return (
     <>
       <ProjectDetail
-        project={normalized}
+        project={normalizedWithTracking}
         projectMembers={projectMemberOptions}
         questionMembers={questionMembers}
         currentUserId={currentUserId}

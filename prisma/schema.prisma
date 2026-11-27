@@ -905,6 +905,7 @@ model TaskQuestion {
   parent      TaskQuestion?            @relation("QuestionFollowUps", fields: [parentId], references: [id], onDelete: Cascade)
   followUps   TaskQuestion[]           @relation("QuestionFollowUps")
   attachments TaskQuestionAttachment[]
+  emailMessages EmailMessage[]
 
   @@index([taskId])
   @@index([askedById])
@@ -1273,9 +1274,8 @@ enum EmailMessageStatus {
 }
 
 // Unified inbound/outbound mail history per project. Every row represents a
-// single Outlook message that touched a project — either pulled in from the
-// mailbox or sent from inside the app — so the project's "Email" tab is the
-// full audit trail.
+// message that touched a project — either pulled from a mailbox or sent from
+// inside the app — so the project's "Email" tab is the full audit trail.
 model EmailMessage {
   id                String                @id @default(cuid())
   // Graph message id is per-mailbox and not globally unique; internetMessageId
@@ -1289,8 +1289,9 @@ model EmailMessage {
   status            EmailMessageStatus    @default(pending)
   // Project is required — we never store an email that isn't routed somewhere.
   projectId         String
-  // Optional task association (created or updated by the ingest).
+  // Optional task/question associations for timeline and Mailgun badges.
   taskId            String?
+  questionId        String?
   // The user who imported (inbound) or sent (outbound) this message. For
   // inbound the mailbox owner = this user; for outbound it's the sender.
   userId            String
@@ -1302,6 +1303,14 @@ model EmailMessage {
   bodyPreview       String?               @db.Text
   receivedAt        DateTime?
   sentAt            DateTime?
+  // Mailgun id and real delivery/open events, polled from the Events API.
+  mailgunMessageId String?               @db.VarChar(500)
+  deliveredAt      DateTime?
+  openedAt         DateTime?
+  openCount        Int                   @default(0)
+  lastOpenedAt     DateTime?
+  lastEventAt      DateTime?
+  deliveryError    String?               @db.Text
   // LLM analysis output kept as raw JSON so we can re-render the proposed
   // action in the review UI or audit a bad decision later.
   llmAction         String?
@@ -1312,16 +1321,19 @@ model EmailMessage {
   ingestedAt        DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  user    User    @relation("EmailMessageUser", fields: [userId], references: [id], onDelete: Cascade)
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task     Task?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  question TaskQuestion? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  user     User          @relation("EmailMessageUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([projectId, receivedAt])
   @@index([projectId, sentAt])
   @@index([taskId])
+  @@index([questionId])
   @@index([userId])
   @@index([conversationId])
   @@index([status])
+  @@index([mailgunMessageId])
 }
 
 // ─── Ticketing System ─────────────────────────────────────────────────

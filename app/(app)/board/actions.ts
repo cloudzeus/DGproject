@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
-import { sendEmail } from '@/lib/mailgun';
+import { sendTrackedEmail } from '@/lib/email-tracking';
 import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
 import { notifyTaskStatusChange } from '@/lib/notifications';
 import { canApprove, isApprovalGatedTransition } from '@/lib/approval';
@@ -199,11 +199,18 @@ export async function sendTaskReminder(taskId: string, customMessage?: string) {
   `;
 
   try {
-    await sendEmail({
-      to: recipients,
-      subject: `Υπενθύμιση: ${task.title}`,
-      html,
-    });
+    for (const recipient of recipients) {
+      await sendTrackedEmail({
+        to: recipient,
+        subject: `Υπενθύμιση: ${task.title}`,
+        html,
+        projectId: task.projectId,
+        taskId,
+        userId: uid,
+        note: 'task_reminder',
+        bodyPreview: customMessage?.trim() || task.title,
+      });
+    }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Αποτυχία αποστολής email.' };
   }
