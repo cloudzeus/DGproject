@@ -16,6 +16,18 @@ import {
   type ActionButton,
 } from './email-templates';
 import { computeSpentMs, formatSpent } from './task-in-progress-timer';
+import { buildProjectReportAnalytics, type ProjectReportAnalytics } from './project-report-analytics';
+import type { ProjectReportNarrative } from './project-report-ai';
+import {
+  buildClosingSection,
+  buildCustomerSection,
+  buildDGSmartSection,
+  buildMonthlyChart,
+  buildNarrativeSection,
+  buildStatusChart,
+  buildUserContributionSection,
+} from './project-report-sections';
+import { buildFallbackProjectReportNarrative } from './project-report-ai';
 
 const STATUS_LABEL: Record<string, string> = {
   backlog: 'Backlog',
@@ -43,47 +55,90 @@ const PROJECT_STATUS_LABEL: Record<string, string> = {
 
 const STATUS_ORDER: Array<keyof typeof STATUS_LABEL> = ['todo', 'in_progress', 'review', 'done', 'backlog'];
 
+const REPORT_USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  userType: true,
+  companyId: true,
+  companyName: true,
+  isAIAgent: true,
+} as const;
+
 export type ProjectReportData = Awaited<ReturnType<typeof loadProjectForReport>>;
 
 export async function loadProjectForReport(projectId: string) {
   return prisma.project.findUnique({
     where: { id: projectId },
     include: {
-      owner: { select: { id: true, name: true, email: true } },
+      owner: { select: REPORT_USER_SELECT },
+      primaryCompany: { select: { id: true, NAME: true } },
       members: {
-        include: { user: { select: { id: true, name: true, email: true } } },
+        include: { user: { select: REPORT_USER_SELECT } },
       },
       tasks: {
+        where: { mergedIntoId: null },
         orderBy: [{ status: 'asc' }, { dueDate: 'asc' }, { order: 'asc' }],
         include: {
+          creator: { select: REPORT_USER_SELECT },
+          activeAIAgent: { select: REPORT_USER_SELECT },
           assignees: {
-            include: { user: { select: { id: true, name: true, email: true } } },
+            include: { user: { select: REPORT_USER_SELECT } },
           },
-          // Pending Q&A counts per task — surfaces blockers in the report.
-          questions: {
-            where: { answer: null },
-            select: {
-              id: true,
-              question: true,
-              createdAt: true,
-              askedBy: { select: { name: true, email: true } },
-              askedTo: { select: { name: true, email: true } },
+          tags: { select: { name: true } },
+          requirements: {
+            include: {
+              requirement: { select: { code: true, title: true, status: true } },
             },
+          },
+          questions: {
+            orderBy: { createdAt: 'asc' },
+            include: {
+              askedBy: { select: REPORT_USER_SELECT },
+              askedTo: { select: REPORT_USER_SELECT },
+            },
+          },
+          comments: {
+            orderBy: { createdAt: 'asc' },
+            include: { author: { select: REPORT_USER_SELECT } },
+          },
+          resolutions: {
+            orderBy: { submittedAt: 'asc' },
+            include: { agent: { select: REPORT_USER_SELECT } },
           },
         },
       },
-      // Recent meetings & their LLM-extracted risks/openQuestions for the report.
+      activities: {
+        orderBy: { createdAt: 'asc' },
+        include: { actor: { select: REPORT_USER_SELECT } },
+      },
       meetings: {
-        orderBy: { startedAt: 'desc' },
-        take: 5,
+        orderBy: { startedAt: 'asc' },
         where: { status: 'ready' },
         select: {
           id: true,
           subject: true,
           startedAt: true,
           summary: true,
+          decisions: true,
+          actionItems: true,
           risks: true,
           openQuestions: true,
+          autoTasksCreated: true,
+          autoTasksNeedReview: true,
+        },
+      },
+      emailMessages: {
+        orderBy: { ingestedAt: 'asc' },
+        include: { user: { select: REPORT_USER_SELECT } },
+      },
+      proposalAnalyses: {
+        orderBy: { createdAt: 'asc' },
+        select: {
+          fileName: true,
+          status: true,
+          summary: true,
+          createdAt: true,
         },
       },
     },
@@ -196,6 +251,9 @@ export type BuildProjectReportInput = {
   recipientName?: string;
   coverMessage?: string;
   senderName?: string;
+  analytics?: ProjectReportAnalytics;
+  narrative?: ProjectReportNarrative;
+  aiGenerated?: boolean;
 };
 
 export function buildProjectReportHtml({
@@ -203,6 +261,9 @@ export function buildProjectReportHtml({
   recipientName,
   coverMessage,
   senderName,
+  analytics: suppliedAnalytics,
+  narrative: suppliedNarrative,
+  aiGenerated = false,
 }: BuildProjectReportInput): string {
   const tasks = project.tasks;
   const total = tasks.length;
@@ -219,6 +280,8 @@ export function buildProjectReportHtml({
     .reduce((sum, t) => sum + (t.estimatedHours ?? 0), 0);
 
   const today = new Date();
+  const analytics = suppliedAnalytics ?? buildProjectReportAnalytics(project, today);
+  const narrative = suppliedNarrative ?? buildFallbackProjectReportNarrative(project, analytics);
   const dueLine = project.dueDate
     ? `<span style="color:${BRAND.textSoft};">Προθεσμία: <strong style="color:${BRAND.text};">${escapeHtml(formatDate(project.dueDate))}</strong> (${escapeHtml(daysAwayLabel(project.dueDate, today))})</span>`
     : '';
@@ -366,6 +429,7 @@ export function buildProjectReportHtml({
   }> = [];
   for (const t of tasks) {
     for (const q of t.questions) {
+      if (q.answer) continue;
       const days = Math.max(0, Math.floor((now.getTime() - q.createdAt.getTime()) / 86400000));
       pendingQuestions.push({
         taskTitle: t.title,
@@ -479,14 +543,21 @@ export function buildProjectReportHtml({
     ${cover}
     ${greeting}
     ${dueLine ? `<div style="margin:0 0 12px;font-size:13px;">${dueLine}</div>` : ''}
+    ${buildNarrativeSection(narrative, aiGenerated)}
     ${progressBar(pct, project.color)}
     ${statsRow}
+    ${buildStatusChart(analytics)}
+    ${buildMonthlyChart(analytics)}
+    ${buildCustomerSection(analytics, narrative)}
+    ${buildDGSmartSection(analytics, narrative)}
+    ${buildUserContributionSection(analytics, narrative)}
     ${hoursRow}
     ${timeBlock}
     ${upcomingBlock}
     ${blockersBlock}
     ${risksBlock}
     ${recentlyDoneBlock}
+    ${buildClosingSection(narrative)}
     ${metaTable(meta)}
     ${membersBlock(project)}
     ${

@@ -52,21 +52,26 @@ export function ReportModal({
     });
   }
 
-  async function handlePreview() {
+  function handlePreview() {
     setStatus(null);
-    const res = await buildProjectReportPreview(projectId);
-    if (!res.ok || !res.html) {
-      setStatus({ ok: false, message: res.error ?? 'Σφάλμα προεπισκόπησης.' });
-      return;
-    }
-    const w = window.open('', '_blank', 'noopener,noreferrer,width=900,height=900');
+    // Open synchronously so popup blockers do not reject the AI-generated report.
+    const w = window.open('', '_blank', 'width=900,height=900');
     if (!w) {
       setStatus({ ok: false, message: 'Ο browser εμπόδισε το popup. Επίτρεψέ το και προσπάθησε ξανά.' });
       return;
     }
-    w.document.open();
-    w.document.write(res.html);
-    w.document.close();
+    w.document.write('<p style="font-family:sans-serif;padding:24px">Δημιουργείται η AI αναφορά με όλα τα δεδομένα του έργου…</p>');
+    startTransition(async () => {
+      const res = await buildProjectReportPreview(projectId);
+      if (!res.ok || !res.html) {
+        w.close();
+        setStatus({ ok: false, message: res.error ?? 'Σφάλμα προεπισκόπησης.' });
+        return;
+      }
+      w.document.open();
+      w.document.write(res.html);
+      w.document.close();
+    });
   }
 
   return (
@@ -82,10 +87,10 @@ export function ReportModal({
           <div>
             <h2 className="font-display text-lg font-semibold text-fluent-neutral-90 inline-flex items-center gap-2">
               <Mail20Regular className="h-5 w-5 text-fluent-blue-600" />
-              Αποστολή αναφοράς πελάτη
+              AI αναφορά πελάτη
             </h2>
             <p className="text-xs text-fluent-neutral-60 mt-0.5">
-              Στείλε μια συνοπτική προβολή του έργου <strong>{projectName}</strong> σε πελάτη ή ενδιαφερόμενο.
+              Πλήρης πορεία του έργου <strong>{projectName}</strong>, με απλή αφήγηση και γραφήματα.
             </p>
           </div>
           <button
@@ -98,6 +103,9 @@ export function ReportModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div className="rounded-md border border-fluent-blue-100 bg-fluent-blue-50 px-3 py-2 text-xs leading-relaxed text-fluent-neutral-70">
+            Το AI λαμβάνει όλα τα tasks, τις αναθέσεις, τα σχόλια, το ιστορικό, τις συναντήσεις και τα emails του έργου. Υπολογίζει την αφήγηση από την αρχή έως σήμερα· οι αριθμοί και τα γραφήματα προέρχονται απευθείας από την εφαρμογή.
+          </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-fluent-neutral-70 mb-1.5">
               Παραλήπτες <span className="text-fluent-accent-red">*</span>

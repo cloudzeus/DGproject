@@ -4,6 +4,8 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/mailgun';
 import { buildProjectReportHtml, loadProjectForReport } from '@/lib/project-report';
+import { buildProjectReportAnalytics } from '@/lib/project-report-analytics';
+import { generateProjectReportNarrative } from '@/lib/project-report-ai';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -54,12 +56,17 @@ export async function sendProjectReport(
   const project = await loadProjectForReport(projectId);
   if (!project) return { ok: false, error: 'Το έργο δεν βρέθηκε.' };
 
+  const analytics = buildProjectReportAnalytics(project);
+  const generated = await generateProjectReportNarrative(project, analytics);
   const senderName = sender.name ?? sender.email ?? 'A-Sisyphus';
   const html = buildProjectReportHtml({
     project,
     recipientName,
     coverMessage,
     senderName,
+    analytics,
+    narrative: generated.narrative,
+    aiGenerated: generated.aiGenerated,
   });
 
   const subject = `[A-Sisyphus] Αναφορά έργου: ${project.name}`;
@@ -92,9 +99,14 @@ export async function buildProjectReportPreview(projectId: string): Promise<{
   const sender = await requireProjectReporter(projectId);
   const project = await loadProjectForReport(projectId);
   if (!project) return { ok: false, error: 'Το έργο δεν βρέθηκε.' };
+  const analytics = buildProjectReportAnalytics(project);
+  const generated = await generateProjectReportNarrative(project, analytics);
   const html = buildProjectReportHtml({
     project,
     senderName: sender.name ?? sender.email ?? 'A-Sisyphus',
+    analytics,
+    narrative: generated.narrative,
+    aiGenerated: generated.aiGenerated,
   });
   return { ok: true, html };
 }

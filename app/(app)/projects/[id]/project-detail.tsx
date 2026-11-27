@@ -273,9 +273,9 @@ export function ProjectDetail({
                         }}
                       >
                         <div>
-                          <div className="font-medium">Αποστολή αναφοράς πελάτη</div>
+                          <div className="font-medium">AI αναφορά πελάτη</div>
                           <div className="text-[11px] text-fluent-neutral-60">
-                            Στείλε branded HTML αναφορά μέσω email
+                            Πλήρης πορεία, γραφήματα και συνεισφορά ομάδας
                           </div>
                         </div>
                       </MenuItem>
