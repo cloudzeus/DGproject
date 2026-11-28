@@ -24,6 +24,7 @@ import {
 import { resolveRange } from '@/lib/reports/shared';
 import { buildOverviewReport } from '@/lib/reports/overview';
 import { buildProjectsReport } from '@/lib/reports/projects';
+import { buildCustomersReport } from '@/lib/reports/customers';
 import { buildTasksReport } from '@/lib/reports/tasks';
 import { buildTicketsReport } from '@/lib/reports/tickets';
 import { buildUsersReport } from '@/lib/reports/users';
@@ -431,8 +432,17 @@ export async function GET(req: NextRequest) {
       const d = await buildProjectsReport(scope);
       return csvResponse(
         `projects-report-${stampForCsv}.csv`,
-        ['Έργο', 'Κατάσταση', 'Ολοκλ. περιόδου', 'Velocity/εβδ', 'Net flow', 'Ώρες tracked', 'Κόστος εργασίας (EUR)', 'Ωριαία τιμή (EUR)', 'Ώρες εκτίμηση', 'Μ.ό. cycle (h)', 'Εκπρόθεσμα'],
-        d.rows.map((p) => [p.name, p.status, p.completedInPeriod, p.velocityPerWeek, p.netFlow, p.trackedHours, p.laborCost, 80, p.estimatedHours, p.avgCycleHours, p.overdue]),
+        ['Έργο', 'Κατάσταση', 'Ολοκλ. περιόδου', 'Velocity/εβδ', 'Net flow', 'Εντός προθεσμίας %', 'Ώρες tracked', 'Χρεώσιμες ώρες', 'Κόστος εργασίας (EUR)', 'Ωριαία τιμή (EUR)', 'Ώρες εκτίμηση', 'Μ.ό. cycle (h)', 'Εκπρόθεσμα'],
+        d.rows.map((p) => [p.name, p.status, p.completedInPeriod, p.velocityPerWeek, p.netFlow, p.onTimePct, p.trackedHours, p.billableHours, p.laborCost, 80, p.estimatedHours, p.avgCycleHours, p.overdue]),
+      );
+    }
+    if (rawTab === 'customers') {
+      if (!isPrivilegedForCsv) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+      const d = await buildCustomersReport(scope);
+      return csvResponse(
+        `customers-report-${stampForCsv}.csv`,
+        ['Πελάτης', 'Ενεργός', 'Ενεργά έργα', 'Σύνολο έργων', 'Νέα tasks', 'Ολοκληρώσεις περιόδου', 'Net flow', 'Πρόοδος %', 'Ανοιχτά', 'Εκπρόθεσμα', 'Εντός προθεσμίας %', 'Μ.ό. cycle (h)', 'Ώρες tracked', 'Ώρες εκτίμηση', 'Χρεώσιμες ώρες'],
+        d.rows.map((c) => [c.name, c.isActive ? 'Ναι' : 'Όχι', c.activeProjects, c.totalProjects, c.createdInPeriod, c.completedInPeriod, c.netFlow, c.completionPct, c.open, c.overdue, c.onTimePct, c.avgCycleHours, c.trackedHours, c.estimatedHours, c.billableHours]),
       );
     }
     if (rawTab === 'users') {

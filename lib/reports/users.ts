@@ -32,11 +32,29 @@ export type UserReportRow = {
   recentTasks: { id: string; title: string; status: string; projectName: string }[]
 }
 
-export type UsersReport = { rows: UserReportRow[] }
+export type UsersReport = {
+  summary: {
+    requestedInPeriod: number
+    completedInPeriod: number
+    completedDelta: number | null
+    trackedHours: number
+    laborCost: number
+    avgCycleHours: number | null
+    onTimePct: number | null
+    activeLoad: number
+    overdue: number
+    ticketsResolved: number
+  }
+  rows: UserReportRow[]
+}
 
 export async function buildUsersReport(scope: ReportScope): Promise<UsersReport> {
   const { range, prev } = scope
   const now = new Date()
+  const allCycles: number[] = []
+  let allWithDue = 0
+  let allOnTime = 0
+  let completedPreviousPeriod = 0
 
   const users = await prisma.user.findMany({
     where: { userType: 'employee' },
@@ -79,6 +97,10 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
     const withDue = completedCur.filter((t) => t.dueDate)
     const onTime = withDue.filter((t) => t.actualCompletedAt <= t.dueDate!)
     const open = tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled')
+    allCycles.push(...cycles)
+    allWithDue += withDue.length
+    allOnTime += onTime.length
+    completedPreviousPeriod += completedPrev.length
     return {
       id: u.id,
       name: u.name ?? u.email,
@@ -107,5 +129,21 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
   })
 
   rows.sort((a, b) => b.completedInPeriod - a.completedInPeriod || b.activeLoad - a.activeLoad)
-  return { rows }
+  const completedInPeriod = rows.reduce((sum, row) => sum + row.completedInPeriod, 0)
+  const avgCycle = mean(allCycles)
+  return {
+    summary: {
+      requestedInPeriod: rows.reduce((sum, row) => sum + row.requestedInPeriod, 0),
+      completedInPeriod,
+      completedDelta: pctDelta(completedInPeriod, completedPreviousPeriod),
+      trackedHours: Math.round(rows.reduce((sum, row) => sum + row.trackedHours, 0) * 10) / 10,
+      laborCost: Math.round(rows.reduce((sum, row) => sum + row.laborCost, 0) * 100) / 100,
+      avgCycleHours: avgCycle === null ? null : Math.round(avgCycle * 10) / 10,
+      onTimePct: allWithDue === 0 ? null : Math.round((allOnTime / allWithDue) * 100),
+      activeLoad: rows.reduce((sum, row) => sum + row.activeLoad, 0),
+      overdue: rows.reduce((sum, row) => sum + row.overdue, 0),
+      ticketsResolved: rows.reduce((sum, row) => sum + row.ticketsResolved, 0),
+    },
+    rows,
+  }
 }

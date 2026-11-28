@@ -14,22 +14,25 @@ export type ProjectReportRow = {
   overdue: number
   completionPct: number
   dueDate: string | null
-  // Νέα, για την περίοδο:
   completedInPeriod: number
+  completedPreviousPeriod: number
   createdInPeriod: number
   netFlow: number // createdInPeriod - completedInPeriod (θετικό = συσσώρευση)
   velocityPerWeek: number
   trackedHours: number
   laborCost: number
   estimatedHours: number
+  billableHours: number
   avgCycleHours: number | null
   cycleN: number
+  onTimePct: number | null
+  onTimeN: number
 }
 
 export type ProjectsReport = { rows: ProjectReportRow[] }
 
 export async function buildProjectsReport(scope: ReportScope): Promise<ProjectsReport> {
-  const { range, userId, isPrivileged } = scope
+  const { range, prev, userId, isPrivileged } = scope
   const now = new Date()
   const where = isPrivileged ? {} : { OR: [{ ownerId: userId }, { members: { some: { userId } } }] }
   const weeks = Math.max(1, (range.to.getTime() - range.from.getTime()) / (7 * 86_400_000))
@@ -44,7 +47,7 @@ export async function buildProjectsReport(scope: ReportScope): Promise<ProjectsR
         where: { mergedIntoId: null },
         select: {
           status: true, dueDate: true, createdAt: true, completedAt: true,
-          estimatedHours: true, inProgressAccumulatedMs: true, inProgressStartedAt: true,
+          estimatedHours: true, billableHours: true, inProgressAccumulatedMs: true, inProgressStartedAt: true,
         },
       },
     },
@@ -55,12 +58,17 @@ export async function buildProjectsReport(scope: ReportScope): Promise<ProjectsR
     const total = activeTasks.length
     const done = activeTasks.filter((t) => t.status === 'done').length
     const overdue = activeTasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done').length
-    const completedInPeriod = p.tasks.filter(
+    const completedInPeriod = activeTasks.filter(
       (t) => t.completedAt && t.completedAt >= range.from && t.completedAt <= range.to,
     )
-    const createdInPeriod = p.tasks.filter((t) => t.createdAt >= range.from && t.createdAt <= range.to).length
+    const completedPreviousPeriod = activeTasks.filter(
+      (t) => t.completedAt && t.completedAt >= prev.from && t.completedAt <= prev.to,
+    )
+    const createdInPeriod = activeTasks.filter((t) => t.createdAt >= range.from && t.createdAt <= range.to).length
     const cycles = completedInPeriod.map((t) => hoursBetween(t.createdAt, t.completedAt!))
     const avgCycle = mean(cycles)
+    const withDue = completedInPeriod.filter((t) => t.dueDate)
+    const onTime = withDue.filter((t) => t.completedAt! <= t.dueDate!)
     return {
       id: p.id,
       name: p.name,
@@ -75,14 +83,18 @@ export async function buildProjectsReport(scope: ReportScope): Promise<ProjectsR
       completionPct: total === 0 ? 0 : Math.round((done / total) * 100),
       dueDate: p.dueDate?.toISOString() ?? null,
       completedInPeriod: completedInPeriod.length,
+      completedPreviousPeriod: completedPreviousPeriod.length,
       createdInPeriod,
       netFlow: createdInPeriod - completedInPeriod.length,
       velocityPerWeek: Math.round((completedInPeriod.length / weeks) * 10) / 10,
       trackedHours: msToHours(activeTasks.reduce((a, t) => a + trackedMs(t, now), 0)),
       laborCost: laborCostEur(Number(activeTasks.reduce((a, t) => a + trackedMs(t, now), 0)) / 3_600_000),
       estimatedHours: Math.round(activeTasks.reduce((a, t) => a + (t.estimatedHours ?? 0), 0) * 10) / 10,
+      billableHours: Math.round(completedInPeriod.reduce((a, t) => a + (t.billableHours ?? 0), 0) * 10) / 10,
       avgCycleHours: avgCycle === null ? null : Math.round(avgCycle * 10) / 10,
       cycleN: cycles.length,
+      onTimePct: withDue.length === 0 ? null : Math.round((onTime.length / withDue.length) * 100),
+      onTimeN: withDue.length,
     }
   })
 

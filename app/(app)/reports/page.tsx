@@ -2,19 +2,21 @@ import { auth } from '@/auth';
 import { resolveRange, rangeLabel } from '@/lib/reports/shared';
 import { buildOverviewReport } from '@/lib/reports/overview';
 import { buildProjectsReport } from '@/lib/reports/projects';
+import { buildCustomersReport } from '@/lib/reports/customers';
 import { buildTasksReport } from '@/lib/reports/tasks';
 import { buildTicketsReport } from '@/lib/reports/tickets';
 import { buildUsersReport } from '@/lib/reports/users';
 import { ReportsShell, type ReportTab } from './reports-shell';
 import { OverviewTab } from './overview-tab';
 import { ProjectsTab } from './projects-tab';
+import { CustomersTab } from './customers-tab';
 import { TasksTab } from './tasks-tab';
 import { TicketsTab } from './tickets-tab';
 import { UsersTab } from './users-tab';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_TABS: ReportTab[] = ['overview', 'projects', 'tasks', 'tickets', 'users'];
+const VALID_TABS: ReportTab[] = ['overview', 'projects', 'customers', 'tasks', 'tickets', 'users'];
 
 export default async function ReportsPage({
   searchParams,
@@ -27,7 +29,7 @@ export default async function ReportsPage({
   const isPrivileged = session?.user?.role === 'admin' || session?.user?.role === 'manager';
 
   let tab: ReportTab = VALID_TABS.includes(sp.tab as ReportTab) ? (sp.tab as ReportTab) : 'overview';
-  if (!isPrivileged && (tab === 'tickets' || tab === 'users')) tab = 'overview';
+  if (!isPrivileged && (tab === 'tickets' || tab === 'users' || tab === 'customers')) tab = 'overview';
 
   const { range, prev, preset } = resolveRange(sp);
   const scope = { range, prev, userId, isPrivileged };
@@ -43,6 +45,11 @@ export default async function ReportsPage({
     case 'projects': {
       const data = await buildProjectsReport(scope);
       content = <ProjectsTab data={data} />;
+      break;
+    }
+    case 'customers': {
+      const data = await buildCustomersReport(scope);
+      content = <CustomersTab data={data} />;
       break;
     }
     case 'tasks': {
@@ -67,13 +74,7 @@ export default async function ReportsPage({
   }
 
   return (
-    <ReportsShell
-      tab={tab}
-      preset={preset}
-      periodLabel={rangeLabel(range)}
-      prevLabel={rangeLabel(prev)}
-      isPrivileged={isPrivileged}
-    >
+    <ReportsShell tab={tab} preset={preset} periodLabel={rangeLabel(range)} prevLabel={rangeLabel(prev)} isPrivileged={isPrivileged}>
       {content}
     </ReportsShell>
   );
