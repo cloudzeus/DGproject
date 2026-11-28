@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { dedupeCompletionActivities } from '@/lib/task-contribution';
 
 export * from './shared';
 
@@ -27,6 +28,7 @@ export type ReportUserRow = {
   email: string;
   avatarUrl?: string;
   role: string;
+  requested: number;
   total: number;
   done: number;
   open: number;
@@ -77,9 +79,17 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
         email: true,
         image: true,
         role: true,
+        createdTasks: {
+          where: { mergedIntoId: null },
+          select: { id: true },
+        },
         assignedTasks: {
           where: { task: { mergedIntoId: null } },
           select: { task: { select: { id: true, status: true, dueDate: true, priority: true } } },
+        },
+        activities: {
+          where: { action: 'completed', task: { mergedIntoId: null } },
+          select: { action: true, taskId: true, createdAt: true },
         },
       },
       orderBy: { name: 'asc' },
@@ -117,7 +127,7 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
     .map((u) => {
       const allTasks = u.assignedTasks.map((a) => a.task);
       const total = allTasks.length;
-      const done = allTasks.filter((t) => t.status === 'done').length;
+      const done = dedupeCompletionActivities(u.activities).length;
       const overdue = allTasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done').length;
       const inProgress = allTasks.filter((t) => t.status === 'in_progress').length;
       return {
@@ -126,14 +136,15 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
         email: u.email,
         avatarUrl: u.image ?? undefined,
         role: u.role,
+        requested: u.createdTasks.length,
         total,
         done,
-        open: total - done,
+        open: allTasks.filter((t) => t.status !== 'done').length,
         overdue,
         inProgress,
       };
     })
-    .sort((a, b) => b.open - a.open || b.total - a.total);
+    .sort((a, b) => b.done - a.done || b.open - a.open || b.total - a.total);
 
   const statusBreakdown: Record<string, number> = {
     backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0,

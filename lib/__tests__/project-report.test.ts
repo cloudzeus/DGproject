@@ -137,10 +137,41 @@ test('analytics separate customer-opened tasks and calculate real closure time',
   assert.equal(analytics.dgsmart.completedTasks, 2);
   assert.equal(analytics.dgsmart.aiAssignedTasks, 1);
   assert.equal(analytics.dgsmart.approvedResolutions, 1);
+  assert.equal(analytics.users.find((item) => item.id === owner.id)?.requestedTasks, 2);
   assert.equal(analytics.users.find((item) => item.id === owner.id)?.assignedTasks, 3);
+  assert.equal(analytics.users.find((item) => item.id === owner.id)?.completedTasks, 2);
+  assert.equal(analytics.users.find((item) => item.id === owner.id)?.openTasks, 1);
+  assert.equal(analytics.users.find((item) => item.id === customer.id)?.requestedTasks, 1);
+  assert.equal(analytics.users.find((item) => item.id === customer.id)?.completedTasks, 0);
   assert.equal(analytics.monthly[0].opened, 1);
   assert.equal(analytics.monthly[0].closed, 1);
   assert.equal(analytics.monthly.length, 11);
+});
+
+test('requester and assignee do not receive credit for another user completion', () => {
+  const attributionProject = {
+    ...project,
+    tasks: [{
+      ...tasks[0],
+      creator: customer,
+      assignees: [{ user: customer }, { user: owner }],
+    }],
+    activities: [
+      { taskId: 't1', action: 'completed', targetType: 'task', metadata: null, createdAt: new Date('2026-01-20T09:00:00.000Z'), actor: owner },
+      { taskId: 't1', action: 'completed', targetType: 'task', metadata: null, createdAt: new Date('2026-01-21T09:00:00.000Z'), actor: owner },
+    ],
+  } as unknown as ProjectReportProject;
+
+  const analytics = buildProjectReportAnalytics(attributionProject, NOW);
+  const requester = analytics.users.find((item) => item.id === customer.id);
+  const implementer = analytics.users.find((item) => item.id === owner.id);
+  assert.equal(requester?.requestedTasks, 1);
+  assert.equal(requester?.assignedTasks, 1);
+  assert.equal(requester?.completedTasks, 0);
+  assert.equal(requester?.openTasks, 0);
+  assert.equal(implementer?.requestedTasks, 0);
+  assert.equal(implementer?.assignedTasks, 1);
+  assert.equal(implementer?.completedTasks, 1);
 });
 
 test('prompt contains the complete relevant history but masks identifying names', () => {

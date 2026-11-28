@@ -9,6 +9,8 @@ import { ProjectCompaniesManager } from './project-companies-manager';
 import type { ProjectFileItem } from './project-files';
 import type { ProjectEmail } from './project-emails-tab';
 import type { HistoryEntry } from './project-history-tab';
+import type { VaultEligibleUser } from './project-vault-tab';
+import type { VaultAuditEntry, VaultSecretMetadata } from '@/lib/vault-types';
 import type { EmailTrackingInfo } from '@/components/email/email-tracking-badge';
 import { refreshProjectEmailTracking } from '@/lib/email-tracking';
 
@@ -55,7 +57,19 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           where: { mergedIntoId: null },
           orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
           include: {
+            creator: { select: { id: true, name: true, email: true, image: true } },
             assignees: { include: { user: true } },
+            activities: {
+              where: { action: 'completed' },
+              orderBy: { createdAt: 'asc' },
+              select: {
+                action: true,
+                taskId: true,
+                actorId: true,
+                createdAt: true,
+                actor: { select: { id: true, name: true, email: true, image: true } },
+              },
+            },
             attachments: {
               select: { id: true, name: true, title: true, size: true, mimeType: true, url: true, createdAt: true },
               orderBy: { createdAt: 'desc' },
@@ -306,11 +320,107 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canEdit =
     role === 'admin' || role === 'manager' || sessionUserId === project.ownerId;
 
-  const projectMemberOptions = project.members.map((m) => ({
-    id: m.user.id,
-    name: m.user.name ?? '',
-    email: m.user.email,
+  // Personal vault: list only secrets created by the current user or explicitly
+  // shared with them. Neither admins nor project owners can bypass this boundary.
+  const vaultSecretVisibility = {
+    OR: [
+      { createdById: sessionUserId },
+      { shares: { some: { userId: sessionUserId } } },
+    ],
+  };
+  const [vaultSecretsRaw, vaultAuditRaw] = await Promise.all([
+    prisma.vaultSecret.findMany({
+      where: { projectId: id, ...vaultSecretVisibility },
+      orderBy: [{ environment: 'asc' }, { label: 'asc' }],
+      select: {
+        id: true,
+        label: true,
+        category: true,
+        environment: true,
+        version: true,
+        createdById: true,
+        createdAt: true,
+        updatedAt: true,
+        createdBy: { select: { name: true, email: true } },
+        updatedBy: { select: { name: true, email: true } },
+        shares: { select: { userId: true } },
+      },
+    }),
+    prisma.vaultAuditLog.findMany({
+      where: {
+        projectId: id,
+        OR: [
+          { secret: { is: vaultSecretVisibility } },
+          { actorId: sessionUserId, secretId: null },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        action: true,
+        createdAt: true,
+        secret: { select: { label: true } },
+        actor: { select: { name: true, email: true } },
+      },
+    }),
+  ]);
+  const vaultSecrets: VaultSecretMetadata[] = vaultSecretsRaw.map((secret) => ({
+    id: secret.id,
+    label: secret.label,
+    category: secret.category,
+    environment: secret.environment,
+    version: secret.version,
+    createdAt: secret.createdAt,
+    updatedAt: secret.updatedAt,
+    createdByName: secret.createdBy?.name ?? secret.createdBy?.email ?? 'Διαγραμμένος χρήστης',
+    updatedByName: secret.updatedBy ? secret.updatedBy.name ?? secret.updatedBy.email : null,
+    ownedByMe: secret.createdById === sessionUserId,
+    sharedUserIds: secret.createdById === sessionUserId ? secret.shares.map((share) => share.userId) : [],
   }));
+  const vaultAuditEntries: VaultAuditEntry[] = vaultAuditRaw.map((entry) => ({
+    id: entry.id,
+    action: entry.action,
+    secretLabel: entry.secret?.label ?? null,
+    actorName: entry.actor?.name ?? entry.actor?.email ?? 'Διαγραμμένος χρήστης',
+    createdAt: entry.createdAt,
+  }));
+  const vaultEligibleUsersMap = new Map<string, VaultEligibleUser>();
+  if (!project.owner.isAIAgent && project.owner.id !== sessionUserId) {
+    vaultEligibleUsersMap.set(project.owner.id, {
+      id: project.owner.id,
+      name: project.owner.name ?? project.owner.email,
+      email: project.owner.email,
+    });
+  }
+  for (const member of project.members) {
+    if (member.user.isAIAgent || member.user.id === sessionUserId || vaultEligibleUsersMap.has(member.user.id)) continue;
+    vaultEligibleUsersMap.set(member.user.id, {
+      id: member.user.id,
+      name: member.user.name ?? member.user.email,
+      email: member.user.email,
+    });
+  }
+  const vaultEligibleUsers = [...vaultEligibleUsersMap.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, 'el'),
+  );
+
+  const projectMemberOptionsMap = new Map<string, { id: string; name: string; email: string }>();
+  for (const member of project.members) {
+    projectMemberOptionsMap.set(member.user.id, {
+      id: member.user.id,
+      name: member.user.name ?? member.user.email,
+      email: member.user.email,
+    });
+  }
+  projectMemberOptionsMap.set(project.owner.id, {
+    id: project.owner.id,
+    name: project.owner.name ?? project.owner.email,
+    email: project.owner.email,
+  });
+  const projectMemberOptions = [...projectMemberOptionsMap.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, 'el'),
+  );
 
   // Project participants for Q&A: members + owner (deduped)
   const questionMembersMap = new Map<string, { id: string; name: string; email: string; avatarUrl?: string }>();
@@ -372,6 +482,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           inProgressStartedAt: null,
           inProgressAccumulatedMs: 0,
           dependencyIds: [] as string[],
+          requester: null,
+          completionActivities: [] as never[],
           assignees: [] as { id: string; name: string; avatarUrl?: string }[],
           attachments: [] as never[],
           questions: [] as never[],
@@ -398,6 +510,23 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       // plain number. Safe up to ~285k years of accumulated time.
       inProgressAccumulatedMs: Number(t.inProgressAccumulatedMs),
       dependencyIds: t.dependencies.map((d) => d.dependsOnId),
+      requester: {
+        id: t.creator.id,
+        name: t.creator.name ?? t.creator.email,
+        email: t.creator.email,
+      },
+      completionActivities: t.activities.map((activity) => ({
+        action: activity.action,
+        taskId: activity.taskId,
+        actorId: activity.actorId,
+        createdAt: activity.createdAt,
+        actor: {
+          id: activity.actor.id,
+          name: activity.actor.name ?? activity.actor.email,
+          email: activity.actor.email,
+          avatarUrl: activity.actor.image ?? undefined,
+        },
+      })),
       assignees: t.assignees.map((a) => ({
         id: a.user.id,
         name: a.user.name ?? a.user.email,
@@ -847,6 +976,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         catalogServices={catalogServices}
         emails={emails}
         historyEntries={historyEntries}
+        vaultSecrets={vaultSecrets}
+        vaultAuditEntries={vaultAuditEntries}
+        currentUserEmail={session?.user?.email ?? ''}
+        vaultEligibleUsers={vaultEligibleUsers}
       />
       <div className="p-6 lg:p-8 max-w-[1600px] mx-auto space-y-4">
         <div className="flex items-center justify-end">

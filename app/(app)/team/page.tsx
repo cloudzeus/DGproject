@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { dedupeCompletionActivities } from '@/lib/task-contribution';
 import { TeamClient } from './team-client';
 
 const WEEKLY_CAPACITY_HOURS = 40;
@@ -18,6 +19,7 @@ export default async function TeamPage() {
         },
       },
       assignedTasks: {
+        where: { task: { mergedIntoId: null } },
         select: {
           task: {
             select: {
@@ -33,6 +35,10 @@ export default async function TeamPage() {
           },
         },
       },
+      activities: {
+        where: { action: 'completed', task: { mergedIntoId: null } },
+        select: { action: true, taskId: true, createdAt: true },
+      },
     },
     orderBy: { name: 'asc' },
   });
@@ -41,7 +47,7 @@ export default async function TeamPage() {
     const tasks = u.assignedTasks.map((a) => a.task);
     const openTasks = tasks.filter((t) => t.status !== 'done');
     const remainingHours = openTasks.reduce((sum, t) => sum + (t.estimatedHours ?? 0), 0);
-    const doneTasks = tasks.filter((t) => t.status === 'done');
+    const doneTaskCount = dedupeCompletionActivities(u.activities).length;
     const overdue = openTasks.filter((t) => t.dueDate && t.dueDate < new Date()).length;
 
     const loadPct = Math.min(200, Math.round((remainingHours / WEEKLY_CAPACITY_HOURS) * 100));
@@ -65,7 +71,7 @@ export default async function TeamPage() {
       departments: u.departments.map((d) => d.department),
       projects: u.projectMemberships.map((m) => m.project),
       openTaskCount: openTasks.length,
-      doneTaskCount: doneTasks.length,
+      doneTaskCount,
       overdueCount: overdue,
       remainingHours: Math.round(remainingHours * 100) / 100,
       loadPct,

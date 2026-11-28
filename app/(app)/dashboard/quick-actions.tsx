@@ -128,7 +128,12 @@ export function QuickActions({ projects, users, currentUserId, canCreateProject 
       />
 
       {taskModalOpen && (
-        <BoardTaskModal mode="create" projects={projects} onClose={() => setTaskModalOpen(false)} />
+        <BoardTaskModal
+          mode="create"
+          projects={projects}
+          requester={users.find((user) => user.id === currentUserId) ?? { id: currentUserId, name: 'Εσύ', email: '' }}
+          onClose={() => setTaskModalOpen(false)}
+        />
       )}
 
       {emailProject && emailProject.projectCode && (

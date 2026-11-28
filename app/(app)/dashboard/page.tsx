@@ -81,6 +81,11 @@ export default async function DashboardPage() {
   }));
 
   const users = allUsers.map((u) => ({ id: u.id, name: u.name ?? u.email, email: u.email }));
+  const currentRequester = users.find((user) => user.id === userId) ?? {
+    id: userId,
+    name: displayName,
+    email: session?.user?.email ?? '',
+  };
 
   return (
     <DashboardShell
@@ -97,7 +102,7 @@ export default async function DashboardPage() {
         <>
           <AttentionZone items={attention} />
           <MyDayZone data={myDay} />
-          <CapacityZone rows={capacity} projects={quickActionProjects} />
+          <CapacityZone rows={capacity} projects={quickActionProjects} requester={currentRequester} />
           <RadarZone data={radar} />
         </>
       }

@@ -302,9 +302,9 @@ export function buildFallbackProjectReportNarrative(
     .filter((task) => task.completedAt)
     .sort((a, b) => b.completedAt!.getTime() - a.completedAt!.getTime())[0]?.completedAt ?? null;
   const contributors = analytics.users
-    .filter((user) => user.assignedTasks > 0)
+    .filter((user) => user.requestedTasks > 0 || user.assignedTasks > 0 || user.completedTasks > 0)
     .slice(0, 4)
-    .map((user) => `${user.name}: ${user.completedTasks}/${user.assignedTasks} ολοκληρωμένες`)
+    .map((user) => `${user.name}: ζήτησε ${user.requestedTasks}, ανέλαβε ${user.assignedTasks}, ολοκλήρωσε ${user.completedTasks}`)
     .join(', ');
   const customerName = analytics.customer.companyName ?? 'Ο πελάτης';
 

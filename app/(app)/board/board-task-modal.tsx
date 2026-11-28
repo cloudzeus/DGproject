@@ -15,6 +15,7 @@ export type BoardProjectOption = {
 type CreateProps = {
   mode: 'create';
   projects: BoardProjectOption[];
+  requester: TaskAssigneeOption;
   defaultProjectId?: string;
   defaultStatus?: TaskStatus;
   /** Preselects these users as assignees (e.g. the capacity zone's «Ανάθεση» button). */
@@ -27,6 +28,7 @@ type EditProps = {
   projectId: string;
   taskId: string;
   members: TaskAssigneeOption[];
+  requester?: TaskAssigneeOption;
   initial: TaskFormInitial;
   onClose: () => void;
 };
@@ -38,7 +40,7 @@ export function BoardTaskModal(props: Props) {
   return <CreateModal {...props} />;
 }
 
-function CreateModal({ projects, defaultProjectId, defaultStatus, defaultAssigneeIds, onClose }: CreateProps) {
+function CreateModal({ projects, requester, defaultProjectId, defaultStatus, defaultAssigneeIds, onClose }: CreateProps) {
   const [projectId, setProjectId] = useState<string>(defaultProjectId ?? projects[0]?.id ?? '');
   const [attachment, setAttachment] = useState<File | null>(null);
 
@@ -88,6 +90,7 @@ function CreateModal({ projects, defaultProjectId, defaultStatus, defaultAssigne
       <TaskForm
         key={projectId}
         members={members}
+        requester={requester}
         initial={initial}
         submitLabel="Δημιουργία"
         onCancel={onClose}
@@ -113,11 +116,12 @@ function CreateModal({ projects, defaultProjectId, defaultStatus, defaultAssigne
   );
 }
 
-function EditModal({ projectId, taskId, members, initial, onClose }: EditProps) {
+function EditModal({ projectId, taskId, members, requester, initial, onClose }: EditProps) {
   return (
     <TaskModal title="Επεξεργασία εργασίας" onClose={onClose}>
       <TaskForm
         members={members}
+        requester={requester}
         submitLabel="Αποθήκευση"
         projectId={projectId}
         taskId={taskId}

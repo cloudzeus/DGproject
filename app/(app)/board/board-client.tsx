@@ -60,13 +60,14 @@ type HeaderUser = { id: string; name: string; avatarUrl?: string };
 interface Props {
   initialTasks: TaskWithRelations[];
   headerUsers: HeaderUser[];
+  currentUser: { id: string; name: string; email: string };
   projects: BoardProjectOption[];
   canCreate: boolean;
   /** Deep-link: /board?task=<id> opens this task's drawer on load. */
   focusTaskId?: string;
 }
 
-export function BoardClient({ initialTasks, headerUsers, projects, canCreate, focusTaskId }: Props) {
+export function BoardClient({ initialTasks, headerUsers, currentUser, projects, canCreate, focusTaskId }: Props) {
   const router = useRouter();
   const [tasks, setTasks] = useState<TaskWithRelations[]>(initialTasks);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -98,7 +99,7 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate, fo
   const [onlyMine, setOnlyMine] = useState(false);
   const [openFilter, setOpenFilter] = useState<'assignees' | 'priority' | 'more' | null>(null);
 
-  const currentUserId = useMemo(() => headerUsers[0]?.id ?? null, [headerUsers]);
+  const currentUserId = currentUser.id;
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
@@ -470,6 +471,7 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate, fo
           <BoardTaskModal
             mode="create"
             projects={projects}
+            requester={currentUser}
             defaultStatus={createStatus ?? undefined}
             onClose={() => {
               setCreating(false);
@@ -484,6 +486,11 @@ export function BoardClient({ initialTasks, headerUsers, projects, canCreate, fo
             projectId={editing.projectId}
             taskId={editing.id}
             members={editingProjectMembers}
+            requester={editing.requester ? {
+              id: editing.requester.id,
+              name: editing.requester.name,
+              email: editing.requester.email,
+            } : undefined}
             initial={{
               title: editing.title,
               description: editing.description ?? null,

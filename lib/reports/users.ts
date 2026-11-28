@@ -1,5 +1,13 @@
 import { prisma } from '@/lib/prisma'
+import { dedupeCompletionActivities } from '@/lib/task-contribution'
 import { type ReportScope, hoursBetween, laborCostEur, mean, msToHours, pctDelta, trackedMs, bucketByWeek } from './shared'
+
+const REPORT_TASK_SELECT = {
+  id: true, title: true, status: true, dueDate: true, createdAt: true, completedAt: true,
+  inProgressAccumulatedMs: true, inProgressStartedAt: true,
+  project: { select: { name: true } },
+  ticket: { select: { id: true } },
+} as const
 
 export type UserReportRow = {
   id: string
@@ -7,6 +15,7 @@ export type UserReportRow = {
   email: string
   avatarUrl?: string
   role: string
+  requestedInPeriod: number
   completedInPeriod: number
   completedDelta: number | null
   trackedHours: number
@@ -33,17 +42,21 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
     orderBy: { name: 'asc' },
     select: {
       id: true, name: true, email: true, image: true, role: true,
+      createdTasks: {
+        where: { mergedIntoId: null },
+        select: { id: true, createdAt: true },
+      },
       assignedTasks: {
         where: { task: { mergedIntoId: null } },
+        select: { task: { select: REPORT_TASK_SELECT } },
+      },
+      activities: {
+        where: { action: 'completed', task: { mergedIntoId: null } },
         select: {
-          task: {
-            select: {
-              id: true, title: true, status: true, dueDate: true, createdAt: true, completedAt: true,
-              inProgressAccumulatedMs: true, inProgressStartedAt: true,
-              project: { select: { name: true } },
-              ticket: { select: { id: true } },
-            },
-          },
+          action: true,
+          taskId: true,
+          createdAt: true,
+          task: { select: REPORT_TASK_SELECT },
         },
       },
     },
@@ -51,12 +64,15 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
 
   const rows: UserReportRow[] = users.map((u) => {
     const tasks = u.assignedTasks.map((a) => a.task)
-    const completedCur = tasks.filter((t) => t.completedAt && t.completedAt >= range.from && t.completedAt <= range.to)
-    const completedPrev = tasks.filter((t) => t.completedAt && t.completedAt >= prev.from && t.completedAt <= prev.to)
-    const cycles = completedCur.map((t) => hoursBetween(t.createdAt, t.completedAt!))
+    const completions = dedupeCompletionActivities(u.activities).flatMap((activity) =>
+      activity.task ? [{ ...activity.task, actualCompletedAt: activity.createdAt }] : [],
+    )
+    const completedCur = completions.filter((t) => t.actualCompletedAt >= range.from && t.actualCompletedAt <= range.to)
+    const completedPrev = completions.filter((t) => t.actualCompletedAt >= prev.from && t.actualCompletedAt <= prev.to)
+    const cycles = completedCur.map((t) => hoursBetween(t.createdAt, t.actualCompletedAt))
     const avgCycle = mean(cycles)
     const withDue = completedCur.filter((t) => t.dueDate)
-    const onTime = withDue.filter((t) => t.completedAt! <= t.dueDate!)
+    const onTime = withDue.filter((t) => t.actualCompletedAt <= t.dueDate!)
     const open = tasks.filter((t) => t.status !== 'done')
     return {
       id: u.id,
@@ -64,6 +80,7 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
       email: u.email,
       avatarUrl: u.image ?? undefined,
       role: u.role,
+      requestedInPeriod: u.createdTasks.filter((t) => t.createdAt >= range.from && t.createdAt <= range.to).length,
       completedInPeriod: completedCur.length,
       completedDelta: pctDelta(completedCur.length, completedPrev.length),
       trackedHours: msToHours(completedCur.reduce((a, t) => a + trackedMs(t, now), 0)),
@@ -75,7 +92,7 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
       activeLoad: open.length,
       overdue: open.filter((t) => t.dueDate && t.dueDate < now).length,
       ticketsResolved: completedCur.filter((t) => t.ticket).length,
-      weeklyCompletions: bucketByWeek(completedCur, (t) => t.completedAt!, range),
+      weeklyCompletions: bucketByWeek(completedCur, (t) => t.actualCompletedAt, range),
       recentTasks: [...tasks]
         .sort((a, b) => (b.completedAt ?? b.createdAt).getTime() - (a.completedAt ?? a.createdAt).getTime())
         .slice(0, 10)

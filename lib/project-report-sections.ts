@@ -123,29 +123,28 @@ export function buildUserContributionSection(
   narrative: ProjectReportNarrative,
 ): string {
   const contributors = analytics.users.filter((user) =>
-    user.assignedTasks > 0 || user.comments > 0 || user.activities > 0,
+    user.requestedTasks > 0 || user.assignedTasks > 0 || user.completedTasks > 0 ||
+    user.comments > 0 || user.activities > 0,
   );
+  const maxCompleted = Math.max(1, ...contributors.map((user) => user.completedTasks));
   return `
     ${sectionHeader({ label: 'Η δουλειά της ομάδας, ανά χρήστη', color: BRAND.success })}
     ${paragraph(narrative.teamParagraph)}
     ${contributors.length > 0 ? `<table role="presentation" width="100%" style="border-collapse:collapse;margin:0 0 12px;"><tbody>
-      ${contributors.map((user) => {
-        const completion = user.assignedTasks > 0 ? Math.round((user.completedTasks / user.assignedTasks) * 100) : 0;
-        return `<tr>
+      ${contributors.map((user) => `<tr>
           <td style="padding:10px 0;border-bottom:1px solid ${BRAND.border};vertical-align:top;">
             <table role="presentation" width="100%" style="border-collapse:collapse;"><tr>
               <td style="vertical-align:top;">
                 <div style="font-size:13px;font-weight:700;color:${BRAND.text};">${escapeHtml(user.name)}</div>
-                <div style="font-size:10px;color:${BRAND.textDim};margin-top:2px;">${user.isAIAgent ? 'AI agent' : user.isCustomer ? 'Πελάτης' : user.isDGSmart ? 'DGSmart' : 'Συνεργάτης'} · ${user.completedTasks}/${user.assignedTasks} ολοκληρωμένες · ${user.comments} σχόλια · ${user.trackedHoursOnAssignedTasks} ώρες στα tasks συμμετοχής</div>
+                <div style="font-size:10px;color:${BRAND.textDim};margin-top:2px;">${user.isAIAgent ? 'AI agent' : user.isCustomer ? 'Πελάτης' : user.isDGSmart ? 'DGSmart' : 'Συνεργάτης'} · Ζήτησε ${user.requestedTasks} · Ανέλαβε ${user.assignedTasks} (${user.openTasks} ανοιχτά) · ${user.comments} σχόλια · ${user.trackedHoursOnAssignedTasks} ώρες στα ανατεθημένα tasks</div>
               </td>
-              <td width="42" align="right" style="vertical-align:top;font-size:12px;font-weight:700;color:${BRAND.success};">${completion}%</td>
+              <td width="112" align="right" style="vertical-align:top;font-size:12px;font-weight:700;color:${BRAND.success};">Ολοκλήρωσε ${user.completedTasks}</td>
             </tr></table>
-            <div style="margin-top:7px;">${horizontalBar(user.completedTasks, user.assignedTasks, BRAND.success)}</div>
+            <div style="margin-top:7px;">${horizontalBar(user.completedTasks, maxCompleted, BRAND.success)}</div>
           </td>
-        </tr>`;
-      }).join('')}
+        </tr>`).join('')}
     </tbody></table>` : `<div style="font-size:13px;color:${BRAND.textSoft};margin-bottom:16px;">Δεν υπάρχουν ακόμη καταχωρισμένες συνεισφορές χρηστών.</div>`}
-    <div style="font-size:10px;color:${BRAND.textDim};line-height:1.5;margin:0 0 18px;">Το ποσοστό είναι ολοκληρωμένες προς ανατεθημένες εργασίες. Οι ώρες ανά χρήστη αφορούν tasks στα οποία συμμετέχει και δεν προστίθενται μεταξύ χρηστών.</div>`;
+    <div style="font-size:10px;color:${BRAND.textDim};line-height:1.5;margin:0 0 18px;">«Ζήτησε» μετράει τα tasks που δημιούργησε ο χρήστης, «Ανέλαβε» τις τρέχουσες αναθέσεις και «Ολοκλήρωσε» μόνο τα completion events που κατέγραψε ο ίδιος. Οι ώρες αφορούν ανατεθημένα tasks και δεν προστίθενται μεταξύ χρηστών.</div>`;
 }
 
 export function buildDGSmartSection(

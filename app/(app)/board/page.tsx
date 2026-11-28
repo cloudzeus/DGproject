@@ -32,15 +32,25 @@ export default async function BoardPage({
         OR: [{ ownerId: userId }, { members: { some: { userId } } }],
       };
 
-  const [tasks, headerUsers, editableProjects] = await Promise.all([
+  const [tasks, headerUsers, editableProjects, currentUser] = await Promise.all([
     prisma.task.findMany({
       where: taskWhere,
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
       include: {
         project: { select: { id: true, name: true, color: true } },
+        creator: { select: { id: true, name: true, email: true, image: true } },
         assignees: {
           include: {
             user: { select: { id: true, name: true, email: true, image: true } },
+          },
+        },
+        activities: {
+          where: { action: 'completed' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            createdAt: true,
+            actor: { select: { id: true, name: true, email: true, image: true } },
           },
         },
         tags: { select: { name: true } },
@@ -65,6 +75,10 @@ export default async function BoardPage({
         },
       },
     }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true },
+    }),
   ]);
 
   const normalized: TaskWithRelations[] = tasks.map((t) => ({
@@ -88,6 +102,14 @@ export default async function BoardPage({
     updatedAt: t.updatedAt,
     createdById: t.createdById,
     project: { id: t.project.id, name: t.project.name, color: t.project.color },
+    requester: {
+      id: t.creator.id,
+      name: t.creator.name ?? t.creator.email,
+      email: t.creator.email,
+      avatarUrl: t.creator.image ?? undefined,
+      role: 'member' as const,
+      createdAt: t.createdAt,
+    },
     assignees: t.assignees.map((a) => ({
       id: a.user.id,
       name: a.user.name ?? a.user.email,
@@ -96,6 +118,15 @@ export default async function BoardPage({
       role: 'member' as const,
       createdAt: new Date(),
     })),
+    completedBy: t.activities[0] ? {
+      id: t.activities[0].actor.id,
+      name: t.activities[0].actor.name ?? t.activities[0].actor.email,
+      email: t.activities[0].actor.email,
+      avatarUrl: t.activities[0].actor.image ?? undefined,
+      role: 'member' as const,
+      createdAt: t.createdAt,
+      completedAt: t.activities[0].createdAt,
+    } : undefined,
     commentCount: t._count.comments,
     attachmentCount: t._count.attachments,
     ticket: t.ticket ? { id: t.ticket.id, code: t.ticket.code } : null,
@@ -120,6 +151,15 @@ export default async function BoardPage({
         name: u.name ?? u.email,
         avatarUrl: u.image ?? undefined,
       }))}
+      currentUser={currentUser ? {
+        id: currentUser.id,
+        name: currentUser.name ?? currentUser.email,
+        email: currentUser.email,
+      } : {
+        id: userId,
+        name: session?.user?.name ?? session?.user?.email ?? 'Εσύ',
+        email: session?.user?.email ?? '',
+      }}
       projects={projects}
       canCreate={projects.length > 0}
       focusTaskId={focusTaskId}

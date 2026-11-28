@@ -87,6 +87,8 @@ function toDateTimeInput(d: Date | null | undefined): string {
 
 type Props = {
   members: TaskAssigneeOption[];
+  /** Ο δημιουργός/αιτών είναι ξεχωριστός από τους υπεύθυνους υλοποίησης. */
+  requester?: TaskAssigneeOption;
   initial?: TaskFormInitial;
   submitLabel: string;
   onSubmit: (fd: FormData) => Promise<{ ok: boolean; error?: string } | void>;
@@ -117,6 +119,7 @@ type Props = {
 
 export function TaskForm({
   members,
+  requester,
   initial,
   submitLabel,
   onSubmit,
@@ -382,8 +385,18 @@ export function TaskForm({
         ))}
       </div>
 
+      <div className="rounded-lg border border-black/5 bg-fluent-neutral-4/40 px-3 py-2.5">
+        <span className="block text-[11px] font-semibold uppercase tracking-wider text-fluent-neutral-60">Αιτών / δημιουργός</span>
+        <span className="mt-1 block text-sm font-medium text-fluent-neutral-90">
+          {requester?.name || requester?.email || '—'}
+        </span>
+      </div>
+
       <div>
-        <label className="block text-xs font-medium text-fluent-neutral-70 mb-1.5">Ανάθεση σε</label>
+        <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Υπεύθυνοι υλοποίησης</label>
+        <p className="mb-1.5 text-[11px] text-fluent-neutral-60">
+          Ο αιτών καταγράφεται ξεχωριστά. Η ολοκλήρωση πιστώνεται μόνο στον χρήστη που κλείνει το task.
+        </p>
         {members.length === 0 ? (
           <p className="text-xs text-fluent-neutral-60">Δεν υπάρχουν μέλη στο έργο.</p>
         ) : (

@@ -170,9 +170,14 @@ function DrawerContent({ task, onClose, onEdit, onDelete, onSendReminder }: Draw
             )}
           </div>
 
-          <div className="grid grid-cols-[120px_1fr] gap-y-3 text-sm mb-6">
+          <div className="grid grid-cols-[150px_1fr] gap-y-3 text-sm mb-6">
             <span className="text-fluent-neutral-60 flex items-center gap-2">
-              <Person16Regular /> Assignees
+              <Person16Regular /> Αιτών / δημιουργός
+            </span>
+            <span className="text-fluent-neutral-80">{task.requester?.name ?? '—'}</span>
+
+            <span className="text-fluent-neutral-60 flex items-center gap-2">
+              <Person16Regular /> Υπεύθυνοι υλοποίησης
             </span>
             <div className="flex items-center gap-2 flex-wrap">
               {task.assignees.length === 0 ? (
@@ -186,6 +191,17 @@ function DrawerContent({ task, onClose, onEdit, onDelete, onSendReminder }: Draw
                 </>
               )}
             </div>
+
+            {task.completedBy && (
+              <>
+                <span className="text-fluent-neutral-60 flex items-center gap-2">
+                  <Person16Regular /> Ολοκληρώθηκε από
+                </span>
+                <span className="text-fluent-neutral-80">
+                  {task.completedBy.name} · {formatDate(task.completedBy.completedAt)}
+                </span>
+              </>
+            )}
 
             <span className="text-fluent-neutral-60 flex items-center gap-2">
               <Calendar16Regular /> Προθεσμία

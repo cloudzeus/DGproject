@@ -188,10 +188,11 @@ function addUsersSheet(wb: ExcelJS.Workbook, data: ReportsData) {
     { header: 'Όνομα', key: 'name', width: 30 },
     { header: 'Email', key: 'email', width: 34 },
     { header: 'Ρόλος', key: 'role', width: 18 },
-    { header: 'Σύνολο', key: 'total', width: 10 },
+    { header: 'Ζήτησε', key: 'requested', width: 10 },
+    { header: 'Ανατέθηκαν', key: 'total', width: 12 },
     { header: 'Ανοιχτές', key: 'open', width: 10 },
     { header: 'Σε εξέλιξη', key: 'inProgress', width: 14 },
-    { header: 'Ολοκληρωμένες', key: 'done', width: 16 },
+    { header: 'Ολοκλήρωσε', key: 'done', width: 16 },
     { header: 'Εκπρόθεσμες', key: 'overdue', width: 14 },
   ];
   styleHeader(ws.getRow(1));
@@ -201,6 +202,7 @@ function addUsersSheet(wb: ExcelJS.Workbook, data: ReportsData) {
       name: u.name,
       email: u.email,
       role: ROLE_LABELS_EL[u.role] ?? u.role,
+      requested: u.requested,
       total: u.total,
       open: u.open,
       inProgress: u.inProgress,
@@ -362,11 +364,12 @@ async function buildDocx(tab: Tab, data: ReportsData): Promise<Buffer> {
     } else {
       sections.push(
         docxTable(
-          ['Όνομα', 'Email', 'Ρόλος', 'Σύνολο', 'Ανοιχτές', 'Done', 'Εκπρόθ.'],
+          ['Όνομα', 'Email', 'Ρόλος', 'Ζήτησε', 'Ανατέθηκαν', 'Ανοιχτές', 'Ολοκλήρωσε', 'Εκπρόθ.'],
           data.users.map((u) => [
             u.name,
             u.email,
             ROLE_LABELS_EL[u.role] ?? u.role,
+            String(u.requested),
             String(u.total),
             String(u.open),
             String(u.done),
@@ -437,8 +440,8 @@ export async function GET(req: NextRequest) {
       const d = await buildUsersReport(scope);
       return csvResponse(
         `users-report-${stampForCsv}.csv`,
-        ['Χρήστης', 'Email', 'Ολοκλ. περιόδου', 'Δ%', 'Ώρες tracked', 'Κόστος εργασίας (EUR)', 'Ωριαία τιμή (EUR)', 'Μ.ό. cycle (h)', 'Εντός προθεσμίας %', 'Ενεργός φόρτος', 'Εκπρόθεσμα', 'Tickets'],
-        d.rows.map((u) => [u.name, u.email, u.completedInPeriod, u.completedDelta, u.trackedHours, u.laborCost, 80, u.avgCycleHours, u.onTimePct, u.activeLoad, u.overdue, u.ticketsResolved]),
+        ['Χρήστης', 'Email', 'Ζήτησε στην περίοδο', 'Ολοκλήρωσε στην περίοδο', 'Δ%', 'Ώρες tracked', 'Κόστος εργασίας (EUR)', 'Ωριαία τιμή (EUR)', 'Μ.ό. cycle (h)', 'Εντός προθεσμίας %', 'Ενεργός φόρτος', 'Εκπρόθεσμα', 'Tickets'],
+        d.rows.map((u) => [u.name, u.email, u.requestedInPeriod, u.completedInPeriod, u.completedDelta, u.trackedHours, u.laborCost, 80, u.avgCycleHours, u.onTimePct, u.activeLoad, u.overdue, u.ticketsResolved]),
       );
     }
     // rawTab === 'overview' (και οτιδήποτε άλλο) — default CSV

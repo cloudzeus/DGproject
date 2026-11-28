@@ -1,6 +1,7 @@
 import type { ProjectReportData } from './project-report';
 import { median } from './reports/shared';
 import { computeSpentMs } from './task-in-progress-timer';
+import { dedupeCompletionActivities } from './task-contribution';
 
 export type ProjectReportProject = NonNullable<ProjectReportData>;
 
@@ -25,6 +26,7 @@ export type ProjectReportUserMetric = {
   isAIAgent: boolean;
   isCustomer: boolean;
   isDGSmart: boolean;
+  requestedTasks: number;
   assignedTasks: number;
   completedTasks: number;
   openTasks: number;
@@ -78,8 +80,10 @@ type ReportUser = {
 };
 
 type MutableUserMetric = ProjectReportUserMetric & {
-  taskIds: Set<string>;
+  requestedTaskIds: Set<string>;
+  assignedTaskIds: Set<string>;
   completedTaskIds: Set<string>;
+  openTaskIds: Set<string>;
   trackedMs: number;
 };
 
@@ -194,14 +198,17 @@ export function buildProjectReportAnalytics(
       isAIAgent: user.isAIAgent,
       isCustomer,
       isDGSmart,
+      requestedTasks: 0,
       assignedTasks: 0,
       completedTasks: 0,
       openTasks: 0,
       comments: 0,
       activities: 0,
       trackedHoursOnAssignedTasks: 0,
-      taskIds: new Set<string>(),
+      requestedTaskIds: new Set<string>(),
+      assignedTaskIds: new Set<string>(),
       completedTaskIds: new Set<string>(),
+      openTaskIds: new Set<string>(),
       trackedMs: 0,
     };
     users.set(user.id, created);
@@ -216,7 +223,7 @@ export function buildProjectReportAnalytics(
   let dgsmartTrackedMs = 0;
 
   for (const task of project.tasks) {
-    addUser(task.creator);
+    addUser(task.creator).requestedTaskIds.add(task.id);
     if (task.activeAIAgent) addUser(task.activeAIAgent);
     const spentMs = computeSpentMs(
       task.status,
@@ -228,22 +235,20 @@ export function buildProjectReportAnalytics(
 
     for (const assignment of task.assignees) {
       const metric = addUser(assignment.user);
-      if (!metric.taskIds.has(task.id)) {
-        metric.taskIds.add(task.id);
+      if (!metric.assignedTaskIds.has(task.id)) {
+        metric.assignedTaskIds.add(task.id);
         metric.trackedMs += spentMs;
       }
-      if (task.status === 'done') metric.completedTaskIds.add(task.id);
+      if (task.status !== 'done') metric.openTaskIds.add(task.id);
       if (metric.isDGSmart) {
         hasDGSmartContributor = true;
         dgsmartTaskIds.add(task.id);
-        if (task.status === 'done') dgsmartCompletedTaskIds.add(task.id);
       }
     }
 
     if (task.activeAIAgent) {
       hasDGSmartContributor = true;
       dgsmartTaskIds.add(task.id);
-      if (task.status === 'done') dgsmartCompletedTaskIds.add(task.id);
     }
     if (hasDGSmartContributor) dgsmartTrackedMs += spentMs;
 
@@ -253,12 +258,21 @@ export function buildProjectReportAnalytics(
 
   for (const activity of project.activities) addUser(activity.actor).activities += 1;
 
+  const reportTaskIds = new Set(project.tasks.map((task) => task.id));
+  for (const activity of dedupeCompletionActivities(project.activities)) {
+    if (!activity.taskId || !reportTaskIds.has(activity.taskId)) continue;
+    const metric = addUser(activity.actor);
+    metric.completedTaskIds.add(activity.taskId);
+    if (metric.isDGSmart) dgsmartCompletedTaskIds.add(activity.taskId);
+  }
+
   const userMetrics = [...users.values()]
-    .map(({ taskIds, completedTaskIds, trackedMs, ...metric }) => ({
+    .map(({ requestedTaskIds, assignedTaskIds, completedTaskIds, openTaskIds, trackedMs, ...metric }) => ({
       ...metric,
-      assignedTasks: taskIds.size,
+      requestedTasks: requestedTaskIds.size,
+      assignedTasks: assignedTaskIds.size,
       completedTasks: completedTaskIds.size,
-      openTasks: taskIds.size - completedTaskIds.size,
+      openTasks: openTaskIds.size,
       trackedHoursOnAssignedTasks: round(trackedMs / 3_600_000),
     }))
     .sort((a, b) =>

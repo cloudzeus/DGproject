@@ -51,7 +51,7 @@ const SORT_OPTIONS: { value: SortMode; label: string }[] = [
   { value: 'load', label: 'Φόρτος' },
 ];
 
-export function CapacityZone({ rows, projects }: { rows: CapacityRow[]; projects: BoardProjectOption[] }) {
+export function CapacityZone({ rows, projects, requester }: { rows: CapacityRow[]; projects: BoardProjectOption[]; requester: { id: string; name: string; email: string } }) {
   const [sortMode, setSortMode] = useState<SortMode>('availability');
   const [assignUser, setAssignUser] = useState<CapacityRow | null>(null);
 
@@ -198,6 +198,7 @@ export function CapacityZone({ rows, projects }: { rows: CapacityRow[]; projects
         <BoardTaskModal
           mode="create"
           projects={projects}
+          requester={requester}
           defaultAssigneeIds={[assignUser.userId]}
           onClose={() => setAssignUser(null)}
         />

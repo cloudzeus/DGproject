@@ -117,6 +117,8 @@ export interface Notification {
 // UI-specific view models (not persisted, computed from base types)
 export interface TaskWithRelations extends Task {
   assignees: User[];
+  requester?: User;
+  completedBy?: User & { completedAt: Date };
   project: Pick<Project, 'id' | 'name' | 'color'>;
   commentCount: number;
   attachmentCount: number;

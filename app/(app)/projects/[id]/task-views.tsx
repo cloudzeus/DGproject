@@ -41,6 +41,7 @@ import {
   type ResolutionPromptInfo,
 } from '@/components/tickets/resolution-dialog';
 import { computeSpentMs, formatSpent } from '@/lib/task-in-progress-timer';
+import { dedupeCompletionActivities } from '@/lib/task-contribution';
 import { EmailTrackingBadge, type EmailTrackingInfo } from '@/components/email/email-tracking-badge';
 
 export type TaskAttachment = {
@@ -64,6 +65,14 @@ export type TaskRow = {
   dueDate: Date | null;
   estimatedHours: number | null;
   completedAt: Date | null;
+  requester?: TaskAssigneeOption | null;
+  completionActivities?: Array<{
+    action: string;
+    taskId: string | null;
+    actorId: string;
+    createdAt: Date;
+    actor: TaskAssigneeOption & { avatarUrl?: string };
+  }>;
   assignees: Array<{ id: string; name: string; avatarUrl?: string }>;
   attachments: TaskAttachment[];
   questions: TaskQuestionInfo[];
@@ -266,6 +275,7 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, proj
           <TaskModal title="Νέα εργασία" onClose={() => setCreating(false)}>
             <TaskForm
               members={members}
+              requester={members.find((member) => member.id === currentUserId) ?? { id: currentUserId, name: 'Εσύ', email: '' }}
               submitLabel="Δημιουργία"
               availableDependencies={taskOptions}
               onCancel={() => setCreating(false)}
@@ -285,6 +295,7 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, proj
           <TaskModal title={canEdit ? 'Επεξεργασία εργασίας' : 'Λεπτομέρειες εργασίας'} onClose={() => setEditing(null)}>
             <TaskForm
               members={members}
+              requester={editing.requester ?? undefined}
               submitLabel="Αποθήκευση"
               projectId={projectId}
               projectCode={projectCode}
@@ -408,6 +419,7 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, pro
           <TaskModal title="Νέα εργασία" onClose={() => setCreating(null)}>
             <TaskForm
               members={members}
+              requester={members.find((member) => member.id === currentUserId) ?? { id: currentUserId, name: 'Εσύ', email: '' }}
               submitLabel="Δημιουργία"
               initial={{
                 title: '',
@@ -436,6 +448,7 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, pro
           <TaskModal title={canEdit ? 'Επεξεργασία εργασίας' : 'Λεπτομέρειες εργασίας'} onClose={() => setEditing(null)}>
             <TaskForm
               members={members}
+              requester={editing.requester ?? undefined}
               submitLabel="Αποθήκευση"
               projectId={projectId}
               projectCode={projectCode}
@@ -638,6 +651,7 @@ export function TimelineView({
           <TaskModal title={canEdit ? 'Επεξεργασία εργασίας' : 'Λεπτομέρειες εργασίας'} onClose={() => setEditing(null)}>
             <TaskForm
               members={members}
+              requester={editing.requester ?? undefined}
               submitLabel="Αποθήκευση"
               projectId={projectId}
               projectCode={projectCode}
@@ -919,21 +933,22 @@ function MemberPanels({
   now: Date;
   regressionCount: number;
 }) {
-  // Workload per member: open task count, total estimated, total spent.
-  // "Open" = not done. Unassigned tasks bucket into __unassigned for visibility.
+  // Requests, current implementation load and actual completions are separate.
+  // Time and estimates remain attached to assignees, never to the requester.
   const workload = useMemo(() => {
     const map = new Map<
       string,
-      { name: string; open: number; done: number; estimatedMs: number; spentMs: number; pendingQuestions: number }
+      { name: string; requested: number; assigned: number; open: number; completed: number; estimatedMs: number; spentMs: number; pendingQuestions: number }
     >();
     function ensure(id: string, name: string) {
       if (!map.has(id)) {
-        map.set(id, { name, open: 0, done: 0, estimatedMs: 0, spentMs: 0, pendingQuestions: 0 });
+        map.set(id, { name, requested: 0, assigned: 0, open: 0, completed: 0, estimatedMs: 0, spentMs: 0, pendingQuestions: 0 });
       }
       return map.get(id)!;
     }
     for (const m of members) ensure(m.id, m.name || m.email);
     for (const t of tasks) {
+      if (t.requester) ensure(t.requester.id, t.requester.name || t.requester.email).requested += 1;
       const taskSpent = computeSpentMs(
         t.status,
         t.inProgressStartedAt,
@@ -944,10 +959,13 @@ function MemberPanels({
       const assignees = t.assignees.length > 0 ? t.assignees : [{ id: '__unassigned', name: 'Χωρίς ανάθεση' }];
       for (const a of assignees) {
         const row = ensure(a.id, a.name);
-        if (t.status === 'done') row.done += 1;
-        else row.open += 1;
+        row.assigned += 1;
+        if (t.status !== 'done') row.open += 1;
         row.estimatedMs += taskEstimate;
         row.spentMs += taskSpent;
+      }
+      for (const activity of dedupeCompletionActivities(t.completionActivities ?? [])) {
+        ensure(activity.actorId, activity.actor.name || activity.actor.email).completed += 1;
       }
       // Pending Q&A: count by askedTo person
       for (const q of t.questions) {
@@ -959,9 +977,9 @@ function MemberPanels({
       }
     }
     return Array.from(map.entries())
-      .map(([id, v]) => ({ id, ...v, total: v.open + v.done }))
-      .filter((r) => r.total > 0 || r.pendingQuestions > 0)
-      .sort((a, b) => b.spentMs - a.spentMs || b.open - a.open);
+      .map(([id, v]) => ({ id, ...v }))
+      .filter((r) => r.assigned > 0 || r.requested > 0 || r.completed > 0 || r.pendingQuestions > 0)
+      .sort((a, b) => b.completed - a.completed || b.spentMs - a.spentMs || b.open - a.open);
   }, [tasks, members, now]);
 
   // Velocity: tasks completed grouped by ISO week (last 6 weeks).
@@ -1025,55 +1043,58 @@ function MemberPanels({
       <div className="bg-white rounded-xl border border-black/5 shadow-fluent-2 p-5 lg:col-span-3">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="font-display text-sm font-semibold text-fluent-neutral-90">
-            Κατανομή φόρτου ανά μέλος
+            Συμμετοχή και πραγματικές ολοκληρώσεις ανά μέλος
           </h3>
           <span className="text-[11px] text-fluent-neutral-60">
-            Ταξινόμηση κατά πραγματικό χρόνο που δαπανήθηκε
+            Ταξινόμηση πρώτα κατά ολοκληρώσεις, μετά κατά χρόνο
           </span>
         </div>
-        <div className="space-y-2">
-          {workload.map((w) => {
-            const pct = (w.spentMs / maxSpent) * 100;
-            const overEstimate = w.estimatedMs > 0 && w.spentMs > w.estimatedMs;
-            return (
-              <div key={w.id} className="flex items-center gap-3 text-xs">
-                <span className="w-44 truncate font-medium text-fluent-neutral-90">{w.name}</span>
-                <div className="w-14 text-fluent-neutral-60 tabular-nums">
-                  {w.open}/{w.total}
-                </div>
-                <div className="flex-1 h-2 rounded-full bg-fluent-neutral-8 overflow-hidden">
-                  <div
-                    className={`h-full ${
-                      overEstimate ? 'bg-fluent-accent-red' : 'bg-fluent-blue-500'
-                    }`}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <div className="w-28 text-right tabular-nums text-fluent-neutral-70">
-                  {formatSpent(w.spentMs)}
-                  {w.estimatedMs > 0 && (
-                    <span className="opacity-60"> / {formatSpent(w.estimatedMs)}</span>
+        <div className="overflow-x-auto">
+          <div className="min-w-[900px] space-y-2">
+            <div className="flex items-center gap-3 text-[10px] font-semibold uppercase tracking-wider text-fluent-neutral-50">
+              <span className="w-44">Μέλος</span>
+              <span className="w-20 text-center">Ζήτησε</span>
+              <span className="w-28 text-center">Ανέλαβε</span>
+              <span className="w-24 text-center">Ολοκλήρωσε</span>
+              <span className="flex-1">Χρόνος / εκτίμηση</span>
+            </div>
+            {workload.map((w) => {
+              const pct = (w.spentMs / maxSpent) * 100;
+              const overEstimate = w.estimatedMs > 0 && w.spentMs > w.estimatedMs;
+              return (
+                <div key={w.id} className="flex items-center gap-3 text-xs">
+                  <span className="w-44 truncate font-medium text-fluent-neutral-90">{w.name}</span>
+                  <div className="w-20 text-center text-fluent-neutral-70 tabular-nums">{w.requested}</div>
+                  <div className="w-28 text-center text-fluent-neutral-70 tabular-nums" title="Ανοιχτά / συνολικά ανατεθημένα">
+                    {w.open}/{w.assigned}
+                  </div>
+                  <div className="w-24 text-center font-semibold text-fluent-accent-green tabular-nums">{w.completed}</div>
+                  <div className="flex-1 h-2 rounded-full bg-fluent-neutral-8 overflow-hidden">
+                    <div
+                      className={`h-full ${overEstimate ? 'bg-fluent-accent-red' : 'bg-fluent-blue-500'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="w-28 text-right tabular-nums text-fluent-neutral-70">
+                    {formatSpent(w.spentMs)}
+                    {w.estimatedMs > 0 && <span className="opacity-60"> / {formatSpent(w.estimatedMs)}</span>}
+                  </div>
+                  {w.pendingQuestions > 0 && (
+                    <span
+                      className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-fluent-accent-orange/10 text-fluent-accent-orange text-[10px] font-semibold tabular-nums"
+                      title={`Εκκρεμούν ${w.pendingQuestions} ερωτήσεις προς αυτόν/αυτή`}
+                    >
+                      ?{w.pendingQuestions}
+                    </span>
                   )}
                 </div>
-                {w.pendingQuestions > 0 && (
-                  <span
-                    className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-fluent-accent-orange/10 text-fluent-accent-orange text-[10px] font-semibold tabular-nums"
-                    title={`Εκκρεμούν ${w.pendingQuestions} ερωτήσεις προς αυτόν/αυτή`}
-                  >
-                    ?{w.pendingQuestions}
-                  </span>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
         <p className="mt-3 text-[10px] text-fluent-neutral-60 flex items-center gap-2 flex-wrap">
-          <span className="inline-flex items-center gap-1">
-            <span className="h-1.5 w-3 rounded-full bg-fluent-blue-500" /> εντός εκτίμησης
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="h-1.5 w-3 rounded-full bg-fluent-accent-red" /> πάνω από εκτίμηση
-          </span>
+          <span>«Ανέλαβε»: ανοιχτά / σύνολο αναθέσεων.</span>
+          <span>«Ολοκλήρωσε»: μόνο δικές του completion ενέργειες, μία ανά task.</span>
           <span className="inline-flex items-center gap-1">
             <span className="px-1 rounded bg-fluent-accent-orange/10 text-fluent-accent-orange">?N</span>{' '}
             εκκρεμή Q&amp;A προς το μέλος
