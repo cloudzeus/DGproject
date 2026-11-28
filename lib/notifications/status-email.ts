@@ -23,6 +23,7 @@ const STATUS_LABELS: Record<string, string> = {
   in_progress: 'Σε εξέλιξη',
   review: 'Σε έλεγχο',
   done: 'Ολοκληρώθηκε',
+  cancelled: 'Ακυρώθηκε',
 };
 
 function statusLabel(status: string | null): string {

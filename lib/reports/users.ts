@@ -78,7 +78,7 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
     const avgCycle = mean(cycles)
     const withDue = completedCur.filter((t) => t.dueDate)
     const onTime = withDue.filter((t) => t.actualCompletedAt <= t.dueDate!)
-    const open = tasks.filter((t) => t.status !== 'done')
+    const open = tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled')
     return {
       id: u.id,
       name: u.name ?? u.email,

@@ -31,6 +31,7 @@ const STATUS_LABEL: Record<string, string> = {
   in_progress: 'Σε εξέλιξη',
   review: 'Προς έλεγχο',
   done: 'Ολοκληρωμένο',
+  cancelled: 'Ακυρωμένο',
 };
 
 function formatDate(d: Date | null): string {

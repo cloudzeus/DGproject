@@ -90,7 +90,7 @@ async function main() {
   const tasks = (await prisma.task.findMany({
     where: {
       project: { status: { not: 'archived' } },
-      status: { not: 'done' },
+      status: { notIn: ['done', 'cancelled'] },
       OR: [{ startDate: { not: null } }, { dueDate: { not: null } }],
     },
     select: {

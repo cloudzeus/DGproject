@@ -15,12 +15,12 @@ export async function buildMyDay(scope: DashScope): Promise<MyDayData> {
 
   const [dueToday, dueTomorrow, inProgress, overdue, meetings] = await Promise.all([
     prisma.task.findMany({
-      where: { ...mine, status: { not: 'done' }, dueDate: { gte: today.from, lte: today.to } },
+      where: { ...mine, status: { notIn: ['done', 'cancelled'] }, dueDate: { gte: today.from, lte: today.to } },
       select: { id: true, title: true, dueDate: true, project: { select: { name: true } } },
       orderBy: { dueDate: 'asc' },
     }),
     prisma.task.findMany({
-      where: { ...mine, status: { not: 'done' }, dueDate: { gte: tomorrow.from, lte: tomorrow.to } },
+      where: { ...mine, status: { notIn: ['done', 'cancelled'] }, dueDate: { gte: tomorrow.from, lte: tomorrow.to } },
       select: { id: true, title: true, project: { select: { name: true } } },
       orderBy: { dueDate: 'asc' }, take: 8,
     }),
@@ -32,7 +32,7 @@ export async function buildMyDay(scope: DashScope): Promise<MyDayData> {
       },
     }),
     prisma.task.findMany({
-      where: { ...mine, status: { not: 'done' }, dueDate: { lt: today.from } },
+      where: { ...mine, status: { notIn: ['done', 'cancelled'] }, dueDate: { lt: today.from } },
       select: { id: true, title: true, dueDate: true, project: { select: { name: true } } },
       orderBy: { dueDate: 'asc' }, take: 8,
     }),

@@ -29,7 +29,7 @@ import {
 import { Modal } from '@/components/ui/modal';
 import { AttachmentPreviewLink } from '@/components/attachments/attachment-preview-link';
 
-export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
+export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
@@ -38,6 +38,7 @@ const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'in_progress', label: 'Σε εξέλιξη' },
   { value: 'review', label: 'Προς έλεγχο' },
   { value: 'done', label: 'Ολοκληρωμένο' },
+  { value: 'cancelled', label: 'Ακυρωμένο' },
 ];
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
@@ -66,6 +67,7 @@ export type TaskFormInitial = {
   startDate?: Date | null;
   dueDate: Date | null;
   estimatedHours: number | null;
+  billableHours?: number | null;
   assigneeIds: string[];
   requesterIds?: string[];
   watcherIds?: string[];
@@ -146,6 +148,7 @@ export function TaskForm({
   const [requesters, setRequesters] = useState<string[]>(initial?.requesterIds ?? (requester ? [requester.id] : []));
   const [watchers, setWatchers] = useState<string[]>(initial?.watcherIds ?? []);
   const [dependencies, setDependencies] = useState<string[]>(initial?.dependencyIds ?? []);
+  const [status, setStatus] = useState<TaskStatus>(initial?.status ?? 'todo');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -269,7 +272,8 @@ export function TaskForm({
           <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Κατάσταση</label>
           <select
             name="status"
-            defaultValue={initial?.status ?? 'todo'}
+            value={status}
+            onChange={(event) => setStatus(event.target.value as TaskStatus)}
             disabled={readOnly}
             className={selectCls}
           >
@@ -330,6 +334,23 @@ export function TaskForm({
             className={inputCls}
           />
         </div>
+        {status === 'done' && (
+          <div className="col-span-2 rounded-lg border border-fluent-blue-200 bg-fluent-blue-50/40 p-3">
+            <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Χρεώσιμες ώρες πελάτη (προαιρετικό)</label>
+            <input
+              type="number"
+              name="billableHours"
+              step="0.25"
+              min="0"
+              defaultValue={initial?.billableHours ?? ''}
+              placeholder="π.χ. 4.5"
+              readOnly={readOnly}
+              disabled={readOnly}
+              className={inputCls}
+            />
+            <p className="mt-1 text-[11px] text-fluent-neutral-60">Διαφορετικές από τις εκτιμώμενες και τον καταγεγραμμένο χρόνο εργασίας.</p>
+          </div>
+        )}
       </div>
 
       <p className="text-[11px] text-fluent-neutral-60">
@@ -551,6 +572,7 @@ const DEP_STATUS_LABEL: Record<TaskStatus, string> = {
   in_progress: 'Σε εξέλιξη',
   review: 'Προς έλεγχο',
   done: 'Ολοκληρωμένο',
+  cancelled: 'Ακυρωμένο',
 };
 const DEP_STATUS_COLOR: Record<TaskStatus, string> = {
   backlog: '#8A8A8A',
@@ -558,6 +580,7 @@ const DEP_STATUS_COLOR: Record<TaskStatus, string> = {
   in_progress: '#D83B01',
   review: '#8764B8',
   done: '#107C10',
+  cancelled: '#8A8A8A',
 };
 
 function DependencyPicker({

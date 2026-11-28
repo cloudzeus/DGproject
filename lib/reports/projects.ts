@@ -51,9 +51,10 @@ export async function buildProjectsReport(scope: ReportScope): Promise<ProjectsR
   })
 
   const rows: ProjectReportRow[] = projects.map((p) => {
-    const total = p.tasks.length
-    const done = p.tasks.filter((t) => t.status === 'done').length
-    const overdue = p.tasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done').length
+    const activeTasks = p.tasks.filter((t) => t.status !== 'cancelled')
+    const total = activeTasks.length
+    const done = activeTasks.filter((t) => t.status === 'done').length
+    const overdue = activeTasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done').length
     const completedInPeriod = p.tasks.filter(
       (t) => t.completedAt && t.completedAt >= range.from && t.completedAt <= range.to,
     )
@@ -77,9 +78,9 @@ export async function buildProjectsReport(scope: ReportScope): Promise<ProjectsR
       createdInPeriod,
       netFlow: createdInPeriod - completedInPeriod.length,
       velocityPerWeek: Math.round((completedInPeriod.length / weeks) * 10) / 10,
-      trackedHours: msToHours(p.tasks.reduce((a, t) => a + trackedMs(t, now), 0)),
-      laborCost: laborCostEur(Number(p.tasks.reduce((a, t) => a + trackedMs(t, now), 0)) / 3_600_000),
-      estimatedHours: Math.round(p.tasks.reduce((a, t) => a + (t.estimatedHours ?? 0), 0) * 10) / 10,
+      trackedHours: msToHours(activeTasks.reduce((a, t) => a + trackedMs(t, now), 0)),
+      laborCost: laborCostEur(Number(activeTasks.reduce((a, t) => a + trackedMs(t, now), 0)) / 3_600_000),
+      estimatedHours: Math.round(activeTasks.reduce((a, t) => a + (t.estimatedHours ?? 0), 0) * 10) / 10,
       avgCycleHours: avgCycle === null ? null : Math.round(avgCycle * 10) / 10,
       cycleN: cycles.length,
     }

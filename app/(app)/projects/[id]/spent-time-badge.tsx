@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Timer20Regular } from '@fluentui/react-icons';
 import { computeSpentMs, formatSpent } from '@/lib/task-in-progress-timer';
 
-type Status = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
+type Status = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
 
 /**
  * Renders the wall-clock time a task has spent in status=in_progress.

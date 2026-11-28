@@ -190,6 +190,7 @@ export const STATUS_LABELS_EL: Record<string, string> = {
   in_progress: 'Σε εξέλιξη',
   review: 'Προς έλεγχο',
   done: 'Ολοκληρωμένο',
+  cancelled: 'Ακυρωμένο',
   planning: 'Σχεδιασμός',
   active: 'Ενεργό',
   on_hold: 'Σε αναμονή',

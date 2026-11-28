@@ -17,7 +17,7 @@ export async function buildRadar(scope: DashScope): Promise<RadarData> {
     prisma.task.findMany({
       // Ό,τι ΤΕΜΝΕΙ το παράθυρο: ξεκίνησε πριν το τέλος ΚΑΙ λήγει μετά την αρχή.
       where: {
-        status: { not: 'done' },
+        status: { notIn: ['done', 'cancelled'] },
         dueDate: { not: null, gte: start },
         OR: [{ startDate: { lte: end } }, { startDate: null }],
         project: projectWhere,

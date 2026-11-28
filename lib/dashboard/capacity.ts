@@ -18,7 +18,7 @@ export async function buildCapacity(scope: DashScope): Promise<CapacityRow[]> {
     getUserLoads(users.map((u) => u.id)),
     prisma.taskAssignee.groupBy({
       by: ['userId'],
-      where: { task: { status: { not: 'done' }, dueDate: { lt: now } }, userId: { in: users.map((u) => u.id) } },
+      where: { task: { status: { notIn: ['done', 'cancelled'] }, dueDate: { lt: now } }, userId: { in: users.map((u) => u.id) } },
       _count: { _all: true },
     }),
   ])

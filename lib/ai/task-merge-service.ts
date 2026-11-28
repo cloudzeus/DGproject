@@ -46,7 +46,7 @@ async function loadProposalTasks(proposalId: string) {
 
 export async function generateTaskMergeProposals(projectId: string, actorId: string): Promise<number> {
   const tasks = await prisma.task.findMany({
-    where: { projectId, mergedIntoId: null, status: { not: 'done' } },
+    where: { projectId, mergedIntoId: null, status: { notIn: ['done', 'cancelled'] } },
     orderBy: { updatedAt: 'desc' },
     take: 50,
     select: {
@@ -149,8 +149,8 @@ export async function reviewTaskMergeProposal(
   if (tasks.length !== taskIds.length || tasks.some((task) => task.projectId !== proposal.projectId)) {
     throw new Error('Κάποιο task δεν βρέθηκε πλέον στο project. Ξανατρέξτε την AI ανάλυση.')
   }
-  if (tasks.some((task) => task.mergedIntoId || task.status === 'done')) {
-    throw new Error('Κάποιο task ολοκληρώθηκε ή συγχωνεύθηκε ενδιάμεσα. Ξανατρέξτε την AI ανάλυση.')
+  if (tasks.some((task) => task.mergedIntoId || task.status === 'done' || task.status === 'cancelled')) {
+    throw new Error('Κάποιο task έκλεισε ή συγχωνεύθηκε ενδιάμεσα. Ξανατρέξτε την AI ανάλυση.')
   }
   if (!taskIds.includes(proposal.primaryTaskId)) throw new Error('Μη έγκυρο κύριο task στην πρόταση.')
 

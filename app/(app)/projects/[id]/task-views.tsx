@@ -43,6 +43,9 @@ import {
 import { computeSpentMs, formatSpent } from '@/lib/task-in-progress-timer';
 import { dedupeCompletionActivities } from '@/lib/task-contribution';
 import { EmailTrackingBadge, type EmailTrackingInfo } from '@/components/email/email-tracking-badge';
+import { BillableHoursDialog } from '@/components/tasks/billable-hours-dialog';
+import { StaleTasksPanel } from './stale-tasks-panel';
+import { isOpenTaskStatus } from '@/lib/task-lifecycle';
 
 export type TaskAttachment = {
   id: string;
@@ -64,6 +67,8 @@ export type TaskRow = {
   startDate: Date | null;
   dueDate: Date | null;
   estimatedHours: number | null;
+  billableHours: number | null;
+  createdAt: Date | null;
   completedAt: Date | null;
   requester?: TaskAssigneeOption | null;
   requesters?: TaskAssigneeOption[];
@@ -133,6 +138,7 @@ function useTaskMutations(projectId: string) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [resolutionPrompt, setResolutionPrompt] = useState<ResolutionPromptInfo | null>(null);
+  const [completionTask, setCompletionTask] = useState<TaskRow | null>(null);
 
   const create = (fd: FormData) =>
     new Promise<{ ok: boolean; error?: string; taskId?: string }>((resolve) => {
@@ -166,12 +172,13 @@ function useTaskMutations(projectId: string) {
     });
   };
 
-  const setStatus = (taskId: string, status: TaskStatus) => {
+  const persistStatus = (taskId: string, status: TaskStatus, billableHours?: number | null) => {
     startTransition(async () => {
-      const res = await updateTaskStatus(projectId, taskId, status);
+      const res = await updateTaskStatus(projectId, taskId, status, billableHours);
       if (res && !res.ok && res.error) {
         alert(res.error);
       } else if (status === 'done') {
+        setCompletionTask(null);
         const info = await checkResolutionPrompt(taskId);
         if (info) setResolutionPrompt(info);
       }
@@ -179,9 +186,29 @@ function useTaskMutations(projectId: string) {
     });
   };
 
-  const resolutionDialog = resolutionPrompt ? (
-    <ResolutionDialog info={resolutionPrompt} onClose={() => setResolutionPrompt(null)} />
-  ) : null;
+  const setStatus = (taskId: string, status: TaskStatus, task?: TaskRow) => {
+    if (status === 'done') {
+      if (task) setCompletionTask(task);
+      return;
+    }
+    persistStatus(taskId, status);
+  };
+
+  const resolutionDialog = (
+    <>
+      {completionTask && !resolutionPrompt && (
+        <BillableHoursDialog
+          taskTitle={completionTask.title}
+          billableHours={completionTask.billableHours}
+          spentMs={computeSpentMs(completionTask.status, completionTask.inProgressStartedAt, completionTask.inProgressAccumulatedMs)}
+          pending={pending}
+          onCancel={() => setCompletionTask(null)}
+          onConfirm={(hours) => persistStatus(completionTask.id, 'done', hours)}
+        />
+      )}
+      {resolutionPrompt && <ResolutionDialog info={resolutionPrompt} onClose={() => setResolutionPrompt(null)} />}
+    </>
+  );
 
   return { create, update, remove, setStatus, pending, resolutionDialog };
 }
@@ -213,6 +240,7 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, proj
           </Button>
         )}
       </div>
+      {canEdit && <StaleTasksPanel projectId={projectId} tasks={tasks} />}
       <div className="divide-y divide-black/5">
         {tasks.length === 0 && (
           <div className="p-8 text-center text-sm text-fluent-neutral-60">Δεν υπάρχουν ακόμη εργασίες.</div>
@@ -319,6 +347,7 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, proj
                 priority: editing.priority,
                 dueDate: editing.dueDate,
                 estimatedHours: editing.estimatedHours,
+                billableHours: editing.billableHours,
                 assigneeIds: editing.assignees.map((a) => a.id),
                 requesterIds: (editing.requesters ?? (editing.requester ? [editing.requester] : [])).map((user) => user.id),
                 watcherIds: (editing.watchers ?? []).map((user) => user.id),
@@ -375,7 +404,7 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, pro
     const newStatus = overId.slice(4) as TaskStatus;
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === newStatus) return;
-    mutations.setStatus(taskId, newStatus);
+    mutations.setStatus(taskId, newStatus, task);
   }
 
   const columns = (
@@ -474,6 +503,7 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, pro
                 priority: editing.priority,
                 dueDate: editing.dueDate,
                 estimatedHours: editing.estimatedHours,
+                billableHours: editing.billableHours,
                 assigneeIds: editing.assignees.map((a) => a.id),
                 requesterIds: (editing.requesters ?? (editing.requester ? [editing.requester] : [])).map((user) => user.id),
                 watcherIds: (editing.watchers ?? []).map((user) => user.id),
@@ -679,6 +709,7 @@ export function TimelineView({
                 priority: editing.priority,
                 dueDate: editing.dueDate,
                 estimatedHours: editing.estimatedHours,
+                billableHours: editing.billableHours,
                 assigneeIds: editing.assignees.map((a) => a.id),
                 requesterIds: (editing.requesters ?? (editing.requester ? [editing.requester] : [])).map((user) => user.id),
                 watcherIds: (editing.watchers ?? []).map((user) => user.id),
@@ -958,6 +989,7 @@ function MemberPanels({
     for (const t of tasks) {
       const requesters = t.requesters ?? (t.requester ? [t.requester] : []);
       for (const requester of requesters) ensure(requester.id, requester.name || requester.email).requested += 1;
+      if (t.status === 'cancelled') continue;
       const taskSpent = computeSpentMs(
         t.status,
         t.inProgressStartedAt,
@@ -969,7 +1001,7 @@ function MemberPanels({
       for (const a of assignees) {
         const row = ensure(a.id, a.name);
         row.assigned += 1;
-        if (t.status !== 'done') row.open += 1;
+        if (isOpenTaskStatus(t.status)) row.open += 1;
         row.estimatedMs += taskEstimate;
         row.spentMs += taskSpent;
       }
@@ -1022,7 +1054,7 @@ function MemberPanels({
     const overdueDue: TaskRow[] = [];
     const stuckInProgress: TaskRow[] = [];
     for (const t of tasks) {
-      if (t.status === 'done') continue;
+      if (!isOpenTaskStatus(t.status)) continue;
       if (t.dueDate && t.dueDate.getTime() < now.getTime()) overdueDue.push(t);
       if (
         t.status === 'in_progress' &&
@@ -1230,7 +1262,7 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
 }
 
 export function computeStats(tasks: TaskRow[]) {
-  const total = tasks.length;
+  const total = tasks.filter((t) => t.status !== 'cancelled').length;
   const done = tasks.filter((t) => t.status === 'done').length;
   const completionPct = total > 0 ? Math.round((done / total) * 100) : 0;
 
@@ -1249,7 +1281,7 @@ export function computeStats(tasks: TaskRow[]) {
     hoursByStatus[t.status] = (hoursByStatus[t.status] ?? 0) + h;
     totalHours += h;
     if (t.status === 'done') doneHours += h;
-    else remainingHours += h;
+    else if (isOpenTaskStatus(t.status)) remainingHours += h;
   }
 
   const daysRemaining = Math.ceil(remainingHours / 8);

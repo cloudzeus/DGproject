@@ -37,6 +37,7 @@ import { ProjectHistoryTab, type HistoryEntry } from './project-history-tab';
 import { ProposalTab, type ProposalAnalysisView } from './proposal-tab';
 import { ProjectVaultTab, type VaultEligibleUser } from './project-vault-tab';
 import type { VaultAuditEntry, VaultSecretMetadata } from '@/lib/vault-types';
+import { ProjectContractTab, type ProjectContractView, type ContractCheckView } from './project-contract-tab';
 
 type AvatarUser = { name: string; avatarUrl?: string };
 
@@ -68,6 +69,9 @@ type ProjectDetailProps = {
   costLines: CostLine[];
   proposalAnalysis: ProposalAnalysisView | null;
   proposalTeam: { id: string; name: string; email: string }[];
+  contract: ProjectContractView | null;
+  contractTasks: Array<{ id: string; title: string; status: string; check: ContractCheckView | null }>;
+  canUploadContract: boolean;
   catalogProducts: CatalogPickerItem[];
   catalogServices: CatalogPickerItem[];
   emails: ProjectEmail[];
@@ -78,7 +82,7 @@ type ProjectDetailProps = {
   vaultEligibleUsers: VaultEligibleUser[];
 };
 
-type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'costing' | 'proposal' | 'reports' | 'emails' | 'history' | 'vault';
+type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'costing' | 'proposal' | 'contract' | 'reports' | 'emails' | 'history' | 'vault';
 
 function MenuItem({
   icon,
@@ -114,6 +118,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Board20Regular; privilegedOnl
   { id: 'history', label: 'Ιστορικό', Icon: History20Regular, hideForCustomer: true },
   { id: 'costing', label: 'Κοστολόγηση', Icon: Money20Regular, privilegedOnly: true },
   { id: 'proposal', label: 'Πρόταση', Icon: DocumentSearch20Regular, privilegedOnly: true },
+  { id: 'contract', label: 'Σύμβαση', Icon: DocumentSearch20Regular, hideForCustomer: true },
   { id: 'vault', label: 'Vault', Icon: LockClosed20Regular },
   { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular, hideForCustomer: true },
 ];
@@ -133,6 +138,9 @@ export function ProjectDetail({
   costLines,
   proposalAnalysis,
   proposalTeam,
+  contract,
+  contractTasks,
+  canUploadContract,
   catalogProducts,
   catalogServices,
   emails,
@@ -432,13 +440,22 @@ export function ProjectDetail({
             team={proposalTeam}
           />
         )}
+        {tab === 'contract' && !isCustomer && (
+          <ProjectContractTab
+            projectId={project.id}
+            contract={contract}
+            tasks={contractTasks}
+            canUpload={canUploadContract}
+            canCheck={canEdit}
+          />
+        )}
         {tab === 'emails' && !isCustomer && (
           <ProjectEmailsTab
             projectId={project.id}
             projectCode={project.projectCode}
             emails={emails}
             openTasks={project.tasks
-              .filter((t) => !['done'].includes(t.status))
+              .filter((t) => !['done', 'cancelled'].includes(t.status))
               .map((t) => ({ id: t.id, title: t.title, status: t.status }))}
           />
         )}

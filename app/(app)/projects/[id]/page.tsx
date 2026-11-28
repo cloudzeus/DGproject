@@ -322,6 +322,28 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canEdit =
     role === 'admin' || role === 'manager' || sessionUserId === project.ownerId;
 
+  // Contract text is deliberately never selected for the client payload.
+  const contractRaw = !isCustomer && canEdit
+    ? await prisma.projectContract.findUnique({
+        where: { projectId: id },
+        select: {
+          fileName: true, charCount: true, createdAt: true,
+          uploadedBy: { select: { name: true, email: true } },
+          checks: { orderBy: { createdAt: 'desc' }, select: { taskId: true, coverage: true, confidence: true, evidence: true, explanation: true, createdAt: true } },
+        },
+      })
+    : null;
+  const contract = contractRaw ? {
+    fileName: contractRaw.fileName,
+    charCount: contractRaw.charCount,
+    uploadedByName: contractRaw.uploadedBy.name ?? contractRaw.uploadedBy.email,
+    createdAt: contractRaw.createdAt.toISOString(),
+  } : null;
+  const contractChecks = new Map((contractRaw?.checks ?? []).map((check) => [check.taskId, {
+    coverage: check.coverage, confidence: check.confidence, evidence: check.evidence,
+    explanation: check.explanation, createdAt: check.createdAt.toISOString(),
+  }]));
+
   // Personal vault: list only secrets created by the current user or explicitly
   // shared with them. Neither admins nor project owners can bypass this boundary.
   const vaultSecretVisibility = {
@@ -482,6 +504,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           startDate: null,
           dueDate: null,
           estimatedHours: null,
+          billableHours: null,
+          createdAt: null,
           completedAt: null,
           addToCalendar: false,
           addToTeams: false,
@@ -510,6 +534,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       startDate: t.startDate,
       dueDate: t.dueDate,
       estimatedHours: t.estimatedHours,
+      billableHours: isCustomer ? null : t.billableHours,
+      createdAt: isCustomer ? null : t.createdAt,
       completedAt: t.completedAt,
       addToCalendar: t.addToCalendar,
       addToTeams: t.addToTeams,
@@ -990,6 +1016,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         costLines={costLines}
         proposalAnalysis={proposalAnalysis}
         proposalTeam={proposalTeamOptions}
+        contract={contract}
+        contractTasks={canEdit && !isCustomer ? project.tasks.map((task) => ({
+          id: task.id, title: task.title, status: task.status,
+          check: contractChecks.get(task.id) ?? null,
+        })) : []}
+        canUploadContract={!isCustomer && sessionUserId === project.ownerId}
         catalogProducts={catalogProducts}
         catalogServices={catalogServices}
         emails={emails}

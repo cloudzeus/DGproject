@@ -6,7 +6,7 @@
 //  - Enums become Prisma enums
 
 export type Priority = 'low' | 'medium' | 'high' | 'urgent';
-export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
+export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
 export type ProjectStatus = 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
 
 export interface User {
@@ -59,6 +59,7 @@ export interface Task {
   dueDate?: Date;
   startDate?: Date;
   estimatedHours?: number;
+  billableHours?: number | null;
   completedAt?: Date;
   parentTaskId?: string;
   tags: string[];

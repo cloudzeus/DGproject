@@ -3,7 +3,7 @@
 // folded into inProgressAccumulatedMs. Spent time = accumulated + (currently
 // running ? now - inProgressStartedAt : 0).
 
-type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
+type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
 
 type TimerFields = {
   inProgressStartedAt?: Date | null;

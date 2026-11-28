@@ -96,6 +96,7 @@ export default async function BoardPage({
     dueDate: t.dueDate ?? undefined,
     startDate: t.startDate ?? undefined,
     estimatedHours: t.estimatedHours ?? undefined,
+    billableHours: t.billableHours,
     completedAt: t.completedAt ?? undefined,
     parentTaskId: t.parentTaskId ?? undefined,
     tags: t.tags.map((tag) => tag.name),

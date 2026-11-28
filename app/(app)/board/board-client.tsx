@@ -39,6 +39,7 @@ import {
   checkResolutionPrompt,
   type ResolutionPromptInfo,
 } from '@/components/tickets/resolution-dialog';
+import { BillableHoursDialog } from '@/components/tasks/billable-hours-dialog';
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string; color: string }[] = [
   { value: 'urgent', label: 'Επείγουσα', color: '#C50F1F' },
@@ -76,6 +77,7 @@ export function BoardClient({ initialTasks, headerUsers, currentUser, projects, 
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<TaskWithRelations | null>(null);
   const [resolutionPrompt, setResolutionPrompt] = useState<ResolutionPromptInfo | null>(null);
+  const [completionTask, setCompletionTask] = useState<TaskWithRelations | null>(null);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -133,8 +135,11 @@ export function BoardClient({ initialTasks, headerUsers, currentUser, projects, 
       in_progress: [],
       review: [],
       done: [],
+      cancelled: [],
     };
-    for (const t of filteredTasks) map[t.status].push(t);
+    for (const t of filteredTasks) {
+      if (t.status !== 'cancelled') map[t.status].push(t);
+    }
     for (const k of Object.keys(map) as TaskStatus[]) {
       map[k].sort((a, b) => a.order - b.order);
     }
@@ -153,15 +158,16 @@ export function BoardClient({ initialTasks, headerUsers, currentUser, projects, 
 
   const activeTask = activeId ? tasks.find((t) => t.id === activeId) ?? null : null;
 
-  function persistStatus(taskId: string, status: TaskStatus) {
+  function persistStatus(taskId: string, status: TaskStatus, billableHours?: number | null) {
     startTransition(async () => {
-      const res = await updateTaskStatus(taskId, status);
+      const res = await updateTaskStatus(taskId, status, billableHours);
       if (res && !res.ok) {
         if (res.error) alert(res.error);
         setTasks(initialTasks); // snap the card back to its persisted column
         return;
       }
       if (status === 'done') {
+        setCompletionTask(null);
         const info = await checkResolutionPrompt(taskId);
         if (info) setResolutionPrompt(info);
       }
@@ -209,7 +215,8 @@ export function BoardClient({ initialTasks, headerUsers, currentUser, projects, 
 
     const original = initialTasks.find((t) => t.id === aId);
     if (original && original.status !== dragged.status) {
-      persistStatus(aId, dragged.status);
+      if (dragged.status === 'done') setCompletionTask(original);
+      else persistStatus(aId, dragged.status);
     }
 
     if (aId === oId) return;
@@ -499,6 +506,7 @@ export function BoardClient({ initialTasks, headerUsers, currentUser, projects, 
               startDate: editing.startDate ?? null,
               dueDate: editing.dueDate ?? null,
               estimatedHours: editing.estimatedHours ?? null,
+              billableHours: editing.billableHours,
               assigneeIds: editing.assigneeIds,
               requesterIds: editing.requesterIds,
               watcherIds: editing.watcherIds,
@@ -517,6 +525,14 @@ export function BoardClient({ initialTasks, headerUsers, currentUser, projects, 
         )}
       </AnimatePresence>
 
+      {completionTask && !resolutionPrompt && (
+        <BillableHoursDialog
+          taskTitle={completionTask.title}
+          billableHours={completionTask.billableHours ?? null}
+          onCancel={() => { setCompletionTask(null); setTasks(initialTasks) }}
+          onConfirm={(hours) => persistStatus(completionTask.id, 'done', hours)}
+        />
+      )}
       {resolutionPrompt && (
         <ResolutionDialog info={resolutionPrompt} onClose={() => setResolutionPrompt(null)} />
       )}

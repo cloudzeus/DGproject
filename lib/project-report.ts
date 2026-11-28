@@ -35,6 +35,7 @@ const STATUS_LABEL: Record<string, string> = {
   in_progress: 'Σε εξέλιξη',
   review: 'Προς έλεγχο',
   done: 'Ολοκληρωμένο',
+  cancelled: 'Ακυρωμένο',
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -43,6 +44,7 @@ const STATUS_COLOR: Record<string, string> = {
   in_progress: '#D83B01',
   review: '#8764B8',
   done: '#107C10',
+  cancelled: '#8A8A8A',
 };
 
 const PROJECT_STATUS_LABEL: Record<string, string> = {
@@ -161,7 +163,7 @@ function taskRowHtml(t: NonNullable<ProjectReportData>['tasks'][number]): string
     .map((a) => escapeHtml(a.user.name ?? a.user.email))
     .join(', ');
   const overdueChip =
-    t.dueDate && t.status !== 'done' && t.dueDate.getTime() < Date.now()
+    t.dueDate && t.status !== 'done' && t.status !== 'cancelled' && t.dueDate.getTime() < Date.now()
       ? `<span style="display:inline-block;font-size:10px;font-weight:700;color:white;background:${BRAND.danger};padding:2px 8px;border-radius:999px;margin-left:6px;">ΕΚΠΡΟΘΕΣΜΗ</span>`
       : '';
   const completedChip = t.status === 'done' && t.completedAt
@@ -267,17 +269,18 @@ export function buildProjectReportHtml({
   aiGenerated = false,
 }: BuildProjectReportInput): string {
   const tasks = project.tasks;
-  const total = tasks.length;
-  const done = tasks.filter((t) => t.status === 'done').length;
-  const inProgress = tasks.filter((t) => t.status === 'in_progress').length;
-  const overdue = tasks.filter(
-    (t) => t.status !== 'done' && t.dueDate && t.dueDate.getTime() < Date.now(),
+  const activeTasks = tasks.filter((t) => t.status !== 'cancelled');
+  const total = activeTasks.length;
+  const done = activeTasks.filter((t) => t.status === 'done').length;
+  const inProgress = activeTasks.filter((t) => t.status === 'in_progress').length;
+  const overdue = activeTasks.filter(
+    (t) => t.status !== 'done' && t.status !== 'cancelled' && t.dueDate && t.dueDate.getTime() < Date.now(),
   ).length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  const totalHours = tasks.reduce((sum, t) => sum + (t.estimatedHours ?? 0), 0);
-  const remainingHours = tasks
-    .filter((t) => t.status !== 'done')
+  const totalHours = activeTasks.reduce((sum, t) => sum + (t.estimatedHours ?? 0), 0);
+  const remainingHours = activeTasks
+    .filter((t) => t.status !== 'done' && t.status !== 'cancelled')
     .reduce((sum, t) => sum + (t.estimatedHours ?? 0), 0);
 
   const today = new Date();
@@ -377,7 +380,7 @@ export function buildProjectReportHtml({
   const upcoming = tasks
     .filter(
       (t) =>
-        t.status !== 'done' &&
+        t.status !== 'done' && t.status !== 'cancelled' &&
         t.dueDate &&
         t.dueDate.getTime() >= now.getTime() &&
         t.dueDate.getTime() <= sevenDaysFromNow.getTime(),

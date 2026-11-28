@@ -29,12 +29,13 @@ import { sendTrackedEmail } from '@/lib/email-tracking';
 import { notifyTaskAssignment, notifyApprover, notifyTaskStatusChange, notifyTaskRoleAdditions } from '@/lib/notifications';
 import { canApprove, isApprovalGatedTransition } from '@/lib/approval';
 import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
+import { parseBillableHours } from '@/lib/task-lifecycle';
 
 
-type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
+type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
 type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
-const STATUSES: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done'];
+const STATUSES: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled'];
 const PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
 
 async function requireProjectEditor(projectId: string) {
@@ -269,6 +270,7 @@ function parseTask(formData: FormData) {
   const userSpecifiedTime = Boolean(startInfo?.hasUserTime || dueInfoRaw?.hasUserTime);
   const hoursRaw = String(formData.get('estimatedHours') ?? '').trim();
   const estimatedHours = hoursRaw ? Number.parseFloat(hoursRaw) : null;
+  const billableHours = status === 'done' ? parseBillableHours(formData.get('billableHours')) : null;
   const assigneeIds = [...new Set(formData.getAll('assigneeIds').map((v) => String(v)).filter(Boolean))];
   const requesterIds = [...new Set(formData.getAll('requesterIds').map((v) => String(v)).filter(Boolean))];
   const watcherIds = [...new Set(formData.getAll('watcherIds').map((v) => String(v)).filter(Boolean))];
@@ -285,6 +287,7 @@ function parseTask(formData: FormData) {
     dueDate,
     userSpecifiedTime,
     estimatedHours,
+    billableHours,
     assigneeIds,
     requesterIds,
     watcherIds,
@@ -524,6 +527,7 @@ export async function createTask(projectId: string, formData: FormData) {
       startDate: input.startDate,
       dueDate: input.dueDate,
       estimatedHours: input.estimatedHours ?? undefined,
+      billableHours: input.billableHours,
       order: nextOrder,
       createdById: actorId,
       completedAt: input.status === 'done' ? new Date() : null,
@@ -697,6 +701,7 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
         startDate: input.startDate,
         dueDate: input.dueDate,
         estimatedHours: input.estimatedHours,
+        billableHours: input.billableHours,
         addToCalendar: input.addToCalendar,
         addToTeams: input.addToTeams,
         completedAt:
@@ -850,9 +855,15 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
   return { ok: true };
 }
 
-export async function updateTaskStatus(projectId: string, taskId: string, status: TaskStatus) {
+export async function updateTaskStatus(projectId: string, taskId: string, status: TaskStatus, billableHours?: number | null) {
   const actorId = await requireProjectEditor(projectId);
   if (!STATUSES.includes(status)) return { ok: false, error: 'Μη έγκυρη κατάσταση.' };
+  let parsedBillableHours: number | null = null;
+  try {
+    parsedBillableHours = status === 'done' ? parseBillableHours(billableHours) : null;
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Μη έγκυρες χρεώσιμες ώρες.' };
+  }
 
   const session = await auth();
   const actorRole = session?.user?.role ?? 'member';
@@ -897,6 +908,7 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
     where: { id: taskId },
     data: {
       status,
+      billableHours: parsedBillableHours,
       completedAt:
         status === 'done' && previous?.status !== 'done'
           ? new Date()

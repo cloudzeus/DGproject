@@ -63,7 +63,7 @@ export async function listMilestones(
         projectId: { in: scope.projectIds },
         ...taskVisibilityFilter('customer'),
         dueDate: { not: null, ...(horizon ? { lte: horizon } : {}) },
-        ...(opts.includeDone ? {} : { status: { not: 'done' } }),
+        ...(opts.includeDone ? {} : { status: { notIn: ['done', 'cancelled'] } }),
       },
       select: {
         id: true,
@@ -98,7 +98,7 @@ export async function listMilestones(
       projectId: t.project.id,
       projectName: t.project.name,
       projectColor: t.project.color,
-      overdue: t.status !== 'done' && t.dueDate! < today,
+      overdue: t.status !== 'done' && t.status !== 'cancelled' && t.dueDate! < today,
       done: t.status === 'done',
     })),
   ]

@@ -58,7 +58,7 @@ export type QuestionListItem = {
   task: {
     id: string;
     title: string;
-    status: 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
+    status: 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
     priority: 'low' | 'medium' | 'high' | 'urgent';
     dueDate: Date | null;
     project: {

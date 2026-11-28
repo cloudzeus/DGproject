@@ -66,7 +66,7 @@ export async function buildAttention(scope: DashScope): Promise<AttentionItem[]>
     }),
     isPrivileged
       ? prisma.task.findMany({
-          where: { meetingNeedsReview: true, status: { not: 'done' } },
+          where: { meetingNeedsReview: true, status: { notIn: ['done', 'cancelled'] } },
           select: { id: true, title: true, createdAt: true, project: { select: { name: true } } },
           take: 10,
         })

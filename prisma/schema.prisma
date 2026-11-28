@@ -32,6 +32,14 @@ enum TaskStatus {
   in_progress
   review
   done
+  cancelled
+}
+
+enum ContractCoverage {
+  covered
+  partial
+  not_found
+  unclear
 }
 
 enum TaskPriority {
@@ -209,46 +217,48 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
-  company             Company?                 @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  contact             Contact?                 @relation("ContactUser")
-  ownedWorkspaces     Workspace[]              @relation("WorkspaceOwner")
-  ownedProjects       Project[]                @relation("ProjectOwner")
-  approverProjects    Project[]                @relation("ProjectApprover")
-  projectMemberships  ProjectMember[]
-  assignedTasks       TaskAssignee[]
-  requestedTasks      TaskRequester[]
-  watchedTasks        TaskWatcher[]
-  createdTasks        Task[]                   @relation("TaskCreator")
-  activeAITasks       Task[]                   @relation("ActiveAITasks")
-  aiResolutions       TaskResolution[]         @relation("AIResolutionAgent")
-  reviewedResolutions TaskResolution[]         @relation("ResolutionReviewer")
-  comments            Comment[]
-  attachments         Attachment[]
-  activities          Activity[]
-  notifications       Notification[]
-  accounts            Account[]
-  sessions            Session[]
-  mentionedInComments CommentMention[]
-  departments         UserDepartment[]
-  questionsAsked      TaskQuestion[]           @relation("QuestionAsker")
-  questionsAddressed  TaskQuestion[]           @relation("QuestionAskee")
-  taskQuestionFiles   TaskQuestionAttachment[]
-  taskTemplates       TaskTemplate[]           @relation("TaskTemplateCreator")
-  organizedMeetings   MeetingNote[]            @relation("MeetingOrganizer")
-  createdCostLines    ProjectCostLine[]        @relation("CostLineCreator")
-  proposalAnalyses    ProposalAnalysis[]       @relation("ProposalAnalysisCreator")
-  createdRequirements ProjectRequirement[]     @relation("RequirementCreator")
-  proposalItems       ProposalItem[]           @relation("ProposalItemAssignee")
-  mailConnection      UserMailConnection?
-  emailMessages       EmailMessage[]           @relation("EmailMessageUser")
-  createdMergeProposals  TaskMergeProposal[]   @relation("MergeProposalCreator")
-  reviewedMergeProposals TaskMergeProposal[]   @relation("MergeProposalReviewer")
-  vaultSecretsCreated    VaultSecret[]          @relation("VaultSecretCreator")
-  vaultSecretsUpdated    VaultSecret[]          @relation("VaultSecretUpdater")
-  vaultOtpChallenges     VaultOtpChallenge[]
-  vaultAuditEvents       VaultAuditLog[]
-  vaultSecretShares      VaultSecretShare[]      @relation("VaultSecretShareUser")
-  vaultSecretSharesGranted VaultSecretShare[]    @relation("VaultSecretShareGranter")
+  company                  Company?                 @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contact                  Contact?                 @relation("ContactUser")
+  ownedWorkspaces          Workspace[]              @relation("WorkspaceOwner")
+  ownedProjects            Project[]                @relation("ProjectOwner")
+  approverProjects         Project[]                @relation("ProjectApprover")
+  projectMemberships       ProjectMember[]
+  assignedTasks            TaskAssignee[]
+  requestedTasks           TaskRequester[]
+  watchedTasks             TaskWatcher[]
+  createdTasks             Task[]                   @relation("TaskCreator")
+  activeAITasks            Task[]                   @relation("ActiveAITasks")
+  aiResolutions            TaskResolution[]         @relation("AIResolutionAgent")
+  reviewedResolutions      TaskResolution[]         @relation("ResolutionReviewer")
+  comments                 Comment[]
+  attachments              Attachment[]
+  activities               Activity[]
+  notifications            Notification[]
+  accounts                 Account[]
+  sessions                 Session[]
+  mentionedInComments      CommentMention[]
+  departments              UserDepartment[]
+  questionsAsked           TaskQuestion[]           @relation("QuestionAsker")
+  questionsAddressed       TaskQuestion[]           @relation("QuestionAskee")
+  taskQuestionFiles        TaskQuestionAttachment[]
+  taskTemplates            TaskTemplate[]           @relation("TaskTemplateCreator")
+  organizedMeetings        MeetingNote[]            @relation("MeetingOrganizer")
+  createdCostLines         ProjectCostLine[]        @relation("CostLineCreator")
+  proposalAnalyses         ProposalAnalysis[]       @relation("ProposalAnalysisCreator")
+  createdRequirements      ProjectRequirement[]     @relation("RequirementCreator")
+  proposalItems            ProposalItem[]           @relation("ProposalItemAssignee")
+  mailConnection           UserMailConnection?
+  emailMessages            EmailMessage[]           @relation("EmailMessageUser")
+  createdMergeProposals    TaskMergeProposal[]      @relation("MergeProposalCreator")
+  reviewedMergeProposals   TaskMergeProposal[]      @relation("MergeProposalReviewer")
+  vaultSecretsCreated      VaultSecret[]            @relation("VaultSecretCreator")
+  vaultSecretsUpdated      VaultSecret[]            @relation("VaultSecretUpdater")
+  vaultOtpChallenges       VaultOtpChallenge[]
+  vaultAuditEvents         VaultAuditLog[]
+  vaultSecretShares        VaultSecretShare[]       @relation("VaultSecretShareUser")
+  vaultSecretSharesGranted VaultSecretShare[]       @relation("VaultSecretShareGranter")
+  uploadedContracts        ProjectContract[]        @relation("ContractUploader")
+  contractChecks           TaskContractCheck[]      @relation("ContractChecker")
 
   @@index([email])
   @@index([role])
@@ -515,6 +525,7 @@ model Project {
   mergeProposals   TaskMergeProposal[]
   vaultSecrets     VaultSecret[]
   vaultAuditLogs   VaultAuditLog[]
+  contract         ProjectContract?
 
   @@index([workspaceId])
   @@index([ownerId])
@@ -610,6 +621,9 @@ model Task {
   inProgressStartedAt     DateTime?
   inProgressAccumulatedMs BigInt    @default(0)
 
+  /// Προαιρετικές ώρες προς χρέωση του πελάτη — εσωτερικό οικονομικό πεδίο.
+  billableHours Float?
+
   // ─── MCP AI assignment ─────────────────────────────────────────────
   // The human operator assigns one active AI agent. Human assignees remain
   // independent in TaskAssignee. Blockers use the existing in_progress status.
@@ -624,31 +638,32 @@ model Task {
   updatedAt   DateTime @updatedAt
   createdById String
 
-  project               Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  creator               User              @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  activeAIAgent         User?             @relation("ActiveAITasks", fields: [activeAIAgentId], references: [id], onDelete: SetNull)
-  generatedFromMeeting  MeetingNote?      @relation("MeetingGeneratedTask", fields: [generatedFromMeetingId], references: [id], onDelete: SetNull)
-  assignees             TaskAssignee[]
-  requesters            TaskRequester[]
-  watchers              TaskWatcher[]
-  comments              Comment[]
-  attachments           Attachment[]
-  tags                  TaskTag[]
-  activities            Activity[]
-  resolutions           TaskResolution[]
-  mentionedUsers        CommentMention[]  @relation("MentionedInTasks")
-  questions             TaskQuestion[]
+  project                 Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator                 User                @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  activeAIAgent           User?               @relation("ActiveAITasks", fields: [activeAIAgentId], references: [id], onDelete: SetNull)
+  generatedFromMeeting    MeetingNote?        @relation("MeetingGeneratedTask", fields: [generatedFromMeetingId], references: [id], onDelete: SetNull)
+  assignees               TaskAssignee[]
+  requesters              TaskRequester[]
+  watchers                TaskWatcher[]
+  comments                Comment[]
+  attachments             Attachment[]
+  tags                    TaskTag[]
+  activities              Activity[]
+  resolutions             TaskResolution[]
+  mentionedUsers          CommentMention[]    @relation("MentionedInTasks")
+  questions               TaskQuestion[]
   // Tasks this task depends on (must complete before this can start)
-  dependencies          TaskDependency[]  @relation("TaskDependents")
+  dependencies            TaskDependency[]    @relation("TaskDependents")
   // Tasks that depend on this task (this must complete before they can start)
-  dependents            TaskDependency[]  @relation("TaskPrerequisites")
-  emailMessages         EmailMessage[]
-  ticket                Ticket?           @relation("TicketTask")
-  generatedFromProposal ProposalAnalysis? @relation("ProposalGeneratedTask", fields: [generatedFromProposalId], references: [id], onDelete: SetNull)
-  requirements          TaskRequirement[]
-  mergedInto            Task?                @relation("TaskMerges", fields: [mergedIntoId], references: [id], onDelete: SetNull)
-  mergedTasks           Task[]               @relation("TaskMerges")
+  dependents              TaskDependency[]    @relation("TaskPrerequisites")
+  emailMessages           EmailMessage[]
+  ticket                  Ticket?             @relation("TicketTask")
+  generatedFromProposal   ProposalAnalysis?   @relation("ProposalGeneratedTask", fields: [generatedFromProposalId], references: [id], onDelete: SetNull)
+  requirements            TaskRequirement[]
+  mergedInto              Task?               @relation("TaskMerges", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedTasks             Task[]              @relation("TaskMerges")
   mergeProposalsAsPrimary TaskMergeProposal[]
+  contractChecks          TaskContractCheck[]
 
   @@index([mergedIntoId])
   @@index([projectId, visibility])
@@ -801,15 +816,57 @@ model Attachment {
   uploadedById     String
   createdAt        DateTime             @default(now())
 
-  task       Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  project    Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  uploadedBy User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  task       Task?            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  project    Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedBy User             @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  contract   ProjectContract?
 
   @@index([taskId])
   @@index([projectId])
   @@index([projectId, visibility])
   @@index([uploadedById])
   @@index([source])
+}
+
+/// Μία τρέχουσα σύμβαση ανά έργο. Το κείμενο παραμένει server-side.
+model ProjectContract {
+  id            String   @id @default(cuid())
+  projectId     String   @unique
+  attachmentId  String?  @unique
+  fileName      String
+  mimeType      String
+  extractedText String   @db.LongText
+  charCount     Int      @default(0)
+  uploadedById  String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project    Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  attachment Attachment?         @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  uploadedBy User                @relation("ContractUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+  checks     TaskContractCheck[]
+
+  @@index([uploadedById])
+}
+
+model TaskContractCheck {
+  id          String           @id @default(cuid())
+  contractId  String
+  taskId      String
+  coverage    ContractCoverage
+  confidence  Float
+  evidence    String?          @db.Text
+  explanation String           @db.Text
+  checkedById String
+  createdAt   DateTime         @default(now())
+
+  contract  ProjectContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  task      Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  checkedBy User            @relation("ContractChecker", fields: [checkedById], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, taskId])
+  @@index([taskId])
+  @@index([checkedById])
 }
 
 // Activity & Audit Trail
@@ -952,12 +1009,12 @@ model TaskQuestion {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  task        Task                     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  askedBy     User                     @relation("QuestionAsker", fields: [askedById], references: [id], onDelete: Cascade)
-  askedTo     User                     @relation("QuestionAskee", fields: [askedToId], references: [id], onDelete: Cascade)
-  parent      TaskQuestion?            @relation("QuestionFollowUps", fields: [parentId], references: [id], onDelete: Cascade)
-  followUps   TaskQuestion[]           @relation("QuestionFollowUps")
-  attachments TaskQuestionAttachment[]
+  task          Task                     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  askedBy       User                     @relation("QuestionAsker", fields: [askedById], references: [id], onDelete: Cascade)
+  askedTo       User                     @relation("QuestionAskee", fields: [askedToId], references: [id], onDelete: Cascade)
+  parent        TaskQuestion?            @relation("QuestionFollowUps", fields: [parentId], references: [id], onDelete: Cascade)
+  followUps     TaskQuestion[]           @relation("QuestionFollowUps")
+  attachments   TaskQuestionAttachment[]
   emailMessages EmailMessage[]
 
   @@index([taskId])
@@ -1046,11 +1103,11 @@ model VaultSecret {
 
 /// Per-secret sharing with another participant of the same project.
 model VaultSecretShare {
-  id          String   @id @default(cuid())
-  secretId    String
-  userId      String
-  sharedById  String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  secretId   String
+  userId     String
+  sharedById String?
+  createdAt  DateTime @default(now())
 
   secret   VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
   user     User        @relation("VaultSecretShareUser", fields: [userId], references: [id], onDelete: Cascade)
@@ -1089,7 +1146,7 @@ model VaultAuditLog {
   metadata  Json?
   createdAt DateTime         @default(now())
 
-  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   secret  VaultSecret? @relation(fields: [secretId], references: [id], onDelete: SetNull)
   actor   User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
@@ -1468,13 +1525,13 @@ model EmailMessage {
   receivedAt        DateTime?
   sentAt            DateTime?
   // Mailgun id and real delivery/open events, polled from the Events API.
-  mailgunMessageId String?               @db.VarChar(500)
-  deliveredAt      DateTime?
-  openedAt         DateTime?
-  openCount        Int                   @default(0)
-  lastOpenedAt     DateTime?
-  lastEventAt      DateTime?
-  deliveryError    String?               @db.Text
+  mailgunMessageId  String?               @db.VarChar(500)
+  deliveredAt       DateTime?
+  openedAt          DateTime?
+  openCount         Int                   @default(0)
+  lastOpenedAt      DateTime?
+  lastEventAt       DateTime?
+  deliveryError     String?               @db.Text
   // LLM analysis output kept as raw JSON so we can re-render the proposed
   // action in the review UI or audit a bad decision later.
   llmAction         String?
@@ -1525,19 +1582,19 @@ model TicketSource {
 }
 
 model Ticket {
-  id            String       @id @default(cuid())
-  code          String       @unique // TKT-YYYY-NNNN
+  id            String        @id @default(cuid())
+  code          String        @unique // TKT-YYYY-NNNN
   sourceId      String
   reporterEmail String
   reporterName  String?
-  originUrl     String       @db.Text
+  originUrl     String        @db.Text
   subject       String
-  body          String       @db.Text // original user text, never overwritten
-  status        TicketStatus @default(new)
+  body          String        @db.Text // original user text, never overwritten
+  status        TicketStatus  @default(new)
   // Reporter-declared priority; kept separate from the LLM triage output.
   priority      TaskPriority?
   // Unguessable token for the public status page /t/{token} and email links
-  publicToken   String       @unique @default(cuid())
+  publicToken   String        @unique @default(cuid())
 
   // ─── LLM triage output ─────────────────────────────────────────────
   aiTitle               String?
@@ -1843,7 +1900,6 @@ model TaskRequirement {
   @@index([requirementId])
 }
 
-
 // ───────────────────── AI task/question merge review ─────────────────────
 enum TaskMergeProposalStatus {
   pending
@@ -1853,7 +1909,7 @@ enum TaskMergeProposalStatus {
 }
 
 model TaskMergeProposal {
-  id                   String   @id @default(cuid())
+  id                   String                  @id @default(cuid())
   projectId            String
   primaryTaskId        String
   /// Ordered source task ids, including primaryTaskId.
@@ -1861,33 +1917,33 @@ model TaskMergeProposal {
   /// Small immutable snapshot for review and audit after the merge.
   taskSnapshots        Json
   suggestedTitle       String
-  suggestedDescription String   @db.Text
-  rationale            String   @db.Text
+  suggestedDescription String                  @db.Text
+  rationale            String                  @db.Text
   confidence           Float
   status               TaskMergeProposalStatus @default(pending)
 
   /// Generated only after the authorized approver accepts the proposal.
-  explanation          String?  @db.LongText
-  recipients           Json?
-  emailSentTo          Json?
-  emailSentAt          DateTime?
-  emailError           String?  @db.Text
+  explanation String?   @db.LongText
+  recipients  Json?
+  emailSentTo Json?
+  emailSentAt DateTime?
+  emailError  String?   @db.Text
 
-  provider             String?
-  model                String?
-  inputTokens          Int      @default(0)
-  outputTokens         Int      @default(0)
+  provider     String?
+  model        String?
+  inputTokens  Int     @default(0)
+  outputTokens Int     @default(0)
 
-  createdById          String
-  reviewedById         String?
-  reviewedAt           DateTime?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdById  String
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  primaryTask          Task     @relation(fields: [primaryTaskId], references: [id], onDelete: Cascade)
-  createdBy            User     @relation("MergeProposalCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  reviewedBy           User?    @relation("MergeProposalReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  primaryTask Task    @relation(fields: [primaryTaskId], references: [id], onDelete: Cascade)
+  createdBy   User    @relation("MergeProposalCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  reviewedBy  User?   @relation("MergeProposalReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   @@index([projectId, status])
   @@index([primaryTaskId])

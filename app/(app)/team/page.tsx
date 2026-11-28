@@ -45,7 +45,7 @@ export default async function TeamPage() {
 
   const rows = users.map((u) => {
     const tasks = u.assignedTasks.map((a) => a.task);
-    const openTasks = tasks.filter((t) => t.status !== 'done');
+    const openTasks = tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled');
     const remainingHours = openTasks.reduce((sum, t) => sum + (t.estimatedHours ?? 0), 0);
     const doneTaskCount = dedupeCompletionActivities(u.activities).length;
     const overdue = openTasks.filter((t) => t.dueDate && t.dueDate < new Date()).length;

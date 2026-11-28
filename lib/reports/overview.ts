@@ -42,7 +42,7 @@ export async function buildOverviewReport(scope: ReportScope): Promise<OverviewR
     }),
     prisma.ticket.count({ where: { resolvedAt: { gte: prev.from, lte: prev.to }, status: { not: 'merged' } } }),
     prisma.task.count({
-      where: { ...projectWhere, dueDate: { lt: now }, status: { not: 'done' } },
+      where: { ...projectWhere, dueDate: { lt: now }, status: { notIn: ['done', 'cancelled'] } },
     }),
   ])
 

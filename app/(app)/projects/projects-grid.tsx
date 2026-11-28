@@ -82,7 +82,7 @@ const ACTIVE_STATUSES: Status[] = ['planning', 'active', 'on_hold'];
 
 function progressOf(p: ProjectWithRelations): { done: number; total: number; pct: number } {
   const done = p.tasks.filter((t) => t.status === 'done').length;
-  const total = p.tasks.length;
+  const total = p.tasks.filter((t) => t.status !== 'cancelled').length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return { done, total, pct };
 }

@@ -28,7 +28,7 @@ export function TaskCard({ task, onClick, isDragOverlay }: { task: TaskWithRelat
     transition,
   };
 
-  const overdue = task.dueDate && task.dueDate < new Date() && task.status !== 'done';
+  const overdue = task.dueDate && task.dueDate < new Date() && task.status !== 'done' && task.status !== 'cancelled';
 
   return (
     <motion.div

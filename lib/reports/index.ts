@@ -104,11 +104,12 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
   ]);
 
   const projectReport: ReportProjectRow[] = projects.map((p) => {
-    const total = p.tasks.length;
-    const done = p.tasks.filter((t) => t.status === 'done').length;
-    const overdue = p.tasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done').length;
+    const activeTasks = p.tasks.filter((t) => t.status !== 'cancelled');
+    const total = activeTasks.length;
+    const done = activeTasks.filter((t) => t.status === 'done').length;
+    const overdue = p.tasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done' && t.status !== 'cancelled').length;
     const dueThisWeek = p.tasks.filter(
-      (t) => t.dueDate && t.dueDate >= now && t.dueDate < weekFromNow && t.status !== 'done',
+      (t) => t.dueDate && t.dueDate >= now && t.dueDate < weekFromNow && t.status !== 'done' && t.status !== 'cancelled',
     ).length;
     return {
       id: p.id,
@@ -133,7 +134,7 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
       const allTasks = u.assignedTasks.map((a) => a.task);
       const total = allTasks.length;
       const done = dedupeCompletionActivities(u.activities).length;
-      const overdue = allTasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done').length;
+      const overdue = allTasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done' && t.status !== 'cancelled').length;
       const inProgress = allTasks.filter((t) => t.status === 'in_progress').length;
       return {
         id: u.id,
@@ -144,7 +145,7 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
         requested: uniqueTasksById(u.createdTasks, u.requestedTasks.map((request) => request.task)).length,
         total,
         done,
-        open: allTasks.filter((t) => t.status !== 'done').length,
+        open: allTasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled').length,
         overdue,
         inProgress,
       };

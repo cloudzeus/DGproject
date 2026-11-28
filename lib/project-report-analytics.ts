@@ -93,6 +93,7 @@ const STATUS_LABELS: Record<string, string> = {
   in_progress: 'Σε εξέλιξη',
   review: 'Προς έλεγχο',
   done: 'Ολοκληρωμένο',
+  cancelled: 'Ακυρωμένο',
 };
 
 const STATUS_ORDER = ['done', 'in_progress', 'review', 'todo', 'backlog'] as const;
@@ -103,7 +104,7 @@ function round(value: number, digits = 1): number {
 }
 
 function closeDays(task: { createdAt: Date; completedAt: Date | null; status: string }): number | null {
-  if (task.status !== 'done' || !task.completedAt) return null;
+  if (task.status !== 'done' && task.status !== 'cancelled' || !task.completedAt) return null;
   return Math.max(0, (task.completedAt.getTime() - task.createdAt.getTime()) / 86_400_000);
 }
 
@@ -227,6 +228,7 @@ export function buildProjectReportAnalytics(
       ? task.requesters.map((requester) => requester.user)
       : [task.creator];
     for (const requester of requesters) addUser(requester).requestedTaskIds.add(task.id);
+    if (task.status === 'cancelled') continue;
     if (task.activeAIAgent) addUser(task.activeAIAgent);
     const spentMs = computeSpentMs(
       task.status,
@@ -301,8 +303,9 @@ export function buildProjectReportAnalytics(
     .map(closeDays)
     .filter((value): value is number => value !== null);
 
-  const completedTasks = project.tasks.filter((task) => task.status === 'done').length;
-  const totalTrackedMs = project.tasks.reduce(
+  const activeTasks = project.tasks.filter((task) => task.status !== 'cancelled');
+  const completedTasks = activeTasks.filter((task) => task.status === 'done').length;
+  const totalTrackedMs = activeTasks.reduce(
     (sum, task) => sum + computeSpentMs(
       task.status,
       task.inProgressStartedAt,
@@ -313,22 +316,22 @@ export function buildProjectReportAnalytics(
   );
 
   const status = STATUS_ORDER.map((statusKey) => {
-    const count = project.tasks.filter((task) => task.status === statusKey).length;
+    const count = activeTasks.filter((task) => task.status === statusKey).length;
     return {
       status: statusKey,
       label: STATUS_LABELS[statusKey],
       count,
-      percentage: project.tasks.length > 0 ? Math.round((count / project.tasks.length) * 100) : 0,
+      percentage: activeTasks.length > 0 ? Math.round((count / activeTasks.length) * 100) : 0,
     };
   });
 
   return {
     generatedAt: now.toISOString(),
-    totalTasks: project.tasks.length,
+    totalTasks: activeTasks.length,
     completedTasks,
-    openTasks: project.tasks.length - completedTasks,
-    completionPercentage: project.tasks.length > 0
-      ? Math.round((completedTasks / project.tasks.length) * 100)
+    openTasks: activeTasks.length - completedTasks,
+    completionPercentage: activeTasks.length > 0
+      ? Math.round((completedTasks / activeTasks.length) * 100)
       : 0,
     averageCloseDays: nullableRound(average(allCloseDurations)),
     medianCloseDays: nullableRound(median(allCloseDurations)),
@@ -341,7 +344,7 @@ export function buildProjectReportAnalytics(
       companyName: project.primaryCompany?.NAME ?? null,
       openedTasks: customerTasks.length,
       completedTasks: customerTasks.filter((task) => task.status === 'done').length,
-      openTasks: customerTasks.filter((task) => task.status !== 'done').length,
+      openTasks: customerTasks.filter((task) => task.status !== 'done' && task.status !== 'cancelled').length,
       averageCloseDays: nullableRound(average(customerCloseDurations)),
       medianCloseDays: nullableRound(median(customerCloseDurations)),
     },

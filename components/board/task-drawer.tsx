@@ -80,7 +80,7 @@ function DrawerContent({ task, onClose, onEdit, onDelete, onSendReminder }: Draw
     };
   }, [task.id]);
 
-  const overdue = task.dueDate && task.dueDate < new Date() && task.status !== 'done';
+  const overdue = task.dueDate && task.dueDate < new Date() && task.status !== 'done' && task.status !== 'cancelled';
   const canSendReminder = Boolean(onSendReminder) && task.assignees.length > 0;
 
   function handleDelete() {

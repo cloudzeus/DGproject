@@ -99,10 +99,11 @@ export async function GET(
   ];
   styleHeader(overview.getRow(1));
 
-  const doneTasks = project.tasks.filter((t) => t.status === 'done');
+  const activeTasks = project.tasks.filter((t) => t.status !== 'cancelled');
+  const doneTasks = activeTasks.filter((t) => t.status === 'done');
   const now = new Date();
-  const overdueTasks = project.tasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done');
-  const totalEstimated = project.tasks.reduce((s, t) => s + (t.estimatedHours ?? 0), 0);
+  const overdueTasks = activeTasks.filter((t) => t.dueDate && t.dueDate < now && t.status !== 'done');
+  const totalEstimated = activeTasks.reduce((s, t) => s + (t.estimatedHours ?? 0), 0);
   const doneEstimated = doneTasks.reduce((s, t) => s + (t.estimatedHours ?? 0), 0);
 
   const summary: Array<[string, string]> = [
@@ -161,7 +162,7 @@ export async function GET(
       description: t.description ?? '',
     });
     styleRow(r, i % 2 === 1);
-    if (t.dueDate && t.dueDate < now && t.status !== 'done') {
+    if (t.dueDate && t.dueDate < now && t.status !== 'done' && t.status !== 'cancelled') {
       r.getCell('dueDate').font = { color: { argb: 'FFC50F1F' }, bold: true };
     }
     if (t.status === 'done') {
@@ -194,12 +195,12 @@ export async function GET(
 
   project.members.forEach((m, i) => {
     const userTasks = project.tasks.filter((t) =>
-      t.assignees.some((a) => a.userId === m.userId),
+      t.status !== 'cancelled' && t.assignees.some((a) => a.userId === m.userId),
     );
     const doneCount = userTasks.filter((t) => t.status === 'done').length;
     const inProgress = userTasks.filter((t) => t.status === 'in_progress').length;
     const overdue = userTasks.filter(
-      (t) => t.dueDate && t.dueDate < now && t.status !== 'done',
+      (t) => t.dueDate && t.dueDate < now && t.status !== 'done' && t.status !== 'cancelled',
     ).length;
     const hours = userTasks.reduce((s, t) => s + (t.estimatedHours ?? 0), 0);
     const r = membersSheet.addRow({

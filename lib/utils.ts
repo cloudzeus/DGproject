@@ -40,7 +40,7 @@ export function priorityColor(p: string): string {
 export function statusLabel(s: string): string {
   return {
     backlog: 'Backlog', todo: 'Προς εκτέλεση', in_progress: 'Σε εξέλιξη',
-    review: 'Προς έλεγχο', done: 'Ολοκληρωμένο',
+    review: 'Προς έλεγχο', done: 'Ολοκληρωμένο', cancelled: 'Ακυρωμένο',
     planning: 'Σχεδιασμός', active: 'Ενεργό', on_hold: 'Σε αναμονή',
     completed: 'Ολοκληρωμένο', archived: 'Αρχειοθετημένο',
   }[s] ?? s;

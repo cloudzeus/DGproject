@@ -32,7 +32,7 @@ export async function buildPulse(scope: DashScope): Promise<PulseData> {
         : Promise.resolve(0),
       prisma.task.count({ where: { project: projectWhere, completedAt: { gte: weekAgo } } }),
       prisma.task.count({ where: { project: projectWhere, completedAt: { gte: twoWeeksAgo, lt: weekAgo } } }),
-      prisma.task.count({ where: { project: projectWhere, status: { not: 'done' }, dueDate: { lt: now } } }),
+      prisma.task.count({ where: { project: projectWhere, status: { notIn: ['done', 'cancelled'] }, dueDate: { lt: now } } }),
       scope.isPrivileged
         ? prisma.ticket.findMany({
             where: { resolvedAt: { gte: weekAgo }, status: { not: 'merged' } },
@@ -91,7 +91,7 @@ export async function buildPulse(scope: DashScope): Promise<PulseData> {
     hotProjects: hotProjects.map((p) => ({
       id: p.id, name: p.name, color: p.color,
       done: p.tasks.filter((t) => t.status === 'done').length,
-      total: p.tasks.length,
+      total: p.tasks.filter((t) => t.status !== 'cancelled').length,
       lastActivityIso: p.updatedAt.toISOString(),
     })),
   }

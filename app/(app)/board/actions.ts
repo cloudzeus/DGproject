@@ -7,9 +7,10 @@ import { sendTrackedEmail } from '@/lib/email-tracking';
 import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
 import { notifyTaskStatusChange } from '@/lib/notifications';
 import { canApprove, isApprovalGatedTransition } from '@/lib/approval';
+import { parseBillableHours } from '@/lib/task-lifecycle';
 import type { TaskStatus } from '@prisma/client';
 
-const STATUSES: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done'];
+const STATUSES: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled'];
 
 async function requireTaskEditor(taskId: string) {
   const session = await auth();
@@ -40,8 +41,14 @@ async function requireTaskEditor(taskId: string) {
   return uid;
 }
 
-export async function updateTaskStatus(taskId: string, status: TaskStatus) {
+export async function updateTaskStatus(taskId: string, status: TaskStatus, billableHours?: number | null) {
   if (!STATUSES.includes(status)) return { ok: false, error: 'Invalid status.' };
+  let parsedBillableHours: number | null = null;
+  try {
+    parsedBillableHours = status === 'done' ? parseBillableHours(billableHours) : null;
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Μη έγκυρες χρεώσιμες ώρες.' };
+  }
   const userId = await requireTaskEditor(taskId);
   const session = await auth();
   const actorRole = session?.user?.role ?? 'member';
@@ -82,7 +89,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
 
   const task = await prisma.task.update({
     where: { id: taskId },
-    data: { status, completedAt: status === 'done' ? new Date() : null, ...timerFields },
+    data: { status, billableHours: parsedBillableHours, completedAt: status === 'done' ? new Date() : null, ...timerFields },
     select: { projectId: true, project: { select: { workspaceId: true } } },
   });
 

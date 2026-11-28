@@ -40,7 +40,7 @@ export async function buildTasksReport(scope: ReportScope): Promise<TasksReport>
       _count: { _all: true },
     }),
     prisma.task.findMany({
-      where: { ...projectWhere, status: { not: 'done' } },
+      where: { ...projectWhere, status: { notIn: ['done', 'cancelled'] } },
       orderBy: { createdAt: 'asc' },
       select: {
         id: true, title: true, status: true, createdAt: true, projectId: true,
