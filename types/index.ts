@@ -54,6 +54,8 @@ export interface Task {
   status: TaskStatus;
   priority: Priority;
   assigneeIds: string[];
+  requesterIds: string[];
+  watcherIds: string[];
   dueDate?: Date;
   startDate?: Date;
   estimatedHours?: number;
@@ -118,6 +120,8 @@ export interface Notification {
 export interface TaskWithRelations extends Task {
   assignees: User[];
   requester?: User;
+  requesters: User[];
+  watchers: User[];
   completedBy?: User & { completedAt: Date };
   project: Pick<Project, 'id' | 'name' | 'color'>;
   commentCount: number;

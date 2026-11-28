@@ -67,6 +67,8 @@ export type TaskFormInitial = {
   dueDate: Date | null;
   estimatedHours: number | null;
   assigneeIds: string[];
+  requesterIds?: string[];
+  watcherIds?: string[];
   addToCalendar?: boolean;
   addToTeams?: boolean;
   dependencyIds?: string[];
@@ -141,6 +143,8 @@ export function TaskForm({
   onAttachmentChange,
 }: Props) {
   const [assignees, setAssignees] = useState<string[]>(initial?.assigneeIds ?? []);
+  const [requesters, setRequesters] = useState<string[]>(initial?.requesterIds ?? (requester ? [requester.id] : []));
+  const [watchers, setWatchers] = useState<string[]>(initial?.watcherIds ?? []);
   const [dependencies, setDependencies] = useState<string[]>(initial?.dependencyIds ?? []);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -385,47 +389,35 @@ export function TaskForm({
         ))}
       </div>
 
-      <div className="rounded-lg border border-black/5 bg-fluent-neutral-4/40 px-3 py-2.5">
-        <span className="block text-[11px] font-semibold uppercase tracking-wider text-fluent-neutral-60">Αιτών / δημιουργός</span>
-        <span className="mt-1 block text-sm font-medium text-fluent-neutral-90">
-          {requester?.name || requester?.email || '—'}
-        </span>
-      </div>
+      <TaskPeoplePicker
+        name="requesterIds"
+        label="Αιτούντες"
+        hint="Ένας ή περισσότεροι χρήστες που ζητούν την εργασία. Ο δημιουργός παραμένει ξεχωριστά στο ιστορικό."
+        members={members}
+        selectedIds={requesters}
+        onToggle={(id) => setRequesters((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])}
+        readOnly={readOnly}
+      />
 
-      <div>
-        <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">Υπεύθυνοι υλοποίησης</label>
-        <p className="mb-1.5 text-[11px] text-fluent-neutral-60">
-          Ο αιτών καταγράφεται ξεχωριστά. Η ολοκλήρωση πιστώνεται μόνο στον χρήστη που κλείνει το task.
-        </p>
-        {members.length === 0 ? (
-          <p className="text-xs text-fluent-neutral-60">Δεν υπάρχουν μέλη στο έργο.</p>
-        ) : (
-          <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 rounded-md border border-fluent-neutral-20">
-            {members.map((u) => {
-              const active = assignees.includes(u.id);
-              return (
-                <button
-                  type="button"
-                  key={u.id}
-                  onClick={() => !readOnly && toggleAssignee(u.id)}
-                  disabled={readOnly}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-all inline-flex items-center gap-1 ${
-                    active
-                      ? 'bg-fluent-blue-600 text-white border-transparent'
-                      : 'border-fluent-neutral-20 text-fluent-neutral-80 hover:bg-fluent-neutral-4'
-                  } ${readOnly ? 'cursor-not-allowed opacity-80' : ''}`}
-                >
-                  {active && !readOnly && <Dismiss20Regular className="h-3 w-3" />}
-                  {u.name || u.email}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {assignees.map((id) => (
-          <input key={id} type="hidden" name="assigneeIds" value={id} />
-        ))}
-      </div>
+      <TaskPeoplePicker
+        name="watcherIds"
+        label="Ενημερώνονται"
+        hint="Λαμβάνουν ειδοποιήσεις για την πορεία χωρίς να μετρούν ως αιτούντες ή υπεύθυνοι υλοποίησης."
+        members={members}
+        selectedIds={watchers}
+        onToggle={(id) => setWatchers((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])}
+        readOnly={readOnly}
+      />
+
+      <TaskPeoplePicker
+        name="assigneeIds"
+        label="Υπεύθυνοι υλοποίησης"
+        hint="Αναλαμβάνουν την εκτέλεση. Η ολοκλήρωση πιστώνεται μόνο στον χρήστη που κλείνει το task."
+        members={members}
+        selectedIds={assignees}
+        onToggle={toggleAssignee}
+        readOnly={readOnly}
+      />
 
       {projectId && taskId && (
         <AttachmentsPanel
@@ -498,6 +490,58 @@ export function TaskForm({
         )}
       </div>
     </form>
+  );
+}
+
+function TaskPeoplePicker({
+  name,
+  label,
+  hint,
+  members,
+  selectedIds,
+  onToggle,
+  readOnly,
+}: {
+  name: 'requesterIds' | 'watcherIds' | 'assigneeIds';
+  label: string;
+  hint: string;
+  members: TaskAssigneeOption[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+  readOnly: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-fluent-neutral-70 mb-1">{label}</label>
+      <p className="mb-1.5 text-[11px] text-fluent-neutral-60">{hint}</p>
+      {members.length === 0 ? (
+        <p className="text-xs text-fluent-neutral-60">Δεν υπάρχουν μέλη στο έργο.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 rounded-md border border-fluent-neutral-20">
+          {members.map((user) => {
+            const active = selectedIds.includes(user.id);
+            return (
+              <button
+                type="button"
+                key={user.id}
+                onClick={() => !readOnly && onToggle(user.id)}
+                disabled={readOnly}
+                aria-pressed={active}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-all inline-flex items-center gap-1 ${
+                  active
+                    ? 'bg-fluent-blue-600 text-white border-transparent'
+                    : 'border-fluent-neutral-20 text-fluent-neutral-80 hover:bg-fluent-neutral-4'
+                } ${readOnly ? 'cursor-not-allowed opacity-80' : ''}`}
+              >
+                {active && !readOnly && <Dismiss20Regular className="h-3 w-3" />}
+                {user.name || user.email}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {selectedIds.map((id) => <input key={id} type="hidden" name={name} value={id} />)}
+    </div>
   );
 }
 

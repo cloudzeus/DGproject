@@ -61,6 +61,7 @@ function makeTask(input: {
     aiBlockedReason: null,
     activeAIAgentId: input.withAI ? agent.id : null,
     creator: input.creator ?? owner,
+    requesters: [{ user: input.creator ?? owner }],
     activeAIAgent: input.withAI ? agent : null,
     assignees: [{ user: owner }],
     tags: [{ name: 'portal' }],
@@ -172,6 +173,24 @@ test('requester and assignee do not receive credit for another user completion',
   assert.equal(implementer?.requestedTasks, 0);
   assert.equal(implementer?.assignedTasks, 1);
   assert.equal(implementer?.completedTasks, 1);
+});
+
+test('multiple requesters each receive request credit without changing implementer metrics', () => {
+  const multipleRequestersProject = {
+    ...project,
+    tasks: [{
+      ...tasks[1],
+      requesters: [{ user: owner }, { user: customer }],
+    }],
+    activities: [],
+  } as unknown as ProjectReportProject;
+
+  const analytics = buildProjectReportAnalytics(multipleRequestersProject, NOW);
+  assert.equal(analytics.users.find((item) => item.id === owner.id)?.requestedTasks, 1);
+  assert.equal(analytics.users.find((item) => item.id === customer.id)?.requestedTasks, 1);
+  assert.equal(analytics.users.find((item) => item.id === owner.id)?.assignedTasks, 1);
+  assert.equal(analytics.users.find((item) => item.id === customer.id)?.assignedTasks, 0);
+  assert.equal(analytics.customer.openedTasks, 1);
 });
 
 test('prompt contains the complete relevant history but masks identifying names', () => {

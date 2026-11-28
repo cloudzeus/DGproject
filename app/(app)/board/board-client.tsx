@@ -500,6 +500,8 @@ export function BoardClient({ initialTasks, headerUsers, currentUser, projects, 
               dueDate: editing.dueDate ?? null,
               estimatedHours: editing.estimatedHours ?? null,
               assigneeIds: editing.assigneeIds,
+              requesterIds: editing.requesterIds,
+              watcherIds: editing.watcherIds,
             }}
             onClose={() => {
               const editedId = editing.id;

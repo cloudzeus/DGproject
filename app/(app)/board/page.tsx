@@ -39,6 +39,8 @@ export default async function BoardPage({
       include: {
         project: { select: { id: true, name: true, color: true } },
         creator: { select: { id: true, name: true, email: true, image: true } },
+        requesters: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
+        watchers: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
         assignees: {
           include: {
             user: { select: { id: true, name: true, email: true, image: true } },
@@ -89,6 +91,8 @@ export default async function BoardPage({
     status: t.status,
     priority: t.priority,
     assigneeIds: t.assignees.map((a) => a.userId),
+    requesterIds: t.requesters.length > 0 ? t.requesters.map((r) => r.userId) : [t.createdById],
+    watcherIds: t.watchers.map((w) => w.userId),
     dueDate: t.dueDate ?? undefined,
     startDate: t.startDate ?? undefined,
     estimatedHours: t.estimatedHours ?? undefined,
@@ -103,13 +107,29 @@ export default async function BoardPage({
     createdById: t.createdById,
     project: { id: t.project.id, name: t.project.name, color: t.project.color },
     requester: {
-      id: t.creator.id,
-      name: t.creator.name ?? t.creator.email,
-      email: t.creator.email,
-      avatarUrl: t.creator.image ?? undefined,
+      id: (t.requesters[0]?.user ?? t.creator).id,
+      name: (t.requesters[0]?.user ?? t.creator).name ?? (t.requesters[0]?.user ?? t.creator).email,
+      email: (t.requesters[0]?.user ?? t.creator).email,
+      avatarUrl: (t.requesters[0]?.user ?? t.creator).image ?? undefined,
       role: 'member' as const,
       createdAt: t.createdAt,
     },
+    requesters: (t.requesters.length > 0 ? t.requesters.map((r) => r.user) : [t.creator]).map((user) => ({
+      id: user.id,
+      name: user.name ?? user.email,
+      email: user.email,
+      avatarUrl: user.image ?? undefined,
+      role: 'member' as const,
+      createdAt: t.createdAt,
+    })),
+    watchers: t.watchers.map((w) => ({
+      id: w.user.id,
+      name: w.user.name ?? w.user.email,
+      email: w.user.email,
+      avatarUrl: w.user.image ?? undefined,
+      role: 'member' as const,
+      createdAt: t.createdAt,
+    })),
     assignees: t.assignees.map((a) => ({
       id: a.user.id,
       name: a.user.name ?? a.user.email,

@@ -81,6 +81,7 @@ export async function loadProjectForReport(projectId: string) {
         orderBy: [{ status: 'asc' }, { dueDate: 'asc' }, { order: 'asc' }],
         include: {
           creator: { select: REPORT_USER_SELECT },
+          requesters: { include: { user: { select: REPORT_USER_SELECT } } },
           activeAIAgent: { select: REPORT_USER_SELECT },
           assignees: {
             include: { user: { select: REPORT_USER_SELECT } },

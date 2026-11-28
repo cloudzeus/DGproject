@@ -216,6 +216,8 @@ model User {
   approverProjects    Project[]                @relation("ProjectApprover")
   projectMemberships  ProjectMember[]
   assignedTasks       TaskAssignee[]
+  requestedTasks      TaskRequester[]
+  watchedTasks        TaskWatcher[]
   createdTasks        Task[]                   @relation("TaskCreator")
   activeAITasks       Task[]                   @relation("ActiveAITasks")
   aiResolutions       TaskResolution[]         @relation("AIResolutionAgent")
@@ -627,6 +629,8 @@ model Task {
   activeAIAgent         User?             @relation("ActiveAITasks", fields: [activeAIAgentId], references: [id], onDelete: SetNull)
   generatedFromMeeting  MeetingNote?      @relation("MeetingGeneratedTask", fields: [generatedFromMeetingId], references: [id], onDelete: SetNull)
   assignees             TaskAssignee[]
+  requesters            TaskRequester[]
+  watchers              TaskWatcher[]
   comments              Comment[]
   attachments           Attachment[]
   tags                  TaskTag[]
@@ -663,6 +667,34 @@ model Task {
 }
 
 model TaskAssignee {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+}
+
+model TaskRequester {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+}
+
+model TaskWatcher {
   id        String   @id @default(cuid())
   taskId    String
   userId    String

@@ -58,6 +58,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
           include: {
             creator: { select: { id: true, name: true, email: true, image: true } },
+            requesters: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
+            watchers: { include: { user: { select: { id: true, name: true, email: true, image: true } } } },
             assignees: { include: { user: true } },
             activities: {
               where: { action: 'completed' },
@@ -465,8 +467,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       // status are visible — no description, dates, assignees, attachments, or
       // questions. Assigned tasks pass through with full detail so they can act
       // on their own work and answer questions.
-      const isAssignedToMe = isCustomer && t.assignees.some((a) => a.user.id === sessionUserId);
-      if (isCustomer && !isAssignedToMe) {
+      const isInvolved = isCustomer && (
+        t.assignees.some((a) => a.user.id === sessionUserId) ||
+        t.requesters.some((r) => r.user.id === sessionUserId) ||
+        t.watchers.some((w) => w.user.id === sessionUserId)
+      );
+      if (isCustomer && !isInvolved) {
         return {
           id: t.id,
           title: t.title,
@@ -483,6 +489,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           inProgressAccumulatedMs: 0,
           dependencyIds: [] as string[],
           requester: null,
+          requesters: [] as never[],
+          watchers: [] as never[],
           completionActivities: [] as never[],
           assignees: [] as { id: string; name: string; avatarUrl?: string }[],
           attachments: [] as never[],
@@ -511,10 +519,20 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       inProgressAccumulatedMs: Number(t.inProgressAccumulatedMs),
       dependencyIds: t.dependencies.map((d) => d.dependsOnId),
       requester: {
-        id: t.creator.id,
-        name: t.creator.name ?? t.creator.email,
-        email: t.creator.email,
+        id: (t.requesters[0]?.user ?? t.creator).id,
+        name: (t.requesters[0]?.user ?? t.creator).name ?? (t.requesters[0]?.user ?? t.creator).email,
+        email: (t.requesters[0]?.user ?? t.creator).email,
       },
+      requesters: (t.requesters.length > 0 ? t.requesters.map((r) => r.user) : [t.creator]).map((user) => ({
+        id: user.id,
+        name: user.name ?? user.email,
+        email: user.email,
+      })),
+      watchers: t.watchers.map((watcher) => ({
+        id: watcher.user.id,
+        name: watcher.user.name ?? watcher.user.email,
+        email: watcher.user.email,
+      })),
       completionActivities: t.activities.map((activity) => ({
         action: activity.action,
         taskId: activity.taskId,

@@ -172,9 +172,18 @@ function DrawerContent({ task, onClose, onEdit, onDelete, onSendReminder }: Draw
 
           <div className="grid grid-cols-[150px_1fr] gap-y-3 text-sm mb-6">
             <span className="text-fluent-neutral-60 flex items-center gap-2">
-              <Person16Regular /> Αιτών / δημιουργός
+              <Person16Regular /> Αιτούντες
             </span>
-            <span className="text-fluent-neutral-80">{task.requester?.name ?? '—'}</span>
+            <span className="text-fluent-neutral-80">
+              {task.requesters.length > 0 ? task.requesters.map((user) => user.name).join(', ') : '—'}
+            </span>
+
+            <span className="text-fluent-neutral-60 flex items-center gap-2">
+              <Person16Regular /> Ενημερώνονται
+            </span>
+            <span className="text-fluent-neutral-80">
+              {task.watchers.length > 0 ? task.watchers.map((user) => user.name).join(', ') : 'Κανένας'}
+            </span>
 
             <span className="text-fluent-neutral-60 flex items-center gap-2">
               <Person16Regular /> Υπεύθυνοι υλοποίησης

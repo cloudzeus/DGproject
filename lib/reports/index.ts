@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { dedupeCompletionActivities } from '@/lib/task-contribution';
+import { uniqueTasksById } from '@/lib/task-roles';
 
 export * from './shared';
 
@@ -83,6 +84,10 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
           where: { mergedIntoId: null },
           select: { id: true },
         },
+        requestedTasks: {
+          where: { task: { mergedIntoId: null } },
+          select: { task: { select: { id: true } } },
+        },
         assignedTasks: {
           where: { task: { mergedIntoId: null } },
           select: { task: { select: { id: true, status: true, dueDate: true, priority: true } } },
@@ -136,7 +141,7 @@ export async function buildReportsData(opts: { userId: string; isPrivileged: boo
         email: u.email,
         avatarUrl: u.image ?? undefined,
         role: u.role,
-        requested: u.createdTasks.length,
+        requested: uniqueTasksById(u.createdTasks, u.requestedTasks.map((request) => request.task)).length,
         total,
         done,
         open: allTasks.filter((t) => t.status !== 'done').length,

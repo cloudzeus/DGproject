@@ -223,7 +223,10 @@ export function buildProjectReportAnalytics(
   let dgsmartTrackedMs = 0;
 
   for (const task of project.tasks) {
-    addUser(task.creator).requestedTaskIds.add(task.id);
+    const requesters = task.requesters.length > 0
+      ? task.requesters.map((requester) => requester.user)
+      : [task.creator];
+    for (const requester of requesters) addUser(requester).requestedTaskIds.add(task.id);
     if (task.activeAIAgent) addUser(task.activeAIAgent);
     const spentMs = computeSpentMs(
       task.status,
@@ -283,9 +286,13 @@ export function buildProjectReportAnalytics(
     );
 
   const customerTasks = project.tasks.filter((task) => {
-    const creator = task.creator;
-    return creator.userType === 'customer' ||
-      (customerCompanyId !== null && creator.companyId === customerCompanyId);
+    const requesters = task.requesters.length > 0
+      ? task.requesters.map((requester) => requester.user)
+      : [task.creator];
+    return requesters.some((requester) =>
+      requester.userType === 'customer' ||
+      (customerCompanyId !== null && requester.companyId === customerCompanyId),
+    );
   });
   const allCloseDurations = project.tasks
     .map(closeDays)

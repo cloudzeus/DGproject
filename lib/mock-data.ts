@@ -80,21 +80,21 @@ const addDays = (d: number) => new Date(now.getTime() + d * 24 * 60 * 60 * 1000)
 
 export const mockTasks: Task[] = [
   // Project 1 — Q2 Product Launch
-  { id: 't1', projectId: 'p1', title: 'Finalize launch campaign copy', description: 'Work with marketing to lock down all messaging for the launch email sequence and landing page.', status: 'in_progress', priority: 'high', assigneeIds: ['u3'], dueDate: addDays(3), tags: ['marketing','copy'], order: 0, attachmentIds: [], createdAt: addDays(-10), updatedAt: addDays(-1), createdById: 'u1' },
-  { id: 't2', projectId: 'p1', title: 'Design hero section animations', description: 'Create subtle scroll-triggered animations for the hero.', status: 'in_progress', priority: 'medium', assigneeIds: ['u5'], dueDate: addDays(5), tags: ['design','animation'], order: 1, attachmentIds: [], createdAt: addDays(-8), updatedAt: addDays(-2), createdById: 'u2' },
-  { id: 't3', projectId: 'p1', title: 'Set up analytics tracking', status: 'todo', priority: 'high', assigneeIds: ['u4'], dueDate: addDays(7), tags: ['engineering','analytics'], order: 0, attachmentIds: [], createdAt: addDays(-5), updatedAt: addDays(-5), createdById: 'u1' },
-  { id: 't4', projectId: 'p1', title: 'Draft press release', status: 'todo', priority: 'medium', assigneeIds: ['u1'], dueDate: addDays(10), tags: ['marketing','pr'], order: 1, attachmentIds: [], createdAt: addDays(-4), updatedAt: addDays(-4), createdById: 'u1' },
-  { id: 't5', projectId: 'p1', title: 'Record demo video', status: 'todo', priority: 'low', assigneeIds: ['u2','u5'], dueDate: addDays(14), tags: ['video','demo'], order: 2, attachmentIds: [], createdAt: addDays(-3), updatedAt: addDays(-3), createdById: 'u2' },
-  { id: 't6', projectId: 'p1', title: 'Beta tester feedback review', status: 'review', priority: 'high', assigneeIds: ['u3','u1'], dueDate: addDays(2), tags: ['research'], order: 0, attachmentIds: [], createdAt: addDays(-12), updatedAt: addDays(-1), createdById: 'u3' },
-  { id: 't7', projectId: 'p1', title: 'Pricing page A/B test setup', status: 'backlog', priority: 'medium', assigneeIds: ['u4'], tags: ['experiment'], order: 0, attachmentIds: [], createdAt: addDays(-6), updatedAt: addDays(-6), createdById: 'u1' },
-  { id: 't8', projectId: 'p1', title: 'Competitor analysis deck', status: 'done', priority: 'medium', assigneeIds: ['u3'], completedAt: addDays(-2), tags: ['research'], order: 0, attachmentIds: [], createdAt: addDays(-15), updatedAt: addDays(-2), createdById: 'u1' },
-  { id: 't9', projectId: 'p1', title: 'Kickoff meeting notes', status: 'done', priority: 'low', assigneeIds: ['u1'], completedAt: addDays(-20), tags: ['meeting'], order: 1, attachmentIds: [], createdAt: addDays(-22), updatedAt: addDays(-20), createdById: 'u1' },
-  { id: 't10', projectId: 'p1', title: 'Stakeholder alignment doc', status: 'done', priority: 'high', assigneeIds: ['u1','u2'], completedAt: addDays(-18), tags: ['planning'], order: 2, attachmentIds: [], createdAt: addDays(-25), updatedAt: addDays(-18), createdById: 'u1' },
+  { id: 't1', projectId: 'p1', title: 'Finalize launch campaign copy', description: 'Work with marketing to lock down all messaging for the launch email sequence and landing page.', status: 'in_progress', priority: 'high', assigneeIds: ['u3'], dueDate: addDays(3), tags: ['marketing','copy'], order: 0, attachmentIds: [], createdAt: addDays(-10), updatedAt: addDays(-1), requesterIds: [], watcherIds: [], createdById: 'u1' },
+  { id: 't2', projectId: 'p1', title: 'Design hero section animations', description: 'Create subtle scroll-triggered animations for the hero.', status: 'in_progress', priority: 'medium', assigneeIds: ['u5'], dueDate: addDays(5), tags: ['design','animation'], order: 1, attachmentIds: [], createdAt: addDays(-8), updatedAt: addDays(-2), requesterIds: [], watcherIds: [], createdById: 'u2' },
+  { id: 't3', projectId: 'p1', title: 'Set up analytics tracking', status: 'todo', priority: 'high', assigneeIds: ['u4'], dueDate: addDays(7), tags: ['engineering','analytics'], order: 0, attachmentIds: [], createdAt: addDays(-5), updatedAt: addDays(-5), requesterIds: [], watcherIds: [], createdById: 'u1' },
+  { id: 't4', projectId: 'p1', title: 'Draft press release', status: 'todo', priority: 'medium', assigneeIds: ['u1'], dueDate: addDays(10), tags: ['marketing','pr'], order: 1, attachmentIds: [], createdAt: addDays(-4), updatedAt: addDays(-4), requesterIds: [], watcherIds: [], createdById: 'u1' },
+  { id: 't5', projectId: 'p1', title: 'Record demo video', status: 'todo', priority: 'low', assigneeIds: ['u2','u5'], dueDate: addDays(14), tags: ['video','demo'], order: 2, attachmentIds: [], createdAt: addDays(-3), updatedAt: addDays(-3), requesterIds: [], watcherIds: [], createdById: 'u2' },
+  { id: 't6', projectId: 'p1', title: 'Beta tester feedback review', status: 'review', priority: 'high', assigneeIds: ['u3','u1'], dueDate: addDays(2), tags: ['research'], order: 0, attachmentIds: [], createdAt: addDays(-12), updatedAt: addDays(-1), requesterIds: [], watcherIds: [], createdById: 'u3' },
+  { id: 't7', projectId: 'p1', title: 'Pricing page A/B test setup', status: 'backlog', priority: 'medium', assigneeIds: ['u4'], tags: ['experiment'], order: 0, attachmentIds: [], createdAt: addDays(-6), updatedAt: addDays(-6), requesterIds: [], watcherIds: [], createdById: 'u1' },
+  { id: 't8', projectId: 'p1', title: 'Competitor analysis deck', status: 'done', priority: 'medium', assigneeIds: ['u3'], completedAt: addDays(-2), tags: ['research'], order: 0, attachmentIds: [], createdAt: addDays(-15), updatedAt: addDays(-2), requesterIds: [], watcherIds: [], createdById: 'u1' },
+  { id: 't9', projectId: 'p1', title: 'Kickoff meeting notes', status: 'done', priority: 'low', assigneeIds: ['u1'], completedAt: addDays(-20), tags: ['meeting'], order: 1, attachmentIds: [], createdAt: addDays(-22), updatedAt: addDays(-20), requesterIds: [], watcherIds: [], createdById: 'u1' },
+  { id: 't10', projectId: 'p1', title: 'Stakeholder alignment doc', status: 'done', priority: 'high', assigneeIds: ['u1','u2'], completedAt: addDays(-18), tags: ['planning'], order: 2, attachmentIds: [], createdAt: addDays(-25), updatedAt: addDays(-18), requesterIds: [], watcherIds: [], createdById: 'u1' },
 
   // Project 2 — Website Redesign
-  { id: 't11', projectId: 'p2', title: 'Design system component audit', status: 'in_progress', priority: 'high', assigneeIds: ['u5'], dueDate: addDays(4), tags: ['design','audit'], order: 0, attachmentIds: [], createdAt: addDays(-7), updatedAt: addDays(-1), createdById: 'u2' },
-  { id: 't12', projectId: 'p2', title: 'Migrate blog to new CMS', status: 'todo', priority: 'medium', assigneeIds: ['u3'], dueDate: addDays(12), tags: ['engineering'], order: 0, attachmentIds: [], createdAt: addDays(-5), updatedAt: addDays(-5), createdById: 'u2' },
-  { id: 't13', projectId: 'p2', title: 'SEO meta improvements', status: 'backlog', priority: 'low', assigneeIds: ['u3'], tags: ['seo'], order: 0, attachmentIds: [], createdAt: addDays(-4), updatedAt: addDays(-4), createdById: 'u2' },
+  { id: 't11', projectId: 'p2', title: 'Design system component audit', status: 'in_progress', priority: 'high', assigneeIds: ['u5'], dueDate: addDays(4), tags: ['design','audit'], order: 0, attachmentIds: [], createdAt: addDays(-7), updatedAt: addDays(-1), requesterIds: [], watcherIds: [], createdById: 'u2' },
+  { id: 't12', projectId: 'p2', title: 'Migrate blog to new CMS', status: 'todo', priority: 'medium', assigneeIds: ['u3'], dueDate: addDays(12), tags: ['engineering'], order: 0, attachmentIds: [], createdAt: addDays(-5), updatedAt: addDays(-5), requesterIds: [], watcherIds: [], createdById: 'u2' },
+  { id: 't13', projectId: 'p2', title: 'SEO meta improvements', status: 'backlog', priority: 'low', assigneeIds: ['u3'], tags: ['seo'], order: 0, attachmentIds: [], createdAt: addDays(-4), updatedAt: addDays(-4), requesterIds: [], watcherIds: [], createdById: 'u2' },
 ];
 
 // ─── COMMENTS ──────────────────────────────────────────────────────────
@@ -126,6 +126,8 @@ export function getTaskWithRelations(task: Task): TaskWithRelations {
   return {
     ...task,
     assignees: mockUsers.filter(u => task.assigneeIds.includes(u.id)),
+    requesters: mockUsers.filter(u => task.requesterIds.includes(u.id) || (task.requesterIds.length === 0 && u.id === task.createdById)),
+    watchers: mockUsers.filter(u => task.watcherIds.includes(u.id)),
     project: { id: project.id, name: project.name, color: project.color },
     commentCount: mockComments.filter(c => c.taskId === task.id).length,
     attachmentCount: task.attachmentIds.length,

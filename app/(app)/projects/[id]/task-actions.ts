@@ -26,7 +26,7 @@ import {
   BUSINESS_START_MINUTE,
 } from '@/lib/business-hours';
 import { sendTrackedEmail } from '@/lib/email-tracking';
-import { notifyTaskAssignment, notifyApprover, notifyTaskStatusChange } from '@/lib/notifications';
+import { notifyTaskAssignment, notifyApprover, notifyTaskStatusChange, notifyTaskRoleAdditions } from '@/lib/notifications';
 import { canApprove, isApprovalGatedTransition } from '@/lib/approval';
 import { computeInProgressTimerUpdate } from '@/lib/task-in-progress-timer';
 
@@ -269,8 +269,10 @@ function parseTask(formData: FormData) {
   const userSpecifiedTime = Boolean(startInfo?.hasUserTime || dueInfoRaw?.hasUserTime);
   const hoursRaw = String(formData.get('estimatedHours') ?? '').trim();
   const estimatedHours = hoursRaw ? Number.parseFloat(hoursRaw) : null;
-  const assigneeIds = formData.getAll('assigneeIds').map((v) => String(v)).filter(Boolean);
-  const dependencyIds = formData.getAll('dependencyIds').map((v) => String(v)).filter(Boolean);
+  const assigneeIds = [...new Set(formData.getAll('assigneeIds').map((v) => String(v)).filter(Boolean))];
+  const requesterIds = [...new Set(formData.getAll('requesterIds').map((v) => String(v)).filter(Boolean))];
+  const watcherIds = [...new Set(formData.getAll('watcherIds').map((v) => String(v)).filter(Boolean))];
+  const dependencyIds = [...new Set(formData.getAll('dependencyIds').map((v) => String(v)).filter(Boolean))];
   // Sync flags: HTML checkboxes only POST when checked, so absence means false.
   const addToCalendar = String(formData.get('addToCalendar') ?? '') === 'on';
   const addToTeams = String(formData.get('addToTeams') ?? '') === 'on';
@@ -284,6 +286,8 @@ function parseTask(formData: FormData) {
     userSpecifiedTime,
     estimatedHours,
     assigneeIds,
+    requesterIds,
+    watcherIds,
     dependencyIds,
     addToCalendar,
     addToTeams,
@@ -442,6 +446,7 @@ export async function createTask(projectId: string, formData: FormData) {
   if (input.estimatedHours !== null && (Number.isNaN(input.estimatedHours) || input.estimatedHours < 0)) {
     return { ok: false, error: 'Μη έγκυρες ώρες.' };
   }
+  if (input.requesterIds.length === 0) input.requesterIds = [actorId];
 
   // Validate dependencies (same project, no cycles).
   const cycleErr = await validateNoDependencyCycle(projectId, null, input.dependencyIds);
@@ -528,6 +533,12 @@ export async function createTask(projectId: string, formData: FormData) {
       assignees: {
         create: input.assigneeIds.map((userId) => ({ userId })),
       },
+      requesters: {
+        create: input.requesterIds.map((userId) => ({ userId })),
+      },
+      watchers: {
+        create: input.watcherIds.map((userId) => ({ userId })),
+      },
       dependencies: {
         create: input.dependencyIds.map((dependsOnId) => ({ dependsOnId })),
       },
@@ -538,6 +549,7 @@ export async function createTask(projectId: string, formData: FormData) {
   await syncTaskCalendar(created.id);
   await syncTaskTeams(created.id);
   await logTaskActivity(created.id, projectId, actorId, 'created');
+  await notifyTaskRoleAdditions(created.id, input.requesterIds, input.watcherIds, actorId);
   if (createGateProject?.approverId) {
     await notifyApprover(
       projectId,
@@ -589,9 +601,20 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
       inProgressStartedAt: true,
       inProgressAccumulatedMs: true,
       assignees: { select: { userId: true } },
+      requesters: { select: { userId: true } },
+      watchers: { select: { userId: true } },
     },
   });
   const previousAssigneeIds = new Set(previous?.assignees.map((a) => a.userId) ?? []);
+  const previousRequesterIds = new Set(previous?.requesters.map((r) => r.userId) ?? []);
+  const previousWatcherIds = new Set(previous?.watchers.map((w) => w.userId) ?? []);
+  if (input.requesterIds.length === 0) {
+    input.requesterIds = previousRequesterIds.size > 0
+      ? [...previousRequesterIds]
+      : previous?.createdById
+      ? [previous.createdById]
+      : [];
+  }
 
   // Approval gate: block edit-form status changes into `done` when the project
   // has an approver and the editor is not approver/owner/global-admin.
@@ -686,7 +709,9 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
       },
     }),
     prisma.taskAssignee.deleteMany({ where: { taskId } }),
-    // Replace the dependency edges in the same transaction so partial state never leaks.
+    prisma.taskRequester.deleteMany({ where: { taskId } }),
+    prisma.taskWatcher.deleteMany({ where: { taskId } }),
+    // Replace people and dependency edges atomically so partial state never leaks.
     prisma.taskDependency.deleteMany({ where: { taskId } }),
     ...(input.dependencyIds.length
       ? [
@@ -699,6 +724,20 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
       ? [
           prisma.taskAssignee.createMany({
             data: input.assigneeIds.map((userId) => ({ taskId, userId })),
+          }),
+        ]
+      : []),
+    ...(input.requesterIds.length
+      ? [
+          prisma.taskRequester.createMany({
+            data: input.requesterIds.map((userId) => ({ taskId, userId })),
+          }),
+        ]
+      : []),
+    ...(input.watcherIds.length
+      ? [
+          prisma.taskWatcher.createMany({
+            data: input.watcherIds.map((userId) => ({ taskId, userId })),
           }),
         ]
       : []),
@@ -743,6 +782,10 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
     });
   }
 
+  const addedRequesterIds = input.requesterIds.filter((id) => !previousRequesterIds.has(id));
+  const addedWatcherIds = input.watcherIds.filter((id) => !previousWatcherIds.has(id));
+  await notifyTaskRoleAdditions(taskId, addedRequesterIds, addedWatcherIds, actorId);
+
   if (previous && previous.status !== input.status) {
     await notifyTaskStatusChange({
       taskId,
@@ -756,12 +799,12 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
       createdById: previous.createdById,
       ownerId: gateProject?.ownerId ?? '',
       assigneeIds: input.assigneeIds,
+      requesterIds: input.requesterIds,
+      watcherIds: input.watcherIds,
     });
   }
 
-  // Material field changes (deadline / priority) notify assignees + creator,
-  // minus the actor. Without this, an editor could move a deadline or raise
-  // priority and the people doing the work would never hear about it.
+  // Material field changes notify everyone participating in or following the task.
   if (previous) {
     const dueChanged =
       (previous.dueDate?.getTime() ?? null) !== (input.dueDate?.getTime() ?? null);
@@ -781,7 +824,12 @@ export async function updateTask(projectId: string, taskId: string, formData: Fo
             ? `νέα προθεσμία ${new Intl.DateTimeFormat('el-GR', { dateStyle: 'medium', timeStyle: 'short' }).format(input.dueDate)}`
             : 'η προθεσμία αφαιρέθηκε',
         );
-      const recipients = new Set<string>([previous.createdById, ...input.assigneeIds]);
+      const recipients = new Set<string>([
+        previous.createdById,
+        ...input.assigneeIds,
+        ...input.requesterIds,
+        ...input.watcherIds,
+      ]);
       recipients.delete(actorId);
       const { createNotifications } = await import('@/lib/notifications');
       await createNotifications(
@@ -819,6 +867,8 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
         title: true,
         createdById: true,
         assignees: { select: { userId: true } },
+        requesters: { select: { userId: true } },
+        watchers: { select: { userId: true } },
       },
     }),
     prisma.project.findUnique({
@@ -872,6 +922,8 @@ export async function updateTaskStatus(projectId: string, taskId: string, status
       createdById: previous.createdById,
       ownerId: project.ownerId,
       assigneeIds: previous.assignees.map((a) => a.userId),
+      requesterIds: previous.requesters.map((r) => r.userId),
+      watcherIds: previous.watchers.map((w) => w.userId),
     });
   }
 

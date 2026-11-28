@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { dedupeCompletionActivities } from '@/lib/task-contribution'
+import { uniqueTasksById } from '@/lib/task-roles'
 import { type ReportScope, hoursBetween, laborCostEur, mean, msToHours, pctDelta, trackedMs, bucketByWeek } from './shared'
 
 const REPORT_TASK_SELECT = {
@@ -46,6 +47,10 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
         where: { mergedIntoId: null },
         select: { id: true, createdAt: true },
       },
+      requestedTasks: {
+        where: { task: { mergedIntoId: null } },
+        select: { task: { select: { id: true, createdAt: true } } },
+      },
       assignedTasks: {
         where: { task: { mergedIntoId: null } },
         select: { task: { select: REPORT_TASK_SELECT } },
@@ -80,7 +85,8 @@ export async function buildUsersReport(scope: ReportScope): Promise<UsersReport>
       email: u.email,
       avatarUrl: u.image ?? undefined,
       role: u.role,
-      requestedInPeriod: u.createdTasks.filter((t) => t.createdAt >= range.from && t.createdAt <= range.to).length,
+      requestedInPeriod: uniqueTasksById(u.createdTasks, u.requestedTasks.map((request) => request.task))
+        .filter((t) => t.createdAt >= range.from && t.createdAt <= range.to).length,
       completedInPeriod: completedCur.length,
       completedDelta: pctDelta(completedCur.length, completedPrev.length),
       trackedHours: msToHours(completedCur.reduce((a, t) => a + trackedMs(t, now), 0)),

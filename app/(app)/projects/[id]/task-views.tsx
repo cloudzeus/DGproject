@@ -66,6 +66,8 @@ export type TaskRow = {
   estimatedHours: number | null;
   completedAt: Date | null;
   requester?: TaskAssigneeOption | null;
+  requesters?: TaskAssigneeOption[];
+  watchers?: TaskAssigneeOption[];
   completionActivities?: Array<{
     action: string;
     taskId: string | null;
@@ -318,6 +320,8 @@ export function ListView({ projectId, projectCode, tasks, members, canEdit, proj
                 dueDate: editing.dueDate,
                 estimatedHours: editing.estimatedHours,
                 assigneeIds: editing.assignees.map((a) => a.id),
+                requesterIds: (editing.requesters ?? (editing.requester ? [editing.requester] : [])).map((user) => user.id),
+                watcherIds: (editing.watchers ?? []).map((user) => user.id),
                 addToCalendar: editing.addToCalendar,
                 addToTeams: editing.addToTeams,
                 dependencyIds: editing.dependencyIds,
@@ -471,6 +475,8 @@ export function BoardView({ projectId, projectCode, tasks, members, canEdit, pro
                 dueDate: editing.dueDate,
                 estimatedHours: editing.estimatedHours,
                 assigneeIds: editing.assignees.map((a) => a.id),
+                requesterIds: (editing.requesters ?? (editing.requester ? [editing.requester] : [])).map((user) => user.id),
+                watcherIds: (editing.watchers ?? []).map((user) => user.id),
                 addToCalendar: editing.addToCalendar,
                 addToTeams: editing.addToTeams,
                 dependencyIds: editing.dependencyIds,
@@ -674,6 +680,8 @@ export function TimelineView({
                 dueDate: editing.dueDate,
                 estimatedHours: editing.estimatedHours,
                 assigneeIds: editing.assignees.map((a) => a.id),
+                requesterIds: (editing.requesters ?? (editing.requester ? [editing.requester] : [])).map((user) => user.id),
+                watcherIds: (editing.watchers ?? []).map((user) => user.id),
                 addToCalendar: editing.addToCalendar,
                 addToTeams: editing.addToTeams,
                 dependencyIds: editing.dependencyIds,
@@ -948,7 +956,8 @@ function MemberPanels({
     }
     for (const m of members) ensure(m.id, m.name || m.email);
     for (const t of tasks) {
-      if (t.requester) ensure(t.requester.id, t.requester.name || t.requester.email).requested += 1;
+      const requesters = t.requesters ?? (t.requester ? [t.requester] : []);
+      for (const requester of requesters) ensure(requester.id, requester.name || requester.email).requested += 1;
       const taskSpent = computeSpentMs(
         t.status,
         t.inProgressStartedAt,

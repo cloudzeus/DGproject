@@ -62,6 +62,36 @@ export async function notifyTaskAssignment(
   );
 }
 
+export async function notifyTaskRoleAdditions(
+  taskId: string,
+  requesterIds: string[],
+  watcherIds: string[],
+  actorId: string,
+): Promise<void> {
+  const roles = new Map<string, { requester: boolean; watcher: boolean }>();
+  for (const userId of requesterIds) roles.set(userId, { requester: true, watcher: roles.get(userId)?.watcher ?? false });
+  for (const userId of watcherIds) roles.set(userId, { requester: roles.get(userId)?.requester ?? false, watcher: true });
+  roles.delete(actorId);
+  if (roles.size === 0) return;
+
+  const [task, actor] = await Promise.all([
+    prisma.task.findUnique({ where: { id: taskId }, select: { title: true, project: { select: { name: true } } } }),
+    actorId ? prisma.user.findUnique({ where: { id: actorId }, select: { name: true, email: true } }) : Promise.resolve(null),
+  ]);
+  if (!task) return;
+  const actorName = actor?.name ?? actor?.email ?? 'Κάποιος';
+
+  await createNotifications([...roles].map(([userId, role]) => ({
+    userId,
+    title: 'Προσθήκη σε εργασία',
+    message: `Ο/Η ${actorName} σε πρόσθεσε στην εργασία "${task.title}" στο έργο ${task.project.name} ως ${
+      role.requester && role.watcher ? 'αιτούντα και άτομο που ενημερώνεται' : role.requester ? 'αιτούντα' : 'άτομο που ενημερώνεται'
+    }.`,
+    type: 'assignment' as const,
+    link: `/board?task=${taskId}`,
+  })));
+}
+
 export async function notifyTaskCompleted(
   taskId: string,
   actorId: string,
@@ -73,6 +103,8 @@ export async function notifyTaskCompleted(
       createdById: true,
       project: { select: { ownerId: true, name: true } },
       assignees: { select: { userId: true } },
+      requesters: { select: { userId: true } },
+      watchers: { select: { userId: true } },
     },
   });
   if (!task) return;
@@ -87,6 +119,8 @@ export async function notifyTaskCompleted(
   recipientSet.add(task.createdById);
   recipientSet.add(task.project.ownerId);
   task.assignees.forEach((a) => recipientSet.add(a.userId));
+  task.requesters.forEach((r) => recipientSet.add(r.userId));
+  task.watchers.forEach((w) => recipientSet.add(w.userId));
   recipientSet.delete(actorId);
 
   await createNotifications(
@@ -144,6 +178,8 @@ export type TaskStatusChangeParams = {
   createdById: string;
   ownerId: string;
   assigneeIds: string[];
+  requesterIds?: string[];
+  watcherIds?: string[];
   /** Staff Mailgun confirmations are deliberately limited to machine-driven MCP changes. */
   source?: 'ui' | 'mcp';
 };
@@ -154,10 +190,8 @@ type StatusNotificationDependencies = {
 };
 
 /**
- * Emit all approver/creator/assignee notifications for a single task status
- * change, with EXACTLY-ONCE delivery to the approver. Call from every path that
- * changes a task's status (both updateTaskStatus actions and the edit form).
- * Caller passes preloaded data to avoid extra queries. Does nothing if from===to.
+ * Emit all approver/requester/watcher/implementer notifications for a task status
+ * change. Legacy tasks without explicit requesters retain their creator as requester.
  */
 export async function notifyTaskStatusChange(
   params: TaskStatusChangeParams,
@@ -166,8 +200,12 @@ export async function notifyTaskStatusChange(
   const { taskId, projectId, actorId, from, to, approverId, taskTitle, projectName, createdById, ownerId, assigneeIds } = params;
   if (from === to) return;
 
-  // Track every user already notified for THIS event so the approver firehose
-  // below never double-notifies (spec: exactly-once for the approver).
+  const requesterIds = params.requesterIds?.length ? params.requesterIds : [createdById];
+  const watcherIds = params.watcherIds ?? [];
+  const informedIds = new Set<string>([...requesterIds, ...watcherIds]);
+
+  // Track every user already notified for THIS event so nobody receives the
+  // generic status update in addition to a more specific notification.
   const notified = new Set<string>();
 
   // 1. Entered review → notify approver it needs approval.
@@ -181,9 +219,9 @@ export async function notifyTaskStatusChange(
     notified.add(approverId);
   }
 
-  // 2. Decision (approve → done, or reject → out of review) → creator + assignees.
+  // 2. Decision → requesters, watchers and implementers.
   if (approverId && (to === 'done' || isRejection(from, to))) {
-    const recipients = new Set<string>([createdById, ...assigneeIds]);
+    const recipients = new Set<string>([createdById, ...assigneeIds, ...informedIds]);
     recipients.delete(actorId);
     const decided = to === 'done';
     await createNotifications(
@@ -200,16 +238,27 @@ export async function notifyTaskStatusChange(
     recipients.forEach((r) => notified.add(r));
   }
 
-  // 3. Completed → existing behavior (notifies creator + owner + assignees, minus actor).
+  // 3. Completed → creator, owner, implementers, requesters and watchers, minus actor.
   if (to === 'done' && from !== 'done') {
     await notifyTaskCompleted(taskId, actorId);
-    [createdById, ownerId, ...assigneeIds].forEach((u) => {
+    [createdById, ownerId, ...assigneeIds, ...informedIds].forEach((u) => {
       if (u !== actorId) notified.add(u);
     });
   }
 
-  // 4. Firehose → approver hears about EVERY status change, exactly once (skipped
-  //    if the approver was already notified in steps 1-3 above, or is the actor).
+  // 4. Every other status change → one generic update for requesters/watchers,
+  //    excluding anyone who already received a decision/completion notification.
+  const informedRecipients = [...informedIds].filter((userId) => userId !== actorId && !notified.has(userId));
+  await createNotifications(informedRecipients.map((userId) => ({
+    userId,
+    title: 'Αλλαγή κατάστασης εργασίας',
+    message: `Η εργασία «${taskTitle}»: ${from} → ${to}.`,
+    type: 'status_change' as const,
+    link: `/board?task=${taskId}`,
+  })));
+  informedRecipients.forEach((userId) => notified.add(userId));
+
+  // 5. Firehose → approver hears about EVERY status change, exactly once.
   if (approverId) {
     await notifyApprover(
       projectId,
@@ -224,7 +273,7 @@ export async function notifyTaskStatusChange(
     );
   }
 
-  // 5. Ticket propagation → if this task came from a support ticket, mirror the
+  // 6. Ticket propagation → if this task came from a support ticket, mirror the
   //    status onto the ticket and email the reporter. All three status-change
   //    mutation paths funnel through this function, so this is the single hook
   //    point. Dynamic import keeps the ticket module out of non-ticket flows.

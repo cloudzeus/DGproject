@@ -57,6 +57,8 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
       projectId: true,
       project: { select: { approverId: true, ownerId: true, name: true } },
       assignees: { select: { userId: true } },
+      requesters: { select: { userId: true } },
+      watchers: { select: { userId: true } },
     },
   });
   if (!previous) return { ok: false, error: 'Task not found.' };
@@ -109,6 +111,8 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
       createdById: previous.createdById,
       ownerId: previous.project.ownerId,
       assigneeIds: previous.assignees.map((a) => a.userId),
+      requesterIds: previous.requesters.map((r) => r.userId),
+      watcherIds: previous.watchers.map((w) => w.userId),
     });
   }
 
