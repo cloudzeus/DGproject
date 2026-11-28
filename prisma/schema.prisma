@@ -241,6 +241,12 @@ model User {
   emailMessages       EmailMessage[]           @relation("EmailMessageUser")
   createdMergeProposals  TaskMergeProposal[]   @relation("MergeProposalCreator")
   reviewedMergeProposals TaskMergeProposal[]   @relation("MergeProposalReviewer")
+  vaultSecretsCreated    VaultSecret[]          @relation("VaultSecretCreator")
+  vaultSecretsUpdated    VaultSecret[]          @relation("VaultSecretUpdater")
+  vaultOtpChallenges     VaultOtpChallenge[]
+  vaultAuditEvents       VaultAuditLog[]
+  vaultSecretShares      VaultSecretShare[]      @relation("VaultSecretShareUser")
+  vaultSecretSharesGranted VaultSecretShare[]    @relation("VaultSecretShareGranter")
 
   @@index([email])
   @@index([role])
@@ -505,6 +511,8 @@ model Project {
   proposalAnalyses ProposalAnalysis[]
   requirements     ProjectRequirement[]
   mergeProposals   TaskMergeProposal[]
+  vaultSecrets     VaultSecret[]
+  vaultAuditLogs   VaultAuditLog[]
 
   @@index([workspaceId])
   @@index([ownerId])
@@ -945,6 +953,117 @@ model TaskQuestionAttachment {
   @@index([questionId])
   @@index([uploadedById])
   @@index([kind])
+}
+
+// ─── Per-project encrypted secrets vault ────────────────────────────────
+enum VaultCategory {
+  api_key
+  connection_string
+  credential
+  other
+}
+
+enum VaultEnvironment {
+  development
+  staging
+  production
+  other
+}
+
+enum VaultAuditAction {
+  created
+  updated
+  deleted
+  otp_requested
+  revealed
+  reveal_failed
+  access_granted
+  access_revoked
+}
+
+/// Every secret belongs to its creator. Other participants see it only after
+/// an explicit per-secret share. Only ciphertext reaches the database.
+model VaultSecret {
+  id          String           @id @default(cuid())
+  projectId   String
+  label       String
+  category    VaultCategory
+  environment VaultEnvironment @default(other)
+  ciphertext  String           @db.LongText
+  iv          String
+  authTag     String
+  keyVersion  String           @default("v1") @db.VarChar(32)
+  version     Int              @default(1)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  project    Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy  User?               @relation("VaultSecretCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy  User?               @relation("VaultSecretUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  shares     VaultSecretShare[]
+  challenges VaultOtpChallenge[]
+  auditLogs  VaultAuditLog[]
+
+  @@unique([projectId, createdById, label, environment])
+  @@index([projectId])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+/// Per-secret sharing with another participant of the same project.
+model VaultSecretShare {
+  id          String   @id @default(cuid())
+  secretId    String
+  userId      String
+  sharedById  String?
+  createdAt   DateTime @default(now())
+
+  secret   VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  user     User        @relation("VaultSecretShareUser", fields: [userId], references: [id], onDelete: Cascade)
+  sharedBy User?       @relation("VaultSecretShareGranter", fields: [sharedById], references: [id], onDelete: SetNull)
+
+  @@unique([secretId, userId])
+  @@index([userId])
+  @@index([sharedById])
+}
+
+model VaultOtpChallenge {
+  id            String    @id @default(cuid())
+  userId        String
+  secretId      String
+  codeHash      String    @db.VarChar(64)
+  attempts      Int       @default(0)
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  lastAttemptAt DateTime?
+  createdAt     DateTime  @default(now())
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secret VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+
+  @@index([userId, secretId, createdAt])
+  @@index([expiresAt])
+  @@index([secretId])
+}
+
+model VaultAuditLog {
+  id        String           @id @default(cuid())
+  projectId String
+  secretId  String?
+  actorId   String?
+  action    VaultAuditAction
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  secret  VaultSecret? @relation(fields: [secretId], references: [id], onDelete: SetNull)
+  actor   User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([secretId])
+  @@index([actorId])
 }
 
 // App-wide key/value settings (admin-managed, stored encrypted-at-rest by hosting platform)

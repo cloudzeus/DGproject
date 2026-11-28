@@ -13,6 +13,7 @@ import {
   Money20Regular,
   History20Regular,
   DocumentSearch20Regular,
+  LockClosed20Regular,
 } from '@fluentui/react-icons';
 import { ReportModal } from './report-modal';
 import { AvatarStack } from '@/components/ui/avatar';
@@ -34,6 +35,8 @@ import {
 import { ProjectEmailsTab, type ProjectEmail } from './project-emails-tab';
 import { ProjectHistoryTab, type HistoryEntry } from './project-history-tab';
 import { ProposalTab, type ProposalAnalysisView } from './proposal-tab';
+import { ProjectVaultTab, type VaultEligibleUser } from './project-vault-tab';
+import type { VaultAuditEntry, VaultSecretMetadata } from '@/lib/vault-types';
 
 type AvatarUser = { name: string; avatarUrl?: string };
 
@@ -69,9 +72,13 @@ type ProjectDetailProps = {
   catalogServices: CatalogPickerItem[];
   emails: ProjectEmail[];
   historyEntries: HistoryEntry[];
+  vaultSecrets: VaultSecretMetadata[];
+  vaultAuditEntries: VaultAuditEntry[];
+  currentUserEmail: string;
+  vaultEligibleUsers: VaultEligibleUser[];
 };
 
-type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'costing' | 'proposal' | 'reports' | 'emails' | 'history';
+type Tab = 'board' | 'list' | 'timeline' | 'files' | 'questions' | 'meetings' | 'costing' | 'proposal' | 'reports' | 'emails' | 'history' | 'vault';
 
 function MenuItem({
   icon,
@@ -107,6 +114,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Board20Regular; privilegedOnl
   { id: 'history', label: 'Ιστορικό', Icon: History20Regular, hideForCustomer: true },
   { id: 'costing', label: 'Κοστολόγηση', Icon: Money20Regular, privilegedOnly: true },
   { id: 'proposal', label: 'Πρόταση', Icon: DocumentSearch20Regular, privilegedOnly: true },
+  { id: 'vault', label: 'Vault', Icon: LockClosed20Regular },
   { id: 'reports', label: 'Αναφορές', Icon: DataBarVertical20Regular, hideForCustomer: true },
 ];
 
@@ -129,6 +137,10 @@ export function ProjectDetail({
   catalogServices,
   emails,
   historyEntries,
+  vaultSecrets,
+  vaultAuditEntries,
+  currentUserEmail,
+  vaultEligibleUsers,
 }: ProjectDetailProps) {
   const [tab, setTab] = useState<Tab>('board');
   const [shareCopied, setShareCopied] = useState(false);
@@ -345,6 +357,8 @@ export function ProjectDetail({
                 ? emails.length
                 : t.id === 'history'
                 ? historyEntries.length
+                : t.id === 'vault'
+                ? vaultSecrets.length
                 : null;
             return (
               <button
@@ -426,6 +440,15 @@ export function ProjectDetail({
             openTasks={project.tasks
               .filter((t) => !['done'].includes(t.status))
               .map((t) => ({ id: t.id, title: t.title, status: t.status }))}
+          />
+        )}
+        {tab === 'vault' && (
+          <ProjectVaultTab
+            projectId={project.id}
+            secrets={vaultSecrets}
+            auditEntries={vaultAuditEntries}
+            currentUserEmail={currentUserEmail}
+            eligibleUsers={vaultEligibleUsers}
           />
         )}
         {tab === 'history' && !isCustomer && <ProjectHistoryTab entries={historyEntries} />}
